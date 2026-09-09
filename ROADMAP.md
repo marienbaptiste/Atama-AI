@@ -983,14 +983,23 @@ than a rewrite: `BRAIN_PROVIDER` already exists as a config key and already says
 the case ADR-027 was written for. Adding OpenAI must not change how the Claude provider is
 spawned or authenticated.
 
-- **Open question before any code: which "headless" is meant.** Two readings, and they are not
-  the same project:
-  1. **The OpenAI CLI (`codex`) driven headless as a subprocess**, mirroring `claude -p` — same
-     shape as the existing provider, same subscription-auth argument, and the streaming/session
-     flags would need pinning live exactly as V0.1/V0.2 did for Claude.
-  2. **The OpenAI HTTP API**, which is per-token billing and the thing ADR-001 refused for
-     Anthropic. Defensible as an *option the user opts into*, but it needs its own ADR saying so,
-     because it contradicts the reasoning ADR-001 is built on.
+**Decided 2026-09-10 (user):** the **`codex` CLI driven headless as a subprocess, on a
+subscription** — the same shape as the Claude provider, not the HTTP API. This preserves ADR-001's
+actual reasoning (subscription auth, no per-token billing) rather than routing around it, so no
+ADR is superseded and none is needed: this is ADR-027's anticipated second implementation.
+
+Consequences that follow from picking the CLI:
+
+- **A verification spike comes first, like V0.1/V0.2 did for Claude.** The exact flags for
+  headless streaming, the event shapes on stdout, how a session id is assigned and resumed, and
+  how to prove the process is on subscription auth rather than an API key — all pinned live in
+  `constants.py` with a date. **Do not write a line of the provider against remembered flags**
+  (ADR-015). The Claude spike found `--tools ""` behaviour, an MCP readiness race and a
+  system-prompt truncation bug that no amount of reading would have predicted; assume the same
+  density of surprises here.
+- **The spawn hygiene of §4/ADR-016 applies to any brain subprocess, not just Claude:** empty
+  cwd outside the repo, allowlisted environment, no inherited MCP config, and an assertion at
+  init that the auth source is the subscription and not a key in the environment.
 - **Test** — The provider contract test runs against BOTH implementations: the same `Brain`
   interface, the same event types (`TextDelta`, `Thinking`, `ToolCall`, `ToolOutcome`,
   `RateLimited`, `TurnComplete`), the same restart/resume behaviour. A provider that cannot
