@@ -57,6 +57,28 @@ class VisemeTimeline:
     def __len__(self) -> int:
         return len(self.visemes)
 
+    def fitted_to(self, wav_ms: float) -> "VisemeTimeline":
+        """This timeline stretched so it ends exactly with the audio. Pure; returns a new one.
+
+        `build()` predicts duration from the audio_query, but VOICEVOX's synthesis quantises in a
+        text-dependent way: measured 2026-09-10, the prediction runs anywhere from -11 ms to
+        +46 ms against the real WAV, and no arithmetic on the query can recover the difference.
+        Left alone it is cumulative drift — the mouth is progressively later through a sentence
+        and worst at the end, which is where it shows.
+
+        The caller knows the true length the instant it has the WAV, so the honest fix is to fit
+        the timeline to it and spread the error proportionally: every viseme lands within a
+        fraction of a frame instead of the last one being 46 ms out.
+        """
+        if wav_ms <= 0 or self.duration_ms <= 0:
+            return self
+        k = wav_ms / self.duration_ms
+        return VisemeTimeline(visemes=list(self.visemes),
+                              vtimes=[t * k for t in self.vtimes],
+                              vdurations=[d * k for d in self.vdurations],
+                              weights=list(self.weights),
+                              duration_ms=wav_ms)
+
     def as_message(self, ndigits: int = 3) -> dict[str, Any]:
         return {"visemes": self.visemes,
                 "vtimes": [round(t, ndigits) for t in self.vtimes],

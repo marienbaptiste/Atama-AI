@@ -12,6 +12,10 @@ import pytest
 from backend import visemes as v
 
 FX = Path(__file__).parent / "fixtures" / "voicevox"
+#: How far `build()` alone may stray from the real WAV. It is a PREDICTION from the audio_query;
+#: VOICEVOX quantises text-dependently and measured -11.4 to +46.4 ms on these fixtures
+#: (2026-09-10). `fitted_to()` removes it downstream, which is what gate M2d actually rides on.
+MAX_PREDICTION_DRIFT_MS = 50
 
 
 def fx(name: str) -> dict:
@@ -95,9 +99,36 @@ def test_timeline_is_monotonic_and_never_overlaps(name):
     ("greeting", 2325.3), ("pa_line", 2058.7), ("sa_line", 1866.7), ("tricky", 3840.0),
 ])
 def test_computed_duration_tracks_the_real_wav(name, wav_ms):
-    """Within one video frame. The engine rounds to sample boundaries, so this is not exact —
-    asserting equality would be asserting VOICEVOX's rounding, not our arithmetic."""
-    assert v.build(fx(name)).duration_ms == pytest.approx(wav_ms, abs=60)
+    """`build()` is a prediction and is allowed to be a little wrong; `fitted_to()` is not.
+
+    Asserting equality here would be asserting VOICEVOX's quantisation rather than our
+    arithmetic — it is text-dependent (-11.4 ms on さしすせそ, +46.4 ms on ぱぴぷぺぽ) and no
+    function of the audio_query can recover it.
+    """
+    assert v.build(fx(name)).duration_ms == pytest.approx(wav_ms, abs=MAX_PREDICTION_DRIFT_MS)
+
+
+@pytest.mark.parametrize("name,wav_ms", [
+    ("greeting", 2325.3), ("pa_line", 2058.7), ("sa_line", 1866.7), ("tricky", 3840.0),
+])
+def test_fitting_to_the_wav_removes_the_drift_entirely(name, wav_ms):
+    """Gate M2d: with the real WAV in hand the timeline ends exactly with the audio.
+
+    Prediction error becomes a proportional stretch spread across every viseme instead of
+    cumulative lag that is worst at the end of the sentence, where it shows most.
+    """
+    fitted = v.build(fx(name)).fitted_to(wav_ms)
+    assert fitted.duration_ms == pytest.approx(wav_ms, abs=1e-9)
+    assert fitted.vtimes[-1] + fitted.vdurations[-1] <= wav_ms + 1e-6
+    assert len(fitted) == len(v.build(fx(name)))          # nothing added or dropped
+    assert all(b >= a for a, b in zip(fitted.vtimes, fitted.vtimes[1:]))   # still monotonic
+
+
+def test_fitting_is_a_no_op_when_the_wav_length_is_unknown():
+    """A malformed WAV must degrade to the predicted timeline, never to a zero-length one."""
+    base = v.build(fx("greeting"))
+    assert base.fitted_to(0.0) is base
+    assert base.fitted_to(-1.0) is base
 
 
 @pytest.mark.parametrize("speed", [0.8, 0.9, 1.0, 1.2])

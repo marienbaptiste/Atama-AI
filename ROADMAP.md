@@ -386,13 +386,20 @@ mapper already divides both, so its arithmetic is correct.
   division of the speed-1 mora time would give 0.3520 s — **10.7 ms longer**, because it rounds
   every mora to sample boundaries. No change to `visemes.py` can remove that; matching it exactly
   would mean reimplementing the engine's rounding.
-- **Gate M2d therefore depends on a frame rate the gate never states.** Worst case 24.3 ms:
-  **over** one frame at 60 fps (16.7 ms), **inside** one frame at 30 fps (33.3 ms). For reference
-  the perceptual audio-visual sync window is roughly -125 ms to +45 ms (ITU-R BT.1359), so 24 ms
-  of end-of-timeline drift is not visible — but "not visible" is not what the gate says.
-- **Open question for the user:** pin M2d's tolerance (one frame at 30 fps, or an explicit ms
-  figure), or keep 60 fps and accept the gate cannot be met. Not a decision to make by quietly
-  loosening the number.
+- **The drift is text-dependent, and bigger than the live sweep suggested.** The committed
+  fixtures span **-11.4 ms** (さしすせそ) to **+46.4 ms** (ぱぴぷぺぽ) — re-synthesised from the
+  exact stored queries, so the recorded WAV lengths are not stale. It is not the consonants
+  either: an all-vowel あいうえお is +5.1 ms and か-row is *negative*. There is no function of the
+  audio_query that recovers it.
+- **So the drift is removed, not tolerated.** `VisemeTimeline.fitted_to(wav_ms)` scales the
+  predicted timeline onto the real WAV, which the caller has the instant synthesis returns.
+  Cumulative lag that was worst at the end of a sentence — where it shows — becomes a
+  proportional stretch of a fraction of a frame per viseme. Re-measured across all five emotions:
+  **0.0 ms**. `build()` remains pure and remains a prediction; the fit is a separate pure
+  function, so spec §7's "keep them pure" still holds.
+- Tests split accordingly: `MAX_PREDICTION_DRIFT_MS = 50` bounds `build()` alone (loose on
+  purpose — tightening it would only assert VOICEVOX's quantisation), while the fitted timeline
+  is asserted exact.
 
 **2026-09-09 — voice stability, measured (V0.3 follow-up):**
 
@@ -644,8 +651,11 @@ events.
   watch for correct closure and drift at the end of long sentences, under `surprised` (fastest)
   and `serious` (slowest).
 - **Integrate** — TTS → mapper → WS `speak` message.
-- **Gate M2d** — Golden tests green; timeline end time within one frame of the WAV duration at
-  every emotion speed.
+- **Gate M2d** — **MET 2026-09-10, exactly: 0.0 ms** at every emotion speed, five sentences each.
+  No tolerance argument required, because the drift is removed rather than tolerated —
+  `VisemeTimeline.fitted_to(wav_ms)` stretches the predicted timeline onto the real WAV in
+  `tts_voicevox.say()`. `build()` stays pure and stays a prediction (spec §7); the fit is a
+  separate pure function applied where the ground truth exists.
 
 ### 7. WebSocket protocol — `backend/models.py` + `frontend/src/ws.ts` — **M2 → M3**
 

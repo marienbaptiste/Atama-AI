@@ -13,7 +13,9 @@ The engine stays on CPU (ADR-005): the GPU belongs to Whisper.
 """
 from __future__ import annotations
 
+import io
 import time
+import wave
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -39,6 +41,16 @@ class Speech:
     @property
     def duration_ms(self) -> float:
         return self.timeline.duration_ms
+
+
+def _wav_duration_ms(wav_bytes: bytes) -> float:
+    """True length of a synthesised WAV. 0.0 when it cannot be read, so a malformed response
+    degrades to the predicted timeline rather than raising inside synthesis."""
+    try:
+        with wave.open(io.BytesIO(wav_bytes), "rb") as w:
+            return w.getnframes() / float(w.getframerate() or 1) * 1000.0
+    except (wave.Error, EOFError, ValueError, ZeroDivisionError):
+        return 0.0
 
 
 class VoicevoxError(RuntimeError):
@@ -156,5 +168,9 @@ class VoicevoxClient:
             raise VoicevoxError(f"VOICEVOX unreachable or refused: {type(exc).__name__}: {exc}") from None
         except ValueError as exc:
             raise VoicevoxError(f"VOICEVOX returned a non-JSON audio_query: {exc}") from None
-        return Speech(text=text, emotion=emotion, wav=wav.content, timeline=visemes_mod.build(query),
+        # build() predicts the timeline from the query; the WAV is the ground truth. Fitting one
+        # to the other turns a text-dependent drift of up to 46 ms at the END of a sentence into
+        # a fraction of a frame spread evenly across it (measured 2026-09-10, gate M2d).
+        timeline = visemes_mod.build(query).fitted_to(_wav_duration_ms(wav.content))
+        return Speech(text=text, emotion=emotion, wav=wav.content, timeline=timeline,
                       style_id=params.style_id, synth_ms=(time.monotonic() - started) * 1000.0)
