@@ -230,7 +230,46 @@ Then open `http://localhost:5173`. On first run the app opens on its **settings 
 your tokens, press each **Test** button, and the conversation view unlocks once Claude tests
 green. No `.env` needed.
 
-Drop your avatar at `frontend/public/avatar.glb`, allow mic access, and start talking.
+Then get an avatar — see below — allow mic access, and start talking.
+
+### The avatar (you have to supply this)
+
+**No avatar ships with this repo.** `*.glb` is git-ignored: the example avatars available online
+are licensed for non-commercial use by their creators, so redistributing one inside a public
+repo is not ours to do. A fresh clone therefore has no face until you put one at
+**`frontend/public/avatar.glb`**.
+
+It must be a **full-body GLB** with a Mixamo-compatible rig and **both** blendshape sets —
+**ARKit (52)** and **Oculus visemes (15)**. TalkingHead needs all of them, and this is the part
+that goes wrong quietly: an avatar missing them loads, renders perfectly, and simply never moves
+its mouth.
+
+The quickest known-good option is TalkingHead's own reference avatar (CC BY-NC 4.0, so fine for
+personal use, not for anything commercial):
+
+```bash
+curl -L -o frontend/public/avatar.glb   https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars/brunette.glb
+```
+
+Or make your own at [Ready Player Me](https://readyplayer.me) or
+[Avaturn](https://avaturn.me) and export it with both morph-target groups.
+
+**Always verify before building on it:**
+
+```bash
+python -m backend.tools.check_avatar
+```
+
+```
+frontend/public/avatar.glb  (4.7 MB, 72 morph targets)
+  Oculus visemes : 15/15   ok
+  ARKit (sampled): 10/10   ok
+Usable by TalkingHead.
+```
+
+If anything is missing it names it and tells you how to re-export. Worth trusting: it already
+caught a real example avatar that was missing `viseme_sil`, the closed-mouth rest shape — that
+one would have talked without ever shutting its mouth.
 
 ### Windows + WSL2
 
@@ -646,6 +685,32 @@ virtualises — other processes can't see the directory. Leave `CLAUDE_CWD` empt
 
 **Bunpro MCP chip stuck on `failed`.** Bunpro's API is unofficial and changes; check the
 sanitised error in the chip, then the session log. The conversation continues without it.
+
+---
+
+## Credits and licensing
+
+The code here is yours to read and change. Three things it depends on are not, and one of them
+places an obligation on **anything the app says out loud**, not merely on this repository.
+
+**VOICEVOX — attribution is mandatory.** The synthesised voice must be credited wherever the
+audio appears. The exact credit depends on which persona is configured (`TUTOR_PERSONA`):
+
+| persona | voice | required credit |
+|---------|-------|-----------------|
+| `tanaka` (default) | style 53 | `VOICEVOX:麒ヶ島宗麟` |
+| `minami` | style 29 | `VOICEVOX:No.7` |
+| `hayashi` | style 67 | `VOICEVOX:栗田まろん` |
+| `mori` | style 14 | `VOICEVOX:冥鳴ひまり` |
+
+Each character has its own terms; the ones above permit commercial and non-commercial use
+**provided the credit is shown**. Check the individual character's page before relying on that,
+and re-check when adding a persona — the terms are per character, not per engine.
+
+**The avatar is not covered by this repo's licence.** Nothing is committed, and whichever GLB you
+supply carries its own terms — the common example avatars are non-commercial only.
+
+**Everything else** — TalkingHead, faster-whisper, Silero VAD — is MIT or equivalent.
 
 ---
 

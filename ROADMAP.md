@@ -1012,6 +1012,25 @@ Consequences that follow from picking the CLI:
 
 ---
 
+### 21. `make doctor` — `backend/tools/doctor.py` — **M0 deliverable, NOT WRITTEN (found 2026-09-10)**
+
+The Makefile target exists and invokes `backend.tools.doctor`; the module does not. `make doctor`
+has therefore never run, despite M0 being recorded as done and the spec listing its checks under
+M0. Anyone following README's Setup section hits an import error on the third command.
+
+Spec M0 defines what it must check: `claude` CLI present and version-pinned, `ANTHROPIC_API_KEY`
+absent from the shell, a trivial `claude -p` returning `init.apiKeySource == "none"`, CUDA
+visible, VOICEVOX reachable on loopback **and not on other interfaces**, tokens present, every
+ignored path actually ignored via `git check-ignore`, and the §5b status table printed.
+
+Add to that list, from what later milestones turned up:
+
+- **the avatar** — `frontend/public/avatar.glb` present and passing `check_avatar`; a fresh clone
+  has no face and nothing currently tells the user that until the frontend silently fails.
+- **audio devices** — at least one input and one output on a host API that can actually be opened
+  at the fixed rates (see `CAPTURE_HOSTAPIS`); on Windows a device may enumerate and still be
+  unopenable, which cost a long debugging session.
+
 ## Integration order
 
 Each row is the seam introduced, and the one assertion that proves it.
