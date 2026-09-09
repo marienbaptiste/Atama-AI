@@ -46,7 +46,7 @@ class ClaudeCliBrain:
         registry=None,
         *,
         mcp_config: Path | None = None,
-        mcp_ready_marker: Path | None = None,
+        mcp_ready_markers: dict[str, Path] | None = None,
         system_prompt: str = "",
         allowed_tools: Iterable[str] = (),
         model: str | None = None,
@@ -55,7 +55,7 @@ class ClaudeCliBrain:
         self._cfg = cfg
         self._registry = registry
         self._mcp_config = mcp_config
-        self._mcp_ready = mcp_ready_marker
+        self._mcp_ready = dict(mcp_ready_markers or {})
         self._system_prompt = system_prompt
         self._allowed_tools = tuple(allowed_tools)
         self._model = model or cfg.CLAUDE_MODEL
@@ -215,8 +215,8 @@ class ClaudeCliBrain:
             raise RuntimeError(f"claude cwd {cwd} is inside the repo; it would inherit CLAUDE.md (spec §4)")
 
         env = child_env()
-        if self._mcp_ready:
-            self._mcp_ready.unlink(missing_ok=True)  # a stale marker must not read as connected
+        for marker in self._mcp_ready.values():
+            marker.unlink(missing_ok=True)  # a stale marker must not read as connected
 
         # No shell: `claude.CMD` is executed directly. shell=True broke on a cwd outside the repo
         # (2026-09-09) and is an injection surface we do not need.
@@ -242,7 +242,7 @@ class ClaudeCliBrain:
         self._stderr_tail.clear()
         threading.Thread(target=self._pump_stderr, args=(self._proc,), daemon=True).start()
 
-        if self._mcp_ready is not None:
+        if self._mcp_ready:
             await self._await_mcp_ready()
         if self._proc.poll() is not None:
             raise RuntimeError(f"claude exited during startup (rc={self._proc.returncode}): "
@@ -295,21 +295,28 @@ class ClaudeCliBrain:
                 "session would be billed to the API instead of your subscription (ADR-001). Run `make doctor`.")
 
     async def _await_mcp_ready(self) -> None:
-        """Wait for the MCP server's own ready signal — never a sleep (spec §4).
+        """Wait for every MCP server's own ready signal — never a sleep (spec §4).
 
         Claude prints `init` with `mcp_servers: pending` and never announces the connection; a
-        turn sent before then reaches a model with no tools.
+        turn sent before then reaches a model with no tools. Servers that never signal are
+        reported and skipped: the conversation continues without their tools.
         """
-        assert self._mcp_ready is not None
+        pending = dict(self._mcp_ready)
         deadline = time.monotonic() + constants.CLAUDE_MCP_READY_TIMEOUT_S
-        while time.monotonic() < deadline:
-            if self._mcp_ready.exists():
-                self._report_service("bunpro_mcp", "connected", f"ready in {constants.CLAUDE_MCP_READY_TIMEOUT_S:.0f}s window")
+        while pending and time.monotonic() < deadline:
+            for service, marker in list(pending.items()):
+                if marker.exists():
+                    del pending[service]
+                    self._report_service(service, "connected" if service.endswith("_mcp") else "ok",
+                                         f"ready in {time.monotonic() - (deadline - constants.CLAUDE_MCP_READY_TIMEOUT_S):.1f}s")
+            if not pending:
                 return
             if self._proc is not None and self._proc.poll() is not None:
                 break
             await asyncio.sleep(0.05)
-        self._report_service("bunpro_mcp", "failed", "no ready signal", "MCP server did not connect in time")
+        for service in pending:
+            self._report_service(service, "failed" if service.endswith("_mcp") else "down",
+                                 "no ready signal", "MCP server did not connect in time")
 
     # ------------------------------------------------------------------- turns
     def _write_turn(self, text: str) -> bool:

@@ -37,7 +37,7 @@ def test_process_env_is_read_only_under_the_atama_prefix(monkeypatch):
 def test_bare_claude_env_var_does_not_leak_into_config(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_EFFORT", "max")
     monkeypatch.setattr(config, "read_dotenv", lambda p: {})
-    assert config.load(tmp_path / "s.json").CLAUDE_EFFORT == "high"
+    assert config.load(tmp_path / "s.json").CLAUDE_EFFORT == "medium"
 
 
 def test_dotenv_parser(tmp_path):

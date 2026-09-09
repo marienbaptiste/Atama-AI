@@ -6,6 +6,7 @@ import datetime as dt
 import json
 from pathlib import Path
 
+from backend import mcp_ready
 from backend.srs import bunpro_mcp as m
 from backend.srs.cache import cache_store
 
@@ -86,10 +87,10 @@ def test_missing_env_is_a_clear_error(monkeypatch):
 def test_ready_marker_written_by_initialized_handler(tmp_path):
     m._ready_path = tmp_path / "bunpro_mcp.ready"
     assert not m._ready_path.exists()
-    asyncio.run(m._on_initialized(None, None))
+    mcp_ready.announce_ready(m._marker())
     data = json.loads(m._ready_path.read_text(encoding="utf-8"))
     assert data["pid"] > 0 and data["connected_at"]
-    m.clear_marker()
+    mcp_ready.clear_marker(m._marker())
     assert not m._ready_path.exists()
     m._ready_path = None
 

@@ -1,0 +1,34 @@
+# Local services for atama-AI. Everything binds to 127.0.0.1 only (ADR-017): these carry the
+# student's data and have no business on the LAN.
+#
+#   docker compose up -d
+#
+# VOICEVOX joins this file at M2, when its image and API are verified (ROADMAP V0.3).
+
+services:
+  searxng:
+    # Self-hosted metasearch: gives the tutor a way to find something to talk about without
+    # an API key or a third-party account (ADR-028).
+    image: searxng/searxng:latest
+    container_name: atama-searxng
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./docker/searxng:/etc/searxng:rw
+    environment:
+      # Loopback-only, single user: the secret signs CSRF tokens and the image proxy.
+      # Generated into .env (git-ignored) by `make searxng-secret`.
+      - SEARXNG_SECRET=${SEARXNG_SECRET:?set SEARXNG_SECRET in .env — run `make searxng-secret`}
+      - SEARXNG_BASE_URL=http://localhost:8888/
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"

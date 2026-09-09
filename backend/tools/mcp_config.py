@@ -1,13 +1,11 @@
 """Generate .cache/mcp.json for the claude subprocess (spec §11).
 
-The Bunpro MCP server reads the launch snapshot; it needs the snapshot path and a path for its
-READY MARKER — not the token. No credential is written here at all. Writes an empty server
-list if Bunpro is not configured.
+Two servers, neither of which is given a credential:
+  bunpro  — reads the launch snapshot (ADR-024); needs the snapshot path, not the token.
+  search  — talks to the user's own SearxNG (ADR-028); SearxNG needs no key at all.
 
-Readiness protocol (spec §4/§5b): the server touches ATAMA_MCP_READY when Claude's
-`notifications/initialized` arrives (i.e. Claude is actually connected) and removes it on
-shutdown. The orchestrator waits on that marker before sending the first turn and reports
-`bunpro_mcp = connected` from it — a real signal, never a timer.
+Each also gets the path where it should write its readiness marker, which the brain waits on
+before sending the first turn (spec §4).
 """
 from __future__ import annotations
 
@@ -17,29 +15,66 @@ from pathlib import Path
 
 from backend import config
 
+BUNPRO_TOOLS = tuple(f"mcp__bunpro__{t}" for t in ("get_review_queue", "get_ghost_reviews", "get_grammar_progress"))
+SEARCH_TOOLS = ("mcp__search__search",)
+
 
 def snapshot_path(cfg: config.Config) -> Path:
     return cfg.path("CACHE_DIR") / "srs" / "bunpro.json"
 
 
-def ready_marker(cfg: config.Config) -> Path:
-    return cfg.path("CACHE_DIR") / "srs" / "bunpro_mcp.ready"
+def ready_marker(cfg: config.Config, server: str = "bunpro") -> Path:
+    return cfg.path("CACHE_DIR") / "srs" / f"{server}_mcp.ready"
 
 
-def build(cfg: config.Config, python: str | None = None) -> dict:
+def _python() -> str:
+    return sys.executable
+
+
+def build(cfg: config.Config) -> dict:
     servers: dict = {}
+    common = {"cwd": str(config.REPO_ROOT), "command": _python()}
     if cfg.BUNPRO_API_TOKEN:
         servers["bunpro"] = {
-            "command": python or sys.executable,
+            **common,
             "args": ["-m", "backend.srs.bunpro_mcp"],
-            "cwd": str(config.REPO_ROOT),
             "env": {
                 "ATAMA_SNAPSHOT": str(snapshot_path(cfg)),
-                "ATAMA_MCP_READY": str(ready_marker(cfg)),
+                "ATAMA_MCP_READY": str(ready_marker(cfg, "bunpro")),
+                "PYTHONPATH": str(config.REPO_ROOT),
+            },
+        }
+    if cfg.SEARXNG_URL:
+        servers["search"] = {
+            **common,
+            "args": ["-m", "backend.search_mcp"],
+            "env": {
+                "SEARXNG_URL": cfg.SEARXNG_URL,
+                "ATAMA_SEARCH_MCP_READY": str(ready_marker(cfg, "search")),
                 "PYTHONPATH": str(config.REPO_ROOT),
             },
         }
     return {"mcpServers": servers}
+
+
+def markers(cfg: config.Config) -> dict[str, Path]:
+    """Status-chip name -> readiness marker, for the servers actually configured."""
+    out: dict[str, Path] = {}
+    if cfg.BUNPRO_API_TOKEN:
+        out["bunpro_mcp"] = ready_marker(cfg, "bunpro")
+    if cfg.SEARXNG_URL:
+        out["search"] = ready_marker(cfg, "search")
+    return out
+
+
+def allowed_tools(cfg: config.Config) -> tuple[str, ...]:
+    """The exact tool names the tutor may call — belt-and-braces beside --strict-mcp-config."""
+    tools: tuple[str, ...] = ()
+    if cfg.BUNPRO_API_TOKEN:
+        tools += BUNPRO_TOOLS
+    if cfg.SEARXNG_URL:
+        tools += SEARCH_TOOLS
+    return tools
 
 
 def write(cfg: config.Config | None = None) -> Path:
@@ -53,4 +88,5 @@ def write(cfg: config.Config | None = None) -> Path:
 if __name__ == "__main__":
     p = write()
     d = json.loads(p.read_text(encoding="utf-8"))
-    print(f"mcp-config: wrote {p.relative_to(config.REPO_ROOT).as_posix()} ({len(d['mcpServers'])} server(s), no credentials)")
+    print(f"mcp-config: wrote {p.relative_to(config.REPO_ROOT).as_posix()} "
+          f"({', '.join(d['mcpServers']) or 'no servers'}; no credentials)")

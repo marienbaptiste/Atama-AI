@@ -27,7 +27,8 @@ from backend.status import registry
 from backend.tools import mcp_config
 
 DIM, BOLD, RESET = "\033[2m", "\033[1m", "\033[0m"
-MCP_TOOLS = tuple(f"mcp__bunpro__{t}" for t in ("get_review_queue", "get_ghost_reviews", "get_grammar_progress"))
+#: Not something the student said — the cue that a session has begun, so Sensei opens it (§5c).
+OPENING_NUDGE = "（セッション開始。あいさつして、話題を一つ見つけて、質問してください。）"
 
 
 def _emotion_tag(emotion: str) -> str:
@@ -61,13 +62,14 @@ async def run(args: argparse.Namespace) -> int:
           f"{' · TRUNCATED: ' + ', '.join(rendered.truncated) if rendered.truncated else ''}{RESET}")
 
     # --- brain (ADR-027: the REPL talks to the interface, not to Claude) --------
-    mcp_json = mcp_config.write(cfg) if cfg.BUNPRO_API_TOKEN else None
+    tools = mcp_config.allowed_tools(cfg)
+    mcp_json = mcp_config.write(cfg) if tools else None
     brain = brain_api.create(
         cfg, registry=registry,
         mcp_config=mcp_json,
-        mcp_ready_marker=mcp_config.ready_marker(cfg) if mcp_json else None,
+        mcp_ready_markers=mcp_config.markers(cfg) if mcp_json else None,
         system_prompt=rendered.text,
-        allowed_tools=MCP_TOOLS if mcp_json else (),
+        allowed_tools=tools,
     )
     try:
         await brain.start()
@@ -76,6 +78,11 @@ async def run(args: argparse.Namespace) -> int:
         return 2
     print(registry.table())
     print(f"{DIM}type Japanese and press enter · /status /prompt /profile /quit{RESET}\n")
+
+    # Sensei speaks first (spec §5c): she finds a subject and opens on it, rather than waiting
+    # for the student to produce one. This is the turn that pays for the search.
+    if not args.no_open:
+        await _one_turn(brain, OPENING_NUDGE)
 
     try:
         while True:
@@ -151,6 +158,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="atama-AI M1 text REPL")
     ap.add_argument("--refresh", action="store_true", help="force a fresh SRS sync")
     ap.add_argument("--no-srs", action="store_true", help="skip WaniKani/Bunpro entirely")
+    ap.add_argument("--no-open", action="store_true", help="do not let Sensei speak first")
     try:
         return asyncio.run(run(ap.parse_args()))
     except KeyboardInterrupt:

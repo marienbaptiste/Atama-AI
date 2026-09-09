@@ -1,0 +1,36 @@
+# SearxNG configuration for atama-AI (ADR-028).
+# Committed on purpose — it holds no secret. The secret key comes from the SEARXNG_SECRET
+# environment variable, generated into .env (git-ignored).
+
+use_default_settings: true
+
+general:
+  instance_name: "atama-AI"
+  # Nothing about this instance is public; no donation/contact links needed.
+  enable_metrics: false
+
+server:
+  # The bot limiter rejects programmatic requests — which is exactly what our MCP tool makes.
+  # Safe to disable: the port is bound to 127.0.0.1 and only this machine can reach it.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+search:
+  # JSON is NOT enabled by default; without it /search?format=json returns 403.
+  formats:
+    - html
+    - json
+  # The tutor asks about news and general topics; no filtering needed for an adult learner.
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "auto"
+
+ui:
+  default_locale: "en"
+
+outgoing:
+  request_timeout: 5.0
+  max_request_timeout: 10.0
+  pool_connections: 10
+  pool_maxsize: 10

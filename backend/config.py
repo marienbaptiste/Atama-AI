@@ -41,7 +41,7 @@ SCHEMA: tuple[Setting, ...] = (
     # Model
     Setting("BRAIN_PROVIDER", "claude-cli", str, "model", "Which brain implementation to use (ADR-027). Implemented: claude-cli"),
     Setting("CLAUDE_MODEL", "sonnet", str, "model", "Model alias for the tutor subprocess"),
-    Setting("CLAUDE_EFFORT", "high", str, "model", "CLI effort level (low|medium|high|xhigh|max). Measured 2026-09-09: 'high' still gave a first chunk at 0.87-1.14s, inside the 1.60s Claude budget"),
+    Setting("CLAUDE_EFFORT", "medium", str, "model", "CLI effort level (low|medium|high|xhigh|max). Measured 2026-09-09 (median first-token / opening turn): low 2.75s/8.6s, medium 2.14s/5.8s, high 3.75s/19.2s. Silence is the failure mode in a voice tutor"),
     Setting("CLAUDE_FALLBACK_MODEL", "haiku", str, "model", "Fallback when the model is overloaded / rate limited"),
     Setting("CLAUDE_REPLACE_SYSTEM_PROMPT", True, bool, "model", "true: --system-prompt (Sensei only). false: --append-system-prompt, which leaves Claude Code's coding-agent prompt in front and breaks the persona"),
     Setting("CLAUDE_TURN_TIMEOUT_S", 60, int, "model", "Per-turn timeout before SIGINT + apology"),

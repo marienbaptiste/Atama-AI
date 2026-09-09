@@ -26,7 +26,6 @@ waits on that marker before the first turn and derives `bunpro_mcp = connected` 
 from __future__ import annotations
 
 import asyncio
-import atexit
 import datetime as dt
 import json
 import os
@@ -34,9 +33,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import mcp.types as types
 from mcp.server.mcpserver import MCPServer
 
+from backend import mcp_ready
 from backend.srs import bunpro as bp
 from backend.srs.profile import snapshot_load
 
@@ -56,51 +55,10 @@ _ready_path: Path | None = None     # tests override; production reads ATAMA_MCP
 
 
 def _marker() -> Path | None:
-    if _ready_path is not None:
-        return _ready_path
-    p = os.environ.get("ATAMA_MCP_READY", "").strip()
-    return Path(p) if p else None
+    return mcp_ready.marker_path("ATAMA_MCP_READY", _ready_path)
 
 
-def announce_ready() -> Path | None:
-    """Write the ready marker. Called from the `notifications/initialized` handler."""
-    m = _marker()
-    if m is None:
-        return None
-    m.parent.mkdir(parents=True, exist_ok=True)
-    m.write_text(json.dumps({"pid": os.getpid(), "connected_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}),
-                 encoding="utf-8")
-    return m
-
-
-def clear_marker() -> None:
-    """Remove the marker only if it is OURS.
-
-    The path is shared by every instance. A stale server exiting must not delete the marker a
-    freshly started one just wrote — that race made readiness look like a timeout while the new
-    server was in fact connected (found 2026-09-09).
-    """
-    m = _marker()
-    if m is None:
-        return
-    try:
-        if json.loads(m.read_text(encoding="utf-8")).get("pid") != os.getpid():
-            return
-    except (OSError, ValueError):
-        return
-    try:
-        m.unlink()
-    except FileNotFoundError:
-        pass
-
-
-async def _on_initialized(ctx, params) -> None:  # signature: (ServerRequestContext, NotificationParams)
-    announce_ready()
-    print("bunpro-mcp: client initialized -> ready marker written", file=sys.stderr)
-
-
-server._lowlevel_server.add_notification_handler("notifications/initialized", types.NotificationParams, _on_initialized)
-atexit.register(clear_marker)
+mcp_ready.install(server, _marker, "bunpro-mcp")
 
 
 def _path() -> Path:

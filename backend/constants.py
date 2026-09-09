@@ -49,8 +49,11 @@ CLAUDE_INIT_TIMEOUT_S = 30.0
 # `--system-prompt-file` (replace) is the default: with `--append-system-prompt-file` the tutor
 # inherits Claude Code's coding-agent prompt and introduces itself as "Claude Code ...
 # ソフトウェアエンジニアリングのタスクを支援" (measured), and init.tools came back empty.
-# `--effort <low|medium|high|xhigh|max>` is the lever for spec §10's "extended thinking OFF":
-# a default-effort haiku turn spent 602 characters thinking to produce 41 characters of speech.
+# `--effort <low|medium|high|xhigh|max>` is the lever for spec §10's "extended thinking OFF".
+# Measured 2026-09-09 over 3 turns (sonnet, both MCP servers loaded), median first-token and
+# opening-turn first-token: low 2.75s/8.6s, medium 2.14s/5.8s, high 3.75s/19.2s. Medium is both
+# faster AND more considered than low. The FIRST turn of a session is always far slower than the
+# rest (prompt-cache creation), which is why the opening turn is measured separately.
 # Even with the marker, keep --allowedTools on the three MCP names (ADR-021 belt-and-braces).
 # Observed stream types: system/init, system/status ({"status":"requesting"} before each API
 # call), rate_limit_event ({"rate_limit_info": {status, resetsAt, rateLimitType: "five_hour",
