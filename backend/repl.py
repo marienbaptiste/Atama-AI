@@ -171,18 +171,35 @@ async def _listen(cfg, brain, voice) -> None:
         return
     if level < audio_mod.SILENT_RMS:
         device = cfg.AUDIO_INPUT_DEVICE or "system default"
-        print(f"\n{BOLD}The microphone ({device}) is silent{RESET} — rms {level:.6f}. It opened, so the "
-              f"device exists; it is muted or blocked. Check:\n"
+        print(f"\n{BOLD}The microphone ({device}) looks muted{RESET} — rms {level:.6f} over one second, "
+              f"which is digital silence rather than a quiet room. It opened, so the device exists.\n"
               f"  1. the physical mute on the headset (on many, flipping the boom up mutes it)\n"
               f"  2. Settings > Privacy & security > Microphone > 'Let desktop apps access your microphone'\n"
               f"  3. Settings > System > Sound > Input > device level is not 0\n"
-              f"  Watch it live with:  python -m backend.audio --meter\n"
-              f"Starting anyway — speak and see.\n")
+              f"Starting anyway — the meter below will show whether you are being heard.\n")
 
     vad = VoiceActivityDetector.from_config(cfg)
+
+    # A live meter on the prompt line: the difference between "it is not hearing me" and
+    # "it heard me and decided that was not speech" should never be a guess.
+    meter_state = {"last": 0.0, "peak": 0.0}
+
+    def show_level(level: float, prob: float) -> None:
+        meter_state["peak"] = max(meter_state["peak"] * 0.995, level)   # slow decay, so peaks linger
+        now = time.monotonic()
+        if now - meter_state["last"] < 0.08:                            # ~12 fps, not 31
+            return
+        meter_state["last"] = now
+        bars = int(min(1.0, meter_state["peak"] * 25) * 28)
+        hot = prob >= vad.active_threshold
+        colour = BOLD if hot else DIM
+        label = "HEARING YOU" if hot else "listening   "
+        print(f"\r{colour}{label}{RESET} |{('#' * bars):<28}| {DIM}{prob:.2f}{RESET}  ", end="", flush=True)
+
     loop = VoiceLoop(
         brain=brain, stt=stt, vad=vad, voice=voice, input_device=cfg.AUDIO_INPUT_DEVICE,
-        on_state=lambda s: print(f"\r{DIM}[{s}]{RESET}          ", end="", flush=True),
+        on_level=show_level,
+        on_state=lambda s: print(f"\r{DIM}[{s}]{RESET}" + " " * 50, end="", flush=True) if s != "listening" else None,
         on_transcript=lambda t: print(
             f"\r{BOLD}you:{RESET} {t.text}" if t
             else f"\r{DIM}(discarded: {t.reason} — {t.text[:40]}){RESET}"),

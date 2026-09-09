@@ -59,6 +59,8 @@ class VoiceLoop:
     on_chunk: Callable[[object, float], None] | None = None
     on_turn: Callable[[TurnTiming], None] | None = None
     on_bargein: Callable[[], None] | None = None
+    #: (level, speech probability) per frame — so the user can SEE that they are being heard.
+    on_level: Callable[[float, float], None] | None = None
 
     _frames: asyncio.Queue | None = field(default=None, init=False)
     _stop: threading.Event = field(default_factory=threading.Event, init=False)
@@ -79,7 +81,10 @@ class VoiceLoop:
                 frame = await self._frames.get()
                 if frame is None:
                     break
-                for event in self.vad.push(frame):
+                events = self.vad.push(frame)
+                if self.on_level is not None and not self._speaking:
+                    self.on_level(float(np.sqrt(np.mean(np.square(frame)))), self.vad.last_probability)
+                for event in events:
                     await self._handle(event)
         finally:
             self.stop()

@@ -146,10 +146,13 @@ def to_pcm16(frame: np.ndarray) -> bytes:
     return (np.clip(frame, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
 
 
-#: Below this RMS over a second of audio, the microphone is delivering digital silence — muted
-#: at the OS or hardware level, or blocked by privacy settings. Verified on a muted headset
-#: 2026-09-09: rms 0.00001, i.e. three orders of magnitude below a quiet room.
-SILENT_RMS = 0.0005
+#: Below this RMS, the microphone is delivering *digital silence* — muted at the OS or hardware
+#: level, or blocked by privacy settings. Measured 2026-09-09 on the same machine:
+#:   muted headset        mean rms 0.000015
+#:   live but idle room   mean rms 0.000150, peaks 0.003
+#: An order of magnitude separates them, so the bar sits between — set too high (0.0005) this
+#: cried wolf at a working microphone that simply had nobody talking into it.
+SILENT_RMS = 0.00005
 
 
 def input_level(device: str | int | None = None, seconds: float = 1.0) -> float:
