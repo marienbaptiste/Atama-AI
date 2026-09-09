@@ -274,6 +274,8 @@ async def _listen(cfg, brain, voice, stt) -> None:
     # A live meter on the prompt line: the difference between "it is not hearing me" and
     # "it heard me and decided that was not speech" should never be a guess.
     meter_state = {"last": 0.0, "peak": 0.0}
+    #: The meter needs the loop to show push-to-talk state, and the loop is built below.
+    loop_ref: dict = {"loop": None}
 
     def show_level(level: float, prob: float) -> None:
         meter_state["peak"] = max(meter_state["peak"], level)   # peak-hold between redraws
@@ -287,8 +289,13 @@ async def _listen(cfg, brain, voice, stt) -> None:
         # square root: a linear bar on a 0-1 range barely twitches and reads as "not hearing you".
         bars = int(min(1.0, (peak * 30) ** 0.5) * 28)
         hot = prob >= vad.active_threshold
-        colour = BOLD if hot else DIM
-        label = "HEARING YOU" if hot else "listening   "
+        live = loop_ref["loop"]
+        if live is not None and live.ptt:
+            label = "RECORDING   " if live._ptt_open else "SPACE to talk"
+            colour = BOLD if live._ptt_open else DIM
+        else:
+            label = "HEARING YOU" if hot else "listening   "
+            colour = BOLD if hot else DIM
         print(f"\r{colour}{label}{RESET} |{('#' * bars):<28}| {DIM}{prob:.2f}{RESET}  ", end="", flush=True)
 
     loop = VoiceLoop(
