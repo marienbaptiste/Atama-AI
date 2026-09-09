@@ -368,6 +368,35 @@ prompt size.
   + WS delivery" is 400 ms, so this is over already, before any WebSocket. Levers for M3: shorter first
   sentences, and starting synthesis on the first sentence while the rest still streams (already done).
 
+**2026-09-10 — M2c, first-chunk synthesis on the target box (speaker 53, CPU VOICEVOX):**
+
+| chars | synth | audio | RTF |
+|---|---|---|---|
+| 3 (はい。) | 245 ms | 544 ms | 0.45 |
+| 6 (こんにちは。) | 309 ms | 864 ms | 0.36 |
+| 8 | 358 ms | 1237 ms | 0.29 |
+| 10 | 431 ms | 1653 ms | 0.26 |
+| 14 | 523 ms | 2155 ms | 0.24 |
+| 19 | 682 ms | 3083 ms | 0.22 |
+
+Over 60 realistic tutor sentences x 5 emotions: **p50 493 ms, p90 622 ms, max 699 ms.**
+
+- **The 0.40 s stage budget is NOT met at p90.** Synthesis is linear at ~35 ms/char and the
+  levers are gone: ADR-005 forbids GPU VOICEVOX, and speaker 53 was already chosen as the
+  *cheapest* of the V0.3 shortlist (~615 ms/sentence, pinned then). Only a short first sentence
+  comes in under 400 ms — 3-8 characters does, 10+ does not.
+- **The N/N+1 overlap condition is met structurally, not by luck.** The real-time factor is
+  0.22-0.45, so synthesis of the next sentence always finishes well before the current one stops
+  playing, and the margin *widens* with length. The queue in `speaker.py` already works this way.
+- **But the §10 stage table predates push-to-talk.** With `TURN_MODE=ptt` the end-of-speech stage
+  is 0.00 s, not 0.50 s. Re-adding the measured numbers: 0 (VAD) + 0.34 (STT p90) + 1.60 (Claude)
+  + 0.62 (TTS p90) + 0.15 (playback) = **2.71 s**, inside the 3.0 s hard gate. The stage that
+  overspends is covered by the stage that no longer exists.
+- **Open for the user:** rebalance §10's stage table for ptt (moving the VAD allocation to TTS
+  would make M2c pass honestly), or leave the table and record M2c as missed-but-compensated.
+  Either way the hard number that matters — voice->voice p90 <= 3.0 s — is not yet measured
+  end to end; that is M3d.
+
 **2026-09-10 — M2d, measured against the live engine at every emotion speed:**
 
 `postPhonemeLength` **is** divided by `speedScale`, like `prePhonemeLength`. Controlled test at
