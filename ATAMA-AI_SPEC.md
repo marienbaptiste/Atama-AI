@@ -98,7 +98,7 @@ Ports: orchestrator `:8000`, VOICEVOX `:50021`, frontend dev server `:5173` (or 
 ## 3. TECH STACK (PINNED)
 
 - Python 3.11+, FastAPI, uvicorn, `websockets`/starlette WS, httpx, pydantic v2
-- `faster-whisper` (model `large-v3`, device=cuda, compute_type=`int8_float16`), `silero-vad`
+- `faster-whisper` (model `large-v3`, device=cuda, compute_type=`float16`), `silero-vad`
 - VOICEVOX engine via official Docker image (CPU build is fine; do not fight for GPU VOICEVOX)
 - Frontend: plain Vite + vanilla JS/TS (NO React needed), three.js, `@met4citizen/talkinghead` v1.7+
 - Avatar: user-supplied GLB from Avaturn or Ready Player Me (must include ARKit + Oculus viseme blendshapes — RPM exports do by default; document the required export params from TalkingHead README Appendix A)
@@ -442,7 +442,7 @@ Engineering this budget is a first-class requirement, not an afterthought:
 
 | component | allocation |
 |---|---|
-| faster-whisper `large-v3` @ `int8_float16` | ~3.5 GB |
+| faster-whisper `large-v3` @ `float16` | **3.8 GB measured** (V0.13) |
 | Silero VAD | < 0.1 GB |
 | CUDA context + fragmentation reserve | ~1 GB |
 | browser/three.js (shares GPU) | ~1 GB |
@@ -451,7 +451,7 @@ Engineering this budget is a first-class requirement, not an afterthought:
 Rules:
 - VOICEVOX stays CPU (Docker) — never move it to GPU.
 - `make doctor` and the `--profile` overlay report `nvidia-smi` memory use; log a warning above 10 GB.
-- If whisper `large-v3` int8_float16 ever exceeds ~4.5 GB on this driver stack, fall back to `medium` int8 (config flag, documented trade-off) rather than breach the cap.
+- If VRAM ever gets tight, step down in this order rather than breaching the cap: `large-v3` @ `int8_float16` (2.2 GB measured, costs accuracy — V0.13 heard 貯金 as ショッキング at int8 and got it right at fp16), then `medium`. Both are config flags, both are documented trade-offs.
 - The remaining ~6 GB headroom is deliberately reserved for a future MuseTalk/photoreal experiment — do not spend it.
 
 ## 11. CONFIG, SECRETS, HYGIENE

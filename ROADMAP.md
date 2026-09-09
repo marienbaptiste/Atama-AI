@@ -78,11 +78,29 @@ Throwaway scripts, deleted or moved into `backend/tests/fixtures/` when done. Ea
   `max_new_tokens` is a different latency profile from Whisper's. Do not start it without measuring
   that first.
 
+
+**2026-09-09 — quantisation (V0.13 addendum), replayed on the same six clips:**
+
+| | VRAM | median | utt_02 | utt_06 |
+|---|---|---|---|---|
+| `large-v3` @ `int8_float16` | 2 178 MiB | 290 ms | ここ**　**もらったことはなぜ? | **ショッキング**するのがいいよ |
+| `large-v3` @ `float16` | **3 880 MiB** | **287 ms** | ここ**を**もらったことはなぜ? | **貯金**をするのがいいよ |
+
+- **`float16` is now the default.** It is *not slower* — 287 ms against 290 ms, within noise —
+  because int8 buys nothing on a GPU that runs fp16 natively; the quantisation was paying accuracy
+  for a saving that never existed at inference time.
+- The transcripts are the point, not the milliseconds. At int8 the model heard ちょきん (貯金,
+  savings) as **ショッキング**, and dropped the particle を in utt_02. At fp16 both are right.
+- Cost: **+1 702 MiB**, to 3 880 MiB against the §10b 10 GB cap. Headroom we were not spending.
+- `int8_float16` stays as the documented step-down if VRAM ever gets tight, ahead of dropping to
+  `medium` — now with a measured accuracy price attached to it rather than an assumed free lunch.
+- Replay any future STT change against these clips before believing it:
+  `python -m backend.tools.stt_compare --replay --models large-v3@float16,large-v3@int8_float16`
+
 **The cheaper levers on `large-v3`, not yet tried, in order:**
 
-1. **Stop quantising.** We run `int8_float16`; V0.6 measured the model at **2 169 MiB against a
-   10 GB budget**. `float16` spends headroom we are not using, and unlike everything above it
-   cannot make accuracy worse.
+1. ~~**Stop quantising.**~~ **Done 2026-09-09 — `float16` is now the default.** See the addendum
+   below: better transcripts, identical latency, +1.7 GB of headroom we were not spending.
 2. **Prime the decoder with the student's own vocabulary.** `condition_on_previous_text=False` is
    deliberate (spec §9 — it stops hallucination loops), but it means every utterance is transcribed
    cold. The WaniKani unlocks and Bunpro grammar in the profile are exactly the words this student

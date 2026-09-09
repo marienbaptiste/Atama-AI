@@ -65,7 +65,7 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("EMOTION_SERIOUS", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
     # Speech detection
     Setting("WHISPER_MODEL", "large-v3", str, "speech", "faster-whisper model (fallback: medium)"),
-    Setting("WHISPER_COMPUTE_TYPE", "int8_float16", str, "speech", "CTranslate2 compute type"),
+    Setting("WHISPER_COMPUTE_TYPE", "float16", str, "speech", "CTranslate2 compute type. float16 is the default because int8 buys nothing on a GPU that does fp16 natively: measured 2026-09-09, same median latency (287 vs 290 ms) and better transcripts, for 1.7 GB of headroom we were not spending. int8_float16 is the fallback if VRAM ever gets tight"),
     Setting("VAD_SILENCE_MS", 600, int, "speech", "Silence that ends an utterance"),
     Setting("VAD_MIN_SPEECH_MS", 300, int, "speech", "Minimum speech before an utterance counts"),
     Setting("BARGEIN_THRESHOLD_FACTOR", 2.0, float, "speech", "VAD threshold multiplier while the avatar speaks"),

@@ -11,6 +11,9 @@ path, then run every candidate over the same audio and read the transcripts side
     # re-run on what you already recorded, e.g. after changing a threshold
     .venv/Scripts/python -m backend.tools.stt_compare --replay
 
+    # quantisation is a choice too: same model, two compute types
+    .venv/Scripts/python -m backend.tools.stt_compare --replay --models large-v3@int8_float16,large-v3@float16
+
     # try a different line-up
     .venv/Scripts/python -m backend.tools.stt_compare --replay --models large-v3,kotoba-tech/kotoba-whisper-v2.0-faster
 
@@ -100,10 +103,14 @@ def main() -> int:
     audio = {c.name: load_wav(c) for c in clips}
     results: dict[str, dict] = {}
 
-    for name in [m.strip() for m in args.models.split(",") if m.strip()]:
-        print(f"\n=== {name} ===")
+    for spec in [m.strip() for m in args.models.split(",") if m.strip()]:
+        # `large-v3@float16` — quantisation is as much a choice as the model is, and comparing
+        # two of them is the same experiment, so it takes the same harness.
+        name, _, compute = spec.partition("@")
+        compute = compute or str(cfg.WHISPER_COMPUTE_TYPE)
+        print(f"\n=== {name} @ {compute} ===")
         baseline = vram_mib()
-        stt = SpeechToText(model_name=name, compute_type=str(cfg.WHISPER_COMPUTE_TYPE))
+        stt = SpeechToText(model_name=name, compute_type=compute)
         try:
             stt.load()
         except Exception as exc:                       # noqa: BLE001 — report, try the next model
@@ -122,7 +129,7 @@ def main() -> int:
             per_clip[clip] = {"text": t.text, "accepted": bool(t), "reason": t.reason,
                               "ms": round(ms, 1), "no_speech_prob": round(t.no_speech_prob, 3),
                               "avg_logprob": round(t.avg_logprob, 3)}
-        results[name] = {"vram_mib": round(held), "load_ms": round(stt.load_ms),
+        results[spec] = {"vram_mib": round(held), "load_ms": round(stt.load_ms),
                          "median_ms": round(float(np.median([c["ms"] for c in per_clip.values()]))),
                          "clips": per_clip}
         del stt

@@ -139,7 +139,7 @@ choice is in [ADR.md](ADR.md).
 
 **Backend** — Python 3.11+, FastAPI, uvicorn, starlette WebSockets, httpx, pydantic v2.
 
-**Speech** — `faster-whisper` (`large-v3`, CUDA, `int8_float16`), `silero-vad`.
+**Speech** — `faster-whisper` (`large-v3`, CUDA, `float16`), `silero-vad`.
 
 **TTS** — VOICEVOX engine via the official Docker image. CPU build; it stays on CPU by design.
 
@@ -183,7 +183,7 @@ rolling p50/p90 go into the session log.
 
 | Component                                  | Allocation  |
 |--------------------------------------------|-------------|
-| faster-whisper `large-v3` @ `int8_float16` | ~3.5 GB     |
+| faster-whisper `large-v3` @ `float16` | **3.8 GB measured** |
 | Silero VAD                                 | < 0.1 GB    |
 | CUDA context + fragmentation reserve       | ~1 GB       |
 | Browser / three.js (shares the GPU)        | ~1 GB       |
@@ -191,7 +191,7 @@ rolling p50/p90 go into the session log.
 
 - VOICEVOX stays on CPU. Always.
 - `make doctor` and the `--profile` overlay report `nvidia-smi` usage and warn above 10 GB.
-- If `large-v3` int8_float16 ever exceeds ~4.5 GB on your driver stack, fall back to `medium`
+- If VRAM gets tight, set `WHISPER_COMPUTE_TYPE=int8_float16` (2.2 GB, costs accuracy) before dropping to `medium`
   int8 via settings rather than breaching the cap.
 - The remaining ~6 GB is deliberately reserved for a future photoreal (MuseTalk) experiment.
   Don't spend it.
