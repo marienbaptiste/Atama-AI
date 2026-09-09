@@ -77,8 +77,17 @@ class SpeechQueue:
         if self._queue is not None and not self._cancelled:
             await self._queue.join()
 
+    def resume(self) -> None:
+        """Re-arm after a barge-in. MUST be called at the start of every turn.
+
+        `cancel()` latches `_cancelled`, and only `start()` ever cleared it — so one barge-in
+        left say() dropping every later sentence and drain() returning instantly, muting the
+        tutor for the rest of the session with no error anywhere (2026-09-10).
+        """
+        self._cancelled = False
+
     def cancel(self) -> None:
-        """Barge-in: stop the current sentence and drop the rest."""
+        """Barge-in: stop the current sentence and drop the rest. Latches until resume()."""
         self._cancelled = True
         if self._player is not None:
             self._player.cancel()

@@ -181,6 +181,7 @@ class VoiceLoop:
             return
 
         chunker = SentenceChunker()
+        self.voice.resume()          # clear any latched barge-in, or this turn is silent
         self._speaking = True
         self.vad.enter(Mode.SPEAKING)
 

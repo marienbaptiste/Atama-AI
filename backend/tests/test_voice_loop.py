@@ -40,6 +40,12 @@ class FakeVoice:
         self.said: list[Chunk] = []
         self.cancelled = 0
         self.drained = 0
+        self.resumed = 0
+        self.armed = True
+
+    def resume(self):
+        self.resumed += 1
+        self.armed = True
 
     async def say(self, chunk):
         self.said.append(chunk)
@@ -49,6 +55,7 @@ class FakeVoice:
 
     def cancel(self):
         self.cancelled += 1
+        self.armed = False        # latches, exactly like the real SpeechQueue
 
 
 class FakeVad:
@@ -176,6 +183,34 @@ def test_a_bargein_cancels_the_running_turn_and_marks_it():
         # Recorded, and marked: an interrupted turn was not slow, so it must not sit in the p90.
         assert loop.timings[-1].barged_in is True
         assert loop._speaking is False and vad.mode is Mode.LISTENING
+
+    asyncio.run(scenario())
+
+
+def test_the_turn_after_a_bargein_is_not_silent():
+    """cancel() latches. Nothing but start() ever cleared it, so ONE barge-in muted the tutor
+    for the rest of the session: say() dropped every sentence and drain() returned instantly,
+    with no error raised anywhere to say so (2026-09-10)."""
+    async def scenario():
+        gate = asyncio.Event()
+        brain, voice, vad = SlowBrain(gate), FakeVoice(), FakeVad()
+        loop = VoiceLoop(brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice)
+        end = VadEvent(EventKind.SPEECH_END, 0.0, audio=np.zeros(16000, dtype=np.float32))
+
+        await loop._handle(end)
+        await asyncio.sleep(0)
+        loop._speaking = True
+        await loop._handle(VadEvent(EventKind.SPEECH_START, 0.0))   # barge in
+        with pytest.raises(asyncio.CancelledError):
+            await loop._turn_task
+        assert voice.armed is False, "the queue should be latched shut right after a barge-in"
+
+        # The next thing the student says must produce a speaking tutor again.
+        gate.set()
+        await loop._handle(end)
+        await loop._turn_task
+        assert voice.armed is True, "the turn after a barge-in re-arms the queue"
+        assert voice.resumed >= 1
 
     asyncio.run(scenario())
 
