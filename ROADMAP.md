@@ -309,8 +309,14 @@ keeps bare names.
 
 **Measured (sonnet, `--effort high`, prompt 1 739 tokens: soul 345 + profile 594):** first
 sentence 1.8–2.4 s, ttft 1.6–2.2 s, MCP tool call 10 ms. The Claude stage budget is 1.60 s
-(§10) — currently over, with the levers (`--effort`, model, prompt size) untouched. Latency is
+(§10) — over, and that measurement is what moved the `--effort` default. Latency is
 M3's gate, not M1's; the numbers are recorded here so the M3 work starts from data.
+
+**2026-09-09 — first lever pulled: `--effort` default high → medium.** The A/B above is the
+whole argument: medium is the fastest of the three on *both* numbers (2.14 s between turns
+vs high's 3.75 s; 5.8 s opening vs 19.2 s), so `low` is not a further step down — it is
+slower than medium at less effort, and buys nothing. Remaining levers for M3: model and
+prompt size.
 
 **2026-09-09 — VOICEVOX 0.25.2 (V0.3), live:**
 

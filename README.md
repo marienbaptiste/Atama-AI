@@ -278,7 +278,7 @@ root, git-ignored, mode `0600`). There is no `.env` to edit.
 | Account & tokens   | WaniKani token, Bunpro API key, Claude OAuth token — masked, with a **Test** button each |
 | Voice              | VOICEVOX speaker/style, speed, intonation; the emotion → voice table         |
 | Speech detection   | Whisper model, VAD silence window, barge-in sensitivity                      |
-| Model              | Claude model, fallback model, per-turn timeout                               |
+| Model              | Claude model, effort level, fallback model, per-turn timeout                 |
 | Display            | Subtitles (JP / off), status heartbeat                                       |
 | Advanced           | Ports/bind, cache & log dirs, latency/VRAM warning thresholds                |
 
