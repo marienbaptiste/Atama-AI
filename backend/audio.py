@@ -194,6 +194,9 @@ class Player:
     #: VOICEVOX synthesises at 24 kHz mono (verified 0.25.2).
     DEFAULT_RATE = 24000
     BLOCK = 1024
+    #: Silence written while idle, small enough that a sentence never waits long for
+    #: the lock (~11 ms at 24 kHz).
+    KEEPALIVE_BLOCK = 256
 
     def __init__(self, device: str | int | None = None, samplerate: int = DEFAULT_RATE):
         self._sd = _sd()
@@ -202,11 +205,15 @@ class Player:
         self._stream = None
         self._cancel = threading.Event()
         self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._keeper: threading.Thread | None = None
 
     def _ensure(self, rate: int) -> None:
         if self._stream is not None and self._rate == rate:
             return
-        self.close()
+        # NOT close(): this runs with the lock held, and close() joins the
+        # keep-alive thread, which is itself waiting for that lock.
+        self._close_stream()
         self._rate = rate
         self._stream = self._sd.OutputStream(samplerate=rate, channels=1, dtype="float32",
                                              device=self._device, blocksize=self.BLOCK)
@@ -216,15 +223,37 @@ class Player:
         self._stream.write(np.zeros(self.BLOCK * 2, dtype=np.float32))
 
     def open(self, rate: int | None = None) -> None:
-        """Open and prime the stream NOW, before there is anything to say.
+        """Open the stream NOW and keep it fed, so the first sentence is not clipped.
 
-        `_ensure` alone still opened it on the first `play()`, so the very first sentence paid
-        the device's ~100 ms spin-up and lost its opening syllable — the same clipping the
-        per-sentence stream caused, just moved to sentence one (reported 2026-09-09). Called at
-        startup so the stream has been running for seconds by the time the tutor speaks.
+        Opening early was not enough on its own. The stream sat with nothing written to it for
+        the ~10 s the brain spends generating, underran, and the device went idle — so the first
+        real write paid the spin-up all over again and ate こ off こんにちは (2026-09-10). With
+        VOICEVOX_PRE_PHONEME at 0.0 there is only ~19 ms of lead-in to absorb that.
+
+        A keep-alive thread writes silence whenever nothing else is playing, which holds the
+        device open and also covers the gaps between sentences.
         """
         with self._lock:
             self._ensure(rate or self._rate)
+        if self._keeper is None:
+            self._stop.clear()
+            self._keeper = threading.Thread(target=self._keepalive, name="player-keepalive",
+                                            daemon=True)
+            self._keeper.start()
+
+    def _keepalive(self) -> None:
+        """Write silence while idle. Blocking writes pace this at real time by themselves."""
+        silence = np.zeros(self.KEEPALIVE_BLOCK, dtype=np.float32)
+        while not self._stop.is_set():
+            with self._lock:
+                stream = self._stream
+                if stream is not None:
+                    try:
+                        stream.write(silence)
+                        continue
+                    except Exception:  # noqa: BLE001 - a closing stream must not raise here
+                        return
+            self._stop.wait(0.05)   # no stream yet: idle politely rather than spinning
 
     def play(self, wav_bytes: bytes) -> float:
         """Play a WAV through the open stream. Returns seconds actually played."""
@@ -245,7 +274,8 @@ class Player:
         """Stop the sentence in flight. Safe from another thread — that is the point."""
         self._cancel.set()
 
-    def close(self) -> None:
+    def _close_stream(self) -> None:
+        """Tear down just the stream. Caller holds the lock."""
         stream, self._stream = self._stream, None
         if stream is not None:
             try:
@@ -253,6 +283,16 @@ class Player:
                 stream.close()
             except Exception:  # noqa: BLE001 - closing audio must never raise on shutdown
                 pass
+
+    def close(self) -> None:
+        # Stop the keeper FIRST and outside the lock, or the join waits on a thread
+        # that is blocked acquiring it.
+        self._stop.set()
+        keeper, self._keeper = self._keeper, None
+        if keeper is not None and keeper.is_alive():
+            keeper.join(timeout=1.0)
+        with self._lock:
+            self._close_stream()
 
 
 def capture(device: str | int | None = None, frame_samples: int = FRAME_SAMPLES) -> Iterator[np.ndarray]:
