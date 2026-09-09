@@ -29,7 +29,12 @@ _VOICE_DECLARATION = re.compile(r"<!--\s*voice:\s*(\d+)\s*-->")
 SOUL_MAX_TOKENS = 400
 PROFILE_MAX_TOKENS = 600
 #: Whole assembled prompt. Template is ~700 tokens, so this leaves room for both sections.
-TOTAL_MAX_TOKENS = 2000
+#: Ceiling for template + both sections. Raised 2000 -> 2100 on 2026-09-09: the explicit
+#: correction policy and the elicitation rule grew the static template to ~1050 tokens, and at
+#: 2000 a fully-grown student profile would have overflowed. Prompt size is a §10 latency lever,
+#: so this is a deliberate spend, not headroom to fill — test_worst_case_sections_fit_the_total
+#: keeps it honest.
+TOTAL_MAX_TOKENS = 2100
 
 NEUTRAL_SOUL = "あなたは経験のある、あたたかい日本語の先生です。"
 

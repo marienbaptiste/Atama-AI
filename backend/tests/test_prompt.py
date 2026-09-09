@@ -14,6 +14,25 @@ def test_real_template_and_soul_assemble_within_budget():
     assert p.truncated == []
 
 
+def test_worst_case_sections_fit_the_total():
+    """The real guard: a maxed soul AND a maxed profile must still fit.
+
+    The budget test above uses a two-line profile, so it never noticed the static template
+    growing. A student's profile grows as they study — the overflow would have arrived
+    silently, months later, as a truncated profile (2026-09-09).
+    """
+    nl = chr(10)
+    soul = nl.join(["あいうえおかきくけこ" * 5] * 40)
+    profile = nl.join(["語彙: " + "漢字" * 40] * 40)
+    p = prompt.build(profile, soul=soul)
+    # truncation lands on a line boundary, so "at the cap" means within a line of it
+    assert prompt.SOUL_MAX_TOKENS - 60 <= p.sections["soul"] <= prompt.SOUL_MAX_TOKENS
+    assert prompt.PROFILE_MAX_TOKENS - 60 <= p.sections["student_profile"] <= prompt.PROFILE_MAX_TOKENS
+    assert set(p.truncated) == {"soul", "student_profile"}
+    assert p.tokens <= prompt.TOTAL_MAX_TOKENS, (
+        f"template is {p.tokens - sum(p.sections.values())} tokens; trim it or raise the total")
+
+
 def test_hard_output_rules_come_after_the_persona():
     """Position matters: the voice-pipeline rules must win over anything the soul file says."""
     text = prompt.build("profile").text
