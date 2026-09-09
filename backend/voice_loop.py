@@ -10,6 +10,7 @@ hears, this decides what it means given what the tutor is doing.
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -76,6 +77,8 @@ class VoiceLoop:
     _turn_task: asyncio.Task | None = field(default=None, init=False)
     #: Frames dropped because the loop fell behind. Should stay 0; a rising count is a real signal.
     dropped_frames: int = field(default=0, init=False)
+    frames_seen: int = field(default=0, init=False)
+    capture_error: str = field(default="", init=False)
     timings: list[TurnTiming] = field(default_factory=list, init=False)
 
     # ------------------------------------------------------------------ public
@@ -86,18 +89,43 @@ class VoiceLoop:
         self._mic = threading.Thread(target=self._capture, args=(loop,), daemon=True)
         self._mic.start()
         self._state("listening")
+        beat = asyncio.create_task(self._heartbeat()) if os.environ.get("ATAMA_DEBUG_LOOP") else None
         try:
             while not self._stop.is_set():
                 frame = await self._frames.get()
                 if frame is None:
                     break
+                self.frames_seen += 1
                 events = self.vad.push(frame)
                 if self.on_level is not None and not self._speaking:
                     self.on_level(float(np.sqrt(np.mean(np.square(frame)))), self.vad.last_probability)
                 for event in events:
                     await self._handle(event)
         finally:
+            if beat is not None:
+                beat.cancel()
             self.stop()
+
+    async def _heartbeat(self) -> None:
+        """ATAMA_DEBUG_LOOP=1: say what the loop is doing, even while the tutor is speaking.
+
+        The normal meter is suppressed during `_speaking`, so a loop wedged mid-turn looks
+        exactly like a dead microphone. This reports regardless.
+        """
+        last = -1
+        while True:
+            await asyncio.sleep(2.0)
+            task = self._turn_task
+            state = ("none" if task is None else
+                     "running" if not task.done() else
+                     f"done({'cancelled' if task.cancelled() else 'ok'})")
+            moved = self.frames_seen - last
+            last = self.frames_seen
+            print(f"\n[loop] frames={self.frames_seen} (+{moved}/2s, expect ~62) "
+                  f"dropped={self.dropped_frames} qsize={self._frames.qsize() if self._frames else -1} "
+                  f"mode={self.vad.mode.name} speaking={self._speaking} turn={state} "
+                  f"mic_alive={self._mic.is_alive() if self._mic else False} "
+                  f"err={self.capture_error or '-'}", flush=True)
 
     def stop(self) -> None:
         self._stop.set()
@@ -115,8 +143,14 @@ class VoiceLoop:
                     loop.call_soon_threadsafe(self._offer, frame)
                 except RuntimeError:
                     break         # loop gone: the conversation is over, stop reading the mic
-        except audio_mod.AudioUnavailable:
-            pass
+        except audio_mod.AudioUnavailable as exc:
+            self.capture_error = f"{type(exc).__name__}: {exc}"
+        except BaseException as exc:  # noqa: BLE001
+            # PortAudioError is NOT AudioUnavailable. Catching only the latter meant any other
+            # failure killed this thread with a traceback nobody sees, and the loop then sat
+            # forever waiting on frames that would never come — indistinguishable from a mic
+            # that is simply quiet (2026-09-10).
+            self.capture_error = f"{type(exc).__name__}: {exc}"
         finally:
             try:
                 loop.call_soon_threadsafe(self._frames.put_nowait, None)  # type: ignore[union-attr]
