@@ -222,6 +222,7 @@ git clone <this-repo> atama-ai
 cd atama-ai
 
 docker compose up -d          # VOICEVOX on 127.0.0.1:50021
+make avatar                   # fetch the default avatar (see the licence note below)
 make doctor                   # verify everything before you waste time
 make run                      # orchestrator :8000 + frontend :5173
 ```
@@ -230,9 +231,9 @@ Then open `http://localhost:5173`. On first run the app opens on its **settings 
 your tokens, press each **Test** button, and the conversation view unlocks once Claude tests
 green. No `.env` needed.
 
-Then get an avatar — see below — allow mic access, and start talking.
+Allow mic access, and start talking.
 
-### The avatar (you have to supply this)
+### The avatar (fetched, not committed)
 
 > **The default avatar is non-commercial. If you are shipping anything commercial, replace it
 > first — and note that making your own at Ready Player Me does *not* lift the restriction.**
