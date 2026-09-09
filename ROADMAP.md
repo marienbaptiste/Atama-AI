@@ -599,6 +599,14 @@ events.
 - **Integrate** — Upstream of STT; also the barge-in trigger (subsystem 8) and the listening
   reactions (subsystem 9).have you planned the conne
 - **Gate M2a** — No false end-of-turn in 3 minutes of natural speech with normal pauses.
+  **DEFERRED 2026-09-10, user directive.** `TURN_MODE=ptt` is now the default and the key decides
+  when a turn ends, so this gate measures the fallback mode rather than the one in use. It does
+  not block M2. Finish it near the end, when the look and feel is settled and the silence window
+  can be tuned against real sessions instead of a staged three minutes.
+  Note what ptt also removes: the 900 ms window leaves the §10 budget entirely (a third of the
+  3.0 s), and gate **M3b**'s "zero self-interruptions on speakers" is close to vacuous when the
+  tutor's own voice cannot end a turn. Neither gate is deleted — both are re-measured if `vad`
+  ever becomes the default again.
 
 ### 4. STT — `backend/stt.py` — **M2**
 

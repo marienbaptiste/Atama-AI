@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime as dt
+import threading
 import sys
 import time
 
@@ -193,6 +194,38 @@ async def _load_stt(cfg):
     return stt
 
 
+def _ptt_keys(loop, aloop):
+    """SPACE opens and closes the turn, pumped from a daemon thread.
+
+    A terminal cannot see key RELEASE, only presses, so this is a toggle rather than a true
+    hold. In the browser (M3) it becomes a real hold on mousedown/mouseup — the loop API is the
+    same either way, which is why ptt_begin/ptt_end are two calls and not one.
+    """
+    stop = threading.Event()
+
+    def toggle():
+        loop.ptt_end() if loop._ptt_open else loop.ptt_begin()
+
+    def pump():
+        try:
+            import msvcrt
+        except ImportError:                      # POSIX: no raw keys, ENTER toggles instead
+            while not stop.is_set():
+                if sys.stdin.readline() == "":
+                    return
+                aloop.call_soon_threadsafe(toggle)
+            return
+        while not stop.is_set():
+            if msvcrt.kbhit():
+                if msvcrt.getch() in (b" ", b"\r"):
+                    aloop.call_soon_threadsafe(toggle)
+            else:
+                time.sleep(0.01)
+
+    threading.Thread(target=pump, name="ptt-keys", daemon=True).start()
+    return stop
+
+
 async def _check_microphone(cfg) -> bool:
     """Prove the mic delivers audio BEFORE the conversation starts. Returns False to abort.
 
@@ -259,6 +292,7 @@ async def _listen(cfg, brain, voice, stt) -> None:
         print(f"\r{colour}{label}{RESET} |{('#' * bars):<28}| {DIM}{prob:.2f}{RESET}  ", end="", flush=True)
 
     loop = VoiceLoop(
+        turn_mode=cfg.TURN_MODE,
         brain=brain, stt=stt, vad=vad, voice=voice, input_device=cfg.AUDIO_INPUT_DEVICE,
         on_level=show_level,
         on_state=lambda s: print(f"\r{DIM}[{s}]{RESET}" + " " * 50, end="", flush=True) if s != "listening" else None,
@@ -270,8 +304,15 @@ async def _listen(cfg, brain, voice, stt) -> None:
         on_turn=lambda t: print(f"  {DIM}stt {t.stt_ms:.0f}ms · first sentence {t.first_chunk_ms:.0f}ms · "
                                 f"voice→voice {t.voice_to_voice_ms():.0f}ms · turn {t.total_ms:.0f}ms{RESET}\n"),
     )
+    loop_ref["loop"] = loop
     device = cfg.AUDIO_INPUT_DEVICE or "system default"
-    print(f"\n{BOLD}Listening on {device}.{RESET} Speak Japanese. Ctrl+C to stop.\n")
+    keys = _ptt_keys(loop, asyncio.get_running_loop()) if loop.ptt else None
+    if loop.ptt:
+        print(f"\n{BOLD}Push to talk on {device}.{RESET} {BOLD}SPACE{RESET} to start speaking, "
+              f"{BOLD}SPACE{RESET} again when done. Press while he is talking to interrupt. "
+              f"Ctrl+C to stop.\n")
+    else:
+        print(f"\n{BOLD}Listening on {device}.{RESET} Speak Japanese. Ctrl+C to stop.\n")
     try:
         await loop.run()
     except KeyboardInterrupt:

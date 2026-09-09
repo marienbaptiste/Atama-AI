@@ -19,6 +19,7 @@ from typing import Callable
 import numpy as np
 
 from backend import audio as audio_mod
+from backend.audio import SAMPLE_RATE
 from backend.brain import BrainError, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome, TurnComplete
 from backend.chunker import SentenceChunker
 from backend.speaker import SpeechQueue
@@ -58,6 +59,10 @@ class VoiceLoop:
     vad: VoiceActivityDetector
     voice: SpeechQueue
     input_device: str | int | None = None
+    #: "vad" — silence ends the turn. "ptt" — you do, by releasing the key (spec §9).
+    #: Under ptt the VAD still runs: it drives the level meter and barge-in detection. It simply
+    #: stops deciding when a turn ends, which is the only judgement it gets wrong.
+    turn_mode: str = "ptt"
     on_state: Callable[[str], None] | None = None
     on_transcript: Callable[[Transcript], None] | None = None
     on_chunk: Callable[[object, float], None] | None = None
@@ -79,6 +84,8 @@ class VoiceLoop:
     dropped_frames: int = field(default=0, init=False)
     frames_seen: int = field(default=0, init=False)
     capture_error: str = field(default="", init=False)
+    _ptt_open: bool = field(default=False, init=False)
+    _ptt_buf: list = field(default_factory=list, init=False)
     timings: list[TurnTiming] = field(default_factory=list, init=False)
 
     # ------------------------------------------------------------------ public
@@ -96,6 +103,8 @@ class VoiceLoop:
                 if frame is None:
                     break
                 self.frames_seen += 1
+                if self._ptt_open:
+                    self._ptt_buf.append(frame)
                 events = self.vad.push(frame)
                 if self.on_level is not None and not self._speaking:
                     self.on_level(float(np.sqrt(np.mean(np.square(frame)))), self.vad.last_probability)
@@ -126,6 +135,47 @@ class VoiceLoop:
                   f"mode={self.vad.mode.name} speaking={self._speaking} turn={state} "
                   f"mic_alive={self._mic.is_alive() if self._mic else False} "
                   f"err={self.capture_error or '-'}", flush=True)
+
+    # ------------------------------------------------------------- push to talk
+    @property
+    def ptt(self) -> bool:
+        return self.turn_mode == "ptt"
+
+    def ptt_begin(self) -> None:
+        """Key down. Start collecting audio; interrupt the tutor if he is talking.
+
+        Pressing while he speaks is unambiguous — nobody holds a talk key by accident — so this
+        is barge-in without any threshold guesswork, which is the whole reason ptt is steadier
+        than vad on speakers.
+        """
+        if not self.ptt or self._ptt_open:
+            return
+        if self._speaking:
+            self.voice.cancel()
+            if self._turn_task is not None and not self._turn_task.done():
+                self._turn_task.cancel()
+            self._speaking = False
+            self.vad.enter(Mode.LISTENING)
+            if self.on_bargein is not None:
+                self.on_bargein()
+        self._ptt_buf = []
+        self._ptt_open = True
+        self._state("listening")
+
+    def ptt_end(self) -> None:
+        """Key up. Everything collected becomes the turn — no silence window, no guessing."""
+        if not self.ptt or not self._ptt_open:
+            return
+        self._ptt_open = False
+        frames, self._ptt_buf = self._ptt_buf, []
+        if not frames:
+            return
+        audio = np.concatenate(frames)
+        if len(audio) < self.vad.min_speech_ms * SAMPLE_RATE // 1000:
+            return                      # a stray tap, not an utterance
+        if self._turn_task is not None and not self._turn_task.done():
+            return                      # one turn at a time, same rule as vad mode
+        self._turn_task = asyncio.get_running_loop().create_task(self._turn(audio))
 
     def stop(self) -> None:
         self._stop.set()
@@ -180,7 +230,7 @@ class VoiceLoop:
             self.dropped_frames += 1
 
     async def _handle(self, event) -> None:
-        if event.kind is EventKind.SPEECH_START and self._speaking:
+        if event.kind is EventKind.SPEECH_START and self._speaking and not self.ptt:
             # The student is talking over the avatar: stop, drop the rest, take the new turn.
             self.voice.cancel()
             if self._turn_task is not None and not self._turn_task.done():
@@ -195,6 +245,8 @@ class VoiceLoop:
             if self.on_bargein is not None:
                 self.on_bargein()
         elif event.kind is EventKind.SPEECH_END and event.audio is not None:
+            if self.ptt:
+                return               # the key ends turns here, not the silence window
             if self._turn_task is not None and not self._turn_task.done():
                 return                       # a turn is already in flight; one at a time
             self._turn_task = asyncio.create_task(self._turn(event.audio))

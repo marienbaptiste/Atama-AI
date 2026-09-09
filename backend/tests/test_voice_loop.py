@@ -62,6 +62,7 @@ class FakeVad:
     def __init__(self):
         self.mode = Mode.LISTENING
         self.entered: list[Mode] = []
+        self.min_speech_ms = 300
 
     def enter(self, mode):
         self.mode = mode
@@ -74,7 +75,7 @@ class FakeVad:
 def loop_with(transcript: Transcript, reply="はい。そうですね。"):
     brain, voice, vad = FakeBrain(reply), FakeVoice(), FakeVad()
     states: list[str] = []
-    loop = VoiceLoop(brain=brain, stt=FakeStt(transcript), vad=vad, voice=voice,
+    loop = VoiceLoop(turn_mode="vad", brain=brain, stt=FakeStt(transcript), vad=vad, voice=voice,
                      on_state=states.append)
     return loop, brain, voice, vad, states
 
@@ -156,7 +157,7 @@ def test_handling_an_utterance_does_not_block_on_the_turn():
     async def scenario():
         gate = asyncio.Event()
         brain, voice, vad = SlowBrain(gate), FakeVoice(), FakeVad()
-        loop = VoiceLoop(brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice)
+        loop = VoiceLoop(turn_mode="vad", brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice)
         await asyncio.wait_for(
             loop._handle(VadEvent(EventKind.SPEECH_END, 0.0, audio=np.zeros(16000, dtype=np.float32))),
             timeout=1.0)                # returns immediately, while the brain is still stuck
@@ -172,7 +173,7 @@ def test_a_bargein_cancels_the_running_turn_and_marks_it():
     async def scenario():
         gate = asyncio.Event()
         brain, voice, vad = SlowBrain(gate), FakeVoice(), FakeVad()
-        loop = VoiceLoop(brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice)
+        loop = VoiceLoop(turn_mode="vad", brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice)
         await loop._handle(VadEvent(EventKind.SPEECH_END, 0.0, audio=np.zeros(16000, dtype=np.float32)))
         await asyncio.sleep(0)          # let the task actually start
         loop._speaking = True
@@ -194,7 +195,7 @@ def test_the_turn_after_a_bargein_is_not_silent():
     async def scenario():
         gate = asyncio.Event()
         brain, voice, vad = SlowBrain(gate), FakeVoice(), FakeVad()
-        loop = VoiceLoop(brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice)
+        loop = VoiceLoop(turn_mode="vad", brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice)
         end = VadEvent(EventKind.SPEECH_END, 0.0, audio=np.zeros(16000, dtype=np.float32))
 
         await loop._handle(end)
@@ -219,7 +220,7 @@ def test_a_second_utterance_during_a_turn_is_ignored_not_stacked():
     async def scenario():
         gate = asyncio.Event()
         brain, voice, vad = SlowBrain(gate), FakeVoice(), FakeVad()
-        loop = VoiceLoop(brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice)
+        loop = VoiceLoop(turn_mode="vad", brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice)
         end = VadEvent(EventKind.SPEECH_END, 0.0, audio=np.zeros(16000, dtype=np.float32))
         await loop._handle(end)
         await asyncio.sleep(0)          # let the task actually start
@@ -244,4 +245,74 @@ def test_a_full_frame_queue_drops_the_oldest_frame_and_never_raises():
         newest = [loop._frames.get_nowait()[0] for _ in range(2)]
         assert newest == [3.0, 4.0]                          # the stale audio is what got dropped
 
+    asyncio.run(scenario())
+
+# ------------------------------------------------------------- push to talk
+def ptt_loop(transcript=None, reply="はい。"):
+    brain, voice, vad = FakeBrain(reply), FakeVoice(), FakeVad()
+    loop = VoiceLoop(turn_mode="ptt", brain=brain, stt=FakeStt(transcript or accepted()),
+                     vad=vad, voice=voice)
+    return loop, brain, voice, vad
+
+
+def speech(seconds=1.0):
+    return [np.zeros(512, dtype=np.float32) for _ in range(int(seconds * 16000 / 512))]
+
+
+def test_in_ptt_mode_the_silence_window_does_not_end_a_turn():
+    """The whole point: the VAD stops deciding when the student has finished (spec §9)."""
+    async def scenario():
+        loop, brain, _, _ = ptt_loop()
+        await loop._handle(VadEvent(EventKind.SPEECH_END, 0.0,
+                                    audio=np.zeros(16000, dtype=np.float32)))
+        assert loop._turn_task is None, "vad ended a turn while the key was in charge"
+        assert brain.turns == []
+    asyncio.run(scenario())
+
+
+def test_releasing_the_key_turns_the_buffered_audio_into_a_turn():
+    async def scenario():
+        loop, brain, _, _ = ptt_loop()
+        loop.ptt_begin()
+        loop._ptt_buf.extend(speech(1.0))
+        loop.ptt_end()
+        assert loop._turn_task is not None
+        await loop._turn_task
+        assert brain.turns == ["こんにちは。"]
+    asyncio.run(scenario())
+
+
+def test_a_stray_tap_is_not_an_utterance():
+    """Shorter than the VAD's own minimum speech length: a bumped key, not a sentence."""
+    async def scenario():
+        loop, brain, _, _ = ptt_loop()
+        loop.ptt_begin()
+        loop._ptt_buf.extend(speech(0.05))
+        loop.ptt_end()
+        assert loop._turn_task is None and brain.turns == []
+    asyncio.run(scenario())
+
+
+def test_pressing_while_the_tutor_speaks_is_an_unambiguous_bargein():
+    """No threshold guesswork: nobody holds a talk key by accident. This is why ptt is steadier
+    than vad on laptop speakers, where the tutor's own voice can trigger the detector."""
+    async def scenario():
+        gate = asyncio.Event()
+        brain, voice, vad = SlowBrain(gate), FakeVoice(), FakeVad()
+        loop = VoiceLoop(turn_mode="ptt", brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice)
+        loop.ptt_begin(); loop._ptt_buf.extend(speech(1.0)); loop.ptt_end()
+        await asyncio.sleep(0)
+        loop._speaking = True
+
+        loop.ptt_begin()                      # interrupt him
+        assert voice.cancelled == 1
+        with pytest.raises(asyncio.CancelledError):
+            await loop._turn_task
+        assert loop._speaking is False and vad.mode is Mode.LISTENING
+
+        # and the next release still produces a speaking tutor
+        gate.set()
+        loop._ptt_buf.extend(speech(1.0)); loop.ptt_end()
+        await loop._turn_task
+        assert voice.armed is True
     asyncio.run(scenario())
