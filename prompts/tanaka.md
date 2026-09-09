@@ -1,5 +1,9 @@
-<!-- voice: 53 -->
-<!-- たなか先生 — male. Voice: 麒ヶ島宗麟 (VOICEVOX style 53), a lower, older-sounding voice.
+<!-- voice: 100 -->
+<!-- たなか先生 — male. Voice: 黒沢冴白 (VOICEVOX style 100), a low, steady, unhurried voice.
+     Was 麒ヶ島宗麟 (53) until 2026-09-09. Same register, but 53's model wobbles: measured F0
+     jitter 33.4 cents against 黒沢冴白's 20.2, and spectral flux 0.0724 against 0.0456, which is
+     audible as an unsteady voice between phonemes. 53 is cheaper to synthesise (~530 ms/sentence
+     vs ~840); the steadiness was judged worth the 260 ms (ROADMAP V0.3).
      A different person from みなみ先生, not the same character in another voice: he came to
      teaching late, explains by example rather than by rule, and is dry rather than warm.
      This file is his character, not code (ADR-026). Edit it freely.

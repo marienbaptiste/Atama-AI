@@ -267,6 +267,39 @@ M3's gate, not M1's; the numbers are recorded here so the M3 work starts from da
   + WS delivery" is 400 ms, so this is over already, before any WebSocket. Levers for M3: shorter first
   sentences, and starting synthesis on the first sentence while the rest still streams (already done).
 
+**2026-09-09 — voice stability, measured (V0.3 follow-up):**
+
+The user reported たなか's voice as "unstable between phonemes". Measured rather than guessed, on
+a 7-sentence turn synthesised through the real pipeline: F0 tracked by autocorrelation at a 5 ms
+hop, jitter = mean frame-to-frame |ΔF0| as a fraction of mean F0 (reported in cents, so registers
+compare), flux = mean frame-to-frame L2 change of the normalised magnitude spectrum.
+
+| speaker | median F0 | jitter | flux | synth/sentence |
+|---|---|---|---|---|
+| 麒ヶ島宗麟 53 (was たなか) | 152 Hz | 33.4 cents | 0.0724 | ~530 ms |
+| **黒沢冴白 100 (now たなか)** | 155 Hz | **20.2 cents** | **0.0456** | ~840 ms |
+| 玄野武宏 11 | 145 Hz | 24.6 cents | 0.0439 | ~770 ms |
+| No.7 29 (みなみ) | 240 Hz | 23.8 cents | 0.0674 | — |
+
+- The wobble is **not a concatenation seam**: splitting ΔF0 by mora boundary (boundaries taken from
+  the `audio_query` mora durations) gave 2.95 Hz *at* boundaries vs 3.05 Hz *inside* moras for 53.
+  It is the model being unsteady throughout, and at 152 Hz a 3 Hz wobble is far more audible than
+  the same 3 Hz at No.7's 240 Hz.
+- **No engine parameter fixes it.** Sweeping `intonationScale` 1.0 -> 0.5 (which flattens the
+  prosody to a monotone) moved jitter only 36.8 -> 34.2 cents; `speedScale` and `pitchScale` were
+  the same story. Post-hoc F0 correction (TD-PSOLA) would work but needs a per-sentence pass in a
+  stage already over budget, so it was rejected.
+- **`SINGLE_STYLE_SPREAD` was making it worse.** Widening `intonationScale` stretches the F0 contour
+  and the model's own wobble with it: at the spread's 1.54, jitter went 2.15% -> 2.41% and flux
+  0.0773 -> 0.0821. Split into `SINGLE_STYLE_PITCH_SPREAD` (1.8, kept — a constant log-F0 offset
+  carries the emotion at no stability cost) and `SINGLE_STYLE_INTONATION_SPREAD` (1.0, i.e. none).
+- **たなか moved 53 -> 100**, confirmed by ear by the user. **This costs ~260 ms per sentence** and
+  M2 must measure the 3.0 s voice->voice p90 against the new number, not the old one. If the gate
+  fails on it, 53 is the cheap fallback and 玄野武宏 11 the middle one.
+- 玄野武宏 11 has four styles (ノーマル/喜び/ツンギレ/悲しみ), but only 喜び matches a name in
+  `DEFAULT_TABLE`, so `surprised` and `serious` still fall back to ノーマル — the multi-style
+  advantage is mostly unrealised, and he is slower than 53 anyway.
+
 **2026-09-09 — the ears (M2), on the target box:**
 
 - **CUDA works under the Microsoft Store Python** for CTranslate2 — but the runtime is not bundled.

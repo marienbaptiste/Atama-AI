@@ -23,7 +23,7 @@ def test_hard_output_rules_come_after_the_persona():
 def test_each_persona_declares_the_voice_it_belongs_with(tmp_path):
     """Character and voice are one choice: a male persona in a female voice is jarring, and
     keeping them in two settings means they drift apart."""
-    assert prompt.declared_voice("tanaka") == 53      # 麒ヶ島宗麟
+    assert prompt.declared_voice("tanaka") == 100     # 黒沢冴白
     assert prompt.declared_voice("minami") == 29      # No.7
     assert prompt.declared_voice(tmp_path / "nothing.md") is None
 
@@ -57,9 +57,9 @@ def test_missing_soul_falls_back_to_a_neutral_tutor(tmp_path):
 
 
 def test_the_voice_declaration_never_reaches_the_model():
-    """`<!-- voice: 53 -->` is configuration, not character."""
+    """`<!-- voice: 100 -->` is configuration, not character."""
     assert "voice:" not in prompt.load_soul(name="tanaka")
-    assert "53" not in prompt.load_soul(name="tanaka")
+    assert "100" not in prompt.load_soul(name="tanaka")
 
 
 def test_oversized_sections_are_truncated_at_a_line_boundary_and_reported():

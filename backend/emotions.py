@@ -96,9 +96,17 @@ def _number(raw: dict[str, str], key: str, fallback: float) -> float:
 
 
 #: When a speaker offers no distinct styles, every emotion lands on the same voice and only the
-#: scalars separate them — so the scalars have to work harder. Widening the pitch and intonation
-#: deltas keeps the emotions audible instead of collapsing into one flat delivery.
-SINGLE_STYLE_SPREAD = 1.8
+#: scalars separate them — so the scalars have to work harder. Widening the deltas keeps the
+#: emotions audible instead of collapsing into one flat delivery.
+#:
+#: Pitch and intonation are widened by *different* amounts, because they do not cost the same.
+#: Measured on speaker 53 (麒ヶ島宗麟) with `logs/voices` analysis, 2026-09-09: raising
+#: intonationScale 1.0 -> 1.54 pushed F0 jitter 2.15% -> 2.41% and spectral flux 0.0773 -> 0.0821,
+#: i.e. widening the intonation buys emotional range by making the voice audibly less steady
+#: between phonemes. pitchScale is a constant offset in log-F0 and carries the emotion without
+#: that cost, so pitch takes the whole spread and intonation takes none.
+SINGLE_STYLE_PITCH_SPREAD = 1.8
+SINGLE_STYLE_INTONATION_SPREAD = 1.0
 
 
 def resolve(cfg, speakers: Iterable[dict[str, Any]] | None = None) -> tuple[dict[str, VoiceParams], list[str]]:
@@ -145,8 +153,8 @@ def resolve(cfg, speakers: Iterable[dict[str, Any]] | None = None) -> tuple[dict
             table[emotion] = VoiceParams(
                 params.style_id,
                 params.speed,
-                round(params.pitch * SINGLE_STYLE_SPREAD, 4),
-                round(1.0 + (params.intonation - 1.0) * SINGLE_STYLE_SPREAD, 4),
+                round(params.pitch * SINGLE_STYLE_PITCH_SPREAD, 4),
+                round(1.0 + (params.intonation - 1.0) * SINGLE_STYLE_INTONATION_SPREAD, 4),
                 params.style_name,
             )
 

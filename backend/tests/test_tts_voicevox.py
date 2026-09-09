@@ -137,14 +137,16 @@ def test_empty_text_is_refused(tmp_path):
         c.say("   ")
 
 
-def test_a_single_style_speaker_gets_a_wider_scalar_spread(tmp_path):
+def test_a_single_style_speaker_widens_pitch_but_never_intonation(tmp_path):
     """麒ヶ島宗麟 (53) has only ノーマル. With no style to switch to, the emotions ride entirely on
-    pitch and intonation, so those have to work harder or every emotion sounds identical."""
+    the scalars — but only pitch may be widened. Widening intonationScale stretches the F0 contour
+    and stretches the model's own F0 wobble with it: measured 2026-09-09, intonation 1.0 -> 1.54
+    took jitter 2.15% -> 2.41%, which is audible as an unsteady voice between phonemes."""
     table, _ = emotions.resolve(cfg(tmp_path, VOICEVOX_SPEAKER="53"), SPEAKERS)
     assert {p.style_id for p in table.values()} == {53}
-    assert table["surprised"].intonation > 1.4      # widened from 1.30
-    assert table["serious"].intonation < 0.80       # widened from 0.85
-    assert abs(table["serious"].pitch) > 0.05       # widened from -0.03
+    assert abs(table["serious"].pitch) > 0.05                       # widened from -0.03
+    assert table["surprised"].intonation == pytest.approx(1.30)     # NOT widened
+    assert table["serious"].intonation == pytest.approx(0.85)       # NOT widened
     assert table[NEUTRAL].pitch == 0.0 and table[NEUTRAL].intonation == 1.0   # neutral is the anchor
 
 
