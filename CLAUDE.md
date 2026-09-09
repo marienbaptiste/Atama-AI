@@ -24,11 +24,24 @@ chunker, prompt assembly, the `Brain` interface with its Claude CLI provider, an
 all exist with tests (`make test`). Verified live: Sensei answers in character, uses the MCP
 tools, and weaves in the student's ghost reviews.
 
-Next: **M2** (mic → VAD → Whisper → VOICEVOX → playback). Do not start it until M1's gate is
-signed off in `ROADMAP.md`.
+**M2 is code-complete but gate-incomplete.** `vad.py`, `stt.py`, `tts_voicevox.py`,
+`visemes.py`, `audio.py` and `voice_loop.py` all exist with hermetic tests, and the voice loop
+runs. What is NOT done is M2's four gates, every one of which is a live measurement on real
+hardware: **M2a** (no false end-of-turn in 3 min of speech), **M2b** (warm STT p90 ≤ 0.35 s,
+zero hallucinations over 2 min of silence), **M2c** (first-chunk audio ≤ 0.40 s p90, synthesis
+of sentence N overlapping generation of N+1, five emotions audibly distinct), **M2d** (viseme
+timeline within one frame of the WAV at every emotion speed). Also still missing and due
+"M2 onward": VRAM instrumentation (only the `VRAM_WARN_GB` key exists) and rolling p50/p90
+latency (the REPL prints per-turn timings but there is no 20-turn harness). A milestone is done
+when its gate is met, not when its code runs — do not call M2 done, and do not start M3.
 
 Run the tutor: `.venv/Scripts/python -m backend.repl` (`--refresh` to re-sync SRS, `--no-srs`
-offline). V0 spikes still open: V0.3 VOICEVOX, V0.4 TalkingHead, V0.6 VRAM, V0.11 SearxNG.
+offline, `--speak` for the tutor voice, `--listen` for the mic — `--listen` implies `--speak`).
+
+V0 spikes still open: **V0.4** (TalkingHead — `speakAudio` signature, ms vs s for
+`vtimes`/`vdurations`, the real mood names; blocks M3, and a wrong timing unit is silent drift)
+and **V0.12** (context window and compaction stall; blocks only the rotation half of M4c).
+Everything else in the V0 table is Done — check the table in `ROADMAP.md`, not this line.
 
 ---
 
