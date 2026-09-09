@@ -1,0 +1,33 @@
+# Whisper hallucinations on Japanese silence/noise (spec §9).
+#
+# Whisper invents these when given near-silence — they are the closing captions of the YouTube
+# videos it was trained on. Verified live 2026-09-09: the startup warm-up on one second of pure
+# zeros returned 「ご視聴ありがとうございました」.
+#
+# A transcript is DISCARDED when it matches a line here AND the audio was quiet (or the model's
+# own confidence was poor). The same string spoken loudly and clearly is kept — a student really
+# can say ありがとうございました.
+#
+# One phrase per line. Blank lines and lines starting with # are ignored. Matching ignores
+# surrounding whitespace and trailing 。！？.
+# This is a DATA file on purpose: adding a phrase must never require a code change.
+
+ご視聴ありがとうございました
+ご視聴ありがとうございます
+ご視聴ありがとうございました。
+最後までご視聴いただきありがとうございました
+ありがとうございました
+チャンネル登録お願いします
+チャンネル登録をお願いします
+高評価とチャンネル登録をお願いします
+おやすみなさい
+お疲れ様でした
+おつかれさまでした
+バイバイ
+また明日
+次回もお楽しみに
+どうもありがとうございました
+эн
+Thank you for watching
+Thanks for watching
+Please subscribe

@@ -39,7 +39,7 @@ Throwaway scripts, deleted or moved into `backend/tests/fixtures/` when done. Ea
 | **V0.3** | Hit VOICEVOX `/docs` locally. Confirm `audio_query` response shape, the `pitchScale`/`intonationScale` request fields, and the `GET /speakers` shape used by the emotion table. | 4 real `audio_query` fixtures, a `/speakers` fixture, a pinned schema note. | **Done 2026-09-09** — VOICEVOX 0.25.2, fixtures in `backend/tests/fixtures/voicevox/`. See findings log. |
 | **V0.4** | TalkingHead README: `speakAudio` signature; whether `vtimes`/`vdurations` are **ms or s**; the real mood name set; whether gestures exist and their names; the facility for overriding ARKit blendshapes directly (needed for `surprised`/`serious`/`thinking`). | Pinned constants + comment. A wrong timing unit is silent drift; a wrong mood name is a silent no-op. | Open |
 | **V0.5** | WaniKani `/v2/user` and `/v2/assignments`: real response shape, pagination, rate-limit headers. | Sanitised fixtures (no personal data beyond what the golden tests need). | **Done 2026-09-09** — 6 endpoints captured live, fixtures in `backend/tests/fixtures/wanikani/`. See findings log. |
-| **V0.6** | Baseline VRAM: load faster-whisper `large-v3` @ `int8_float16` alone, read `nvidia-smi`. On WSL2, confirm `nvidia-smi` works *inside* WSL2 first. | A number. If > ~4.5 GB, ADR-004's fallback triggers now, not at M5. | Open |
+| **V0.6** | Baseline VRAM: load faster-whisper `large-v3` @ `int8_float16` alone, read `nvidia-smi`. | A number. If > ~4.5 GB, ADR-004's fallback triggers now, not at M5. | **Done 2026-09-09 — 2 169 MiB.** Comfortably under the 3.5 GB estimate and the 4.5 GB fallback threshold: `large-v3` stays, `medium` is not needed. |
 | **V0.7** | **Does a trustworthy Bunpro MCP server exist?** Survey community stdio MCP servers for Bunpro; check they work against the current site/API, what credential they take, whether the code is small enough to read end-to-end (it receives your credentials), and — **disqualifying** — whether it exposes any write tool that cannot be removed from the surface (ADR-021). If none passes, the decision is to write `backend/srs/bunpro_mcp.py` (spec §5) with read tools only. | A decision recorded in ADR (new entry), plus either a pinned version or a stub module. | **Done 2026-09-09** — decision: **write our own** (ADR-023). See findings log. |
 | **V0.9** | WaniKani token permissions: confirm from `/v2/user` which fields expose the token's granted permissions, so `make doctor` can warn on a write-capable token (ADR-021). | Pinned field name + a sanitised fixture for both a read-only and a write-capable token. | **Done 2026-09-09 — negative result.** `/v2/user.data` keys are `current_vacation_started_at, id, level, preferences, profile_url, started_at, subscription, username`; **token scopes are not exposed** and probing them would require a write. Read-only scope can only be guaranteed at token creation; the doctor and the settings page *instruct*, they cannot verify. Test pins the absence. |
 | **V0.8** | Do MCP tools survive `--tools ""`? Spawn with the Bunpro MCP configured and `--tools ""`; check `init.tools[]` for the MCP tool names. | Pinned: either `--tools ""` stands, or the fallback `--disallowedTools` list of the 20 built-in names from `init.tools`. | **Done 2026-09-09 — `--tools ""` stands**, *provided the MCP server is connected before the first turn*. See findings log ("Claude subprocess, live"). The disallow fallback is retired (tool names vary by platform). |
@@ -266,6 +266,26 @@ M3's gate, not M1's; the numbers are recorded here so the M3 work starts from da
 - Synthesis of one short sentence takes **470-740 ms** on CPU. The §10 budget for "VOICEVOX first chunk
   + WS delivery" is 400 ms, so this is over already, before any WebSocket. Levers for M3: shorter first
   sentences, and starting synthesis on the first sentence while the rest still streams (already done).
+
+**2026-09-09 — the ears (M2), on the target box:**
+
+- **CUDA works under the Microsoft Store Python** for CTranslate2 — but the runtime is not bundled.
+  The model *loads* on the GPU and then inference dies with `Library cublas64_12.dll is not found`.
+  `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12` supplies the DLLs, and on Windows their
+  directories must be registered with `os.add_dll_directory` before the first inference
+  (`stt.enable_cuda_libraries`). No system-wide CUDA toolkit needed.
+- **`large-v3` @ `int8_float16` = 2 169 MiB**, load 5 s (warm disk), warm-up transcribe 2.1 s.
+  Whole-pipeline VRAM stays far inside the 10 GB cap (§10b).
+- **The warm-up on one second of pure zeros returned 「ご視聴ありがとうございました」** — the exact
+  hallucination spec §9 predicted, reproduced on the first run. The blocklist is a data file and
+  the filter requires BOTH a blocklist match AND quiet audio, because a student really can say
+  ありがとうございました.
+- **Silero VAD v5 ONNX** (2.3 MB, CPU, no torch): inputs `input (batch, samples)`,
+  `state (2, batch, 128)`, `sr () int64`; outputs speech probability and the next state. Frames are
+  **exactly 512 samples at 16 kHz** — the model is stateful and a different frame size degrades its
+  judgement rather than erroring. Silence scored 0.0006, light noise 0.0016.
+- **The barge-in factor could not be a multiplier** (ADR-018 addendum): 0.5 x 2.0 = 1.0 is
+  unreachable for a probability, which would have disabled barge-in with no error anywhere.
 
 **Gate V0:** every external interface this project touches has a pinned, dated finding in the
 repo. No code calls an unverified interface.

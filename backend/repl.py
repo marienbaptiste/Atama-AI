@@ -6,6 +6,7 @@ visible: the first sentence should print well before the turn finishes.
 
     python -m backend.repl            # launch: sync SRS, render prompt, start the brain
     python -m backend.repl --speak    # ...and speak every sentence aloud through VOICEVOX
+    python -m backend.repl --listen --speak   # ...and talk to her out loud (full voice loop)
     python -m backend.repl --refresh  # force a fresh SRS sync (spec §5 manual Refresh)
     python -m backend.repl --no-srs   # skip SRS entirely (offline / no tokens)
 
@@ -101,6 +102,15 @@ async def run(args: argparse.Namespace) -> int:
     if not args.no_open:
         await _one_turn(brain, OPENING_NUDGE, voice)
 
+    if args.listen:
+        try:
+            await _listen(cfg, brain, voice)
+        finally:
+            if voice is not None:
+                await voice.aclose()
+            await brain.aclose()
+        return 0
+
     try:
         while True:
             try:
@@ -126,6 +136,57 @@ async def run(args: argparse.Namespace) -> int:
             await voice.aclose()
         await brain.aclose()
     return 0
+
+
+async def _listen(cfg, brain, voice) -> None:
+    """Full voice loop: speak to her, she answers aloud (spec §2)."""
+    from backend.stt import SpeechToText
+    from backend.vad import VoiceActivityDetector
+    from backend.voice_loop import VoiceLoop
+
+    if voice is None:
+        print(f"{BOLD}--listen needs --speak{RESET} (there is no point hearing you if she cannot answer).",
+              file=sys.stderr)
+        return
+
+    print(f"{DIM}loading {cfg.WHISPER_MODEL} ({cfg.WHISPER_COMPUTE_TYPE})…{RESET}")
+    stt = SpeechToText.from_config(cfg)
+    registry.report("stt", "loading", cfg.WHISPER_MODEL)
+    try:
+        await asyncio.to_thread(stt.load)
+    except Exception as exc:  # noqa: BLE001 - any load failure must be legible, not a traceback
+        registry.report("stt", "error", cfg.WHISPER_MODEL, f"{type(exc).__name__}: {exc}")
+        print(f"{BOLD}cannot load Whisper:{RESET} {exc}", file=sys.stderr)
+        return
+    registry.report("stt", "warm", f"{cfg.WHISPER_MODEL} · load {stt.load_ms / 1000:.1f}s · warm {stt.warmup_ms / 1000:.1f}s")
+    print(f"{DIM}whisper ready: load {stt.load_ms / 1000:.1f}s, warm-up {stt.warmup_ms / 1000:.1f}s{RESET}")
+
+    vad = VoiceActivityDetector.from_config(cfg)
+    loop = VoiceLoop(
+        brain=brain, stt=stt, vad=vad, voice=voice, input_device=cfg.AUDIO_INPUT_DEVICE,
+        on_state=lambda s: print(f"\r{DIM}[{s}]{RESET}          ", end="", flush=True),
+        on_transcript=lambda t: print(
+            f"\r{BOLD}you:{RESET} {t.text}" if t
+            else f"\r{DIM}(discarded: {t.reason} — {t.text[:40]}){RESET}"),
+        on_chunk=lambda c, ms: print(f"  {DIM}{ms / 1000:5.2f}s{RESET} {_emotion_tag(c.emotion)}{c.text}"),
+        on_bargein=lambda: print(f"\r{BOLD}— interrupted —{RESET}"),
+        on_turn=lambda t: print(f"  {DIM}stt {t.stt_ms:.0f}ms · first sentence {t.first_chunk_ms:.0f}ms · "
+                                f"voice→voice {t.voice_to_voice_ms():.0f}ms · turn {t.total_ms:.0f}ms{RESET}\n"),
+    )
+    device = cfg.AUDIO_INPUT_DEVICE or "system default"
+    print(f"\n{BOLD}Listening on {device}.{RESET} Speak Japanese. Ctrl+C to stop.\n")
+    try:
+        await loop.run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.stop()
+        if loop.timings:
+            v2v = sorted(t.voice_to_voice_ms() for t in loop.timings if t.voice_to_voice_ms())
+            if v2v:
+                p90 = v2v[max(0, int(len(v2v) * 0.9) - 1)]
+                print(f"\n{DIM}{len(v2v)} turns · voice→voice median {v2v[len(v2v) // 2] / 1000:.2f}s · "
+                      f"p90 {p90 / 1000:.2f}s (budget 3.0s){RESET}")
 
 
 async def _one_turn(brain, text: str, voice=None) -> None:
@@ -183,6 +244,7 @@ def main() -> int:
     ap.add_argument("--no-srs", action="store_true", help="skip WaniKani/Bunpro entirely")
     ap.add_argument("--no-open", action="store_true", help="do not let Sensei speak first")
     ap.add_argument("--speak", action="store_true", help="speak each sentence aloud via VOICEVOX")
+    ap.add_argument("--listen", action="store_true", help="talk to her: mic -> VAD -> Whisper (implies --speak)")
     try:
         return asyncio.run(run(ap.parse_args()))
     except KeyboardInterrupt:

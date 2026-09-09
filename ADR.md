@@ -480,6 +480,13 @@ self-interruptions, separately from the headphones run.
 **Consequences.** Genuine barge-in during playback needs to be slightly louder and slightly
 longer than speech during silence. Acceptable — a human interrupting someone does the same.
 
+**Addendum (2026-09-09, implementation).** "2.0x the listening threshold" cannot be applied as a
+multiplication: Silero returns a **probability**, capped at 1.0, so 0.5 x 2.0 = 1.0 is unreachable
+and would have disabled barge-in entirely — silently, since nothing errors when a threshold is
+never crossed. A test caught it. The factor now divides the remaining headroom to certainty
+instead, which preserves the intent ("be N times more demanding") and always lands below 1:
+0.5 -> 0.75 at factor 2, 0.833 at factor 3. The three layers are otherwise unchanged.
+
 **Reversed if:** a proper AEC stage in the orchestrator ever makes the state-gated threshold
 unnecessary.
 
