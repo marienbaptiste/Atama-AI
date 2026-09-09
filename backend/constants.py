@@ -124,5 +124,10 @@ BUNPRO_READ_ENDPOINTS = {
 # Measured 2026-09-09 (style 53): forced reinit 534 ms; skip_reinit=true when already
 # loaded 2 ms. `speaker` here is a STYLE id — the same id audio_query/synthesis take — so
 # every distinct style in the emotion table needs its own call.
+# Verified 2026-09-10, speaker 53: BOTH prePhonemeLength and postPhonemeLength are divided by
+# speedScale. (post 0.0->0.5 adds 0.5013 s at speed 1.0, 0.2453 s at speed 2.0.) The engine also
+# rounds each mora to sample boundaries, so a synthesised WAV runs ~10 ms longer than exact
+# division predicts — the viseme timeline cannot match it to better than ~25 ms, and that residual
+# is the engine's, not the mapper's. Do not "fix" visemes.py to chase it.
 VOICEVOX_INIT_SPEAKER = "/initialize_speaker"
 VOICEVOX_IS_INITIALIZED = "/is_initialized_speaker"

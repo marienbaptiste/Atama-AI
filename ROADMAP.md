@@ -368,6 +368,32 @@ prompt size.
   + WS delivery" is 400 ms, so this is over already, before any WebSocket. Levers for M3: shorter first
   sentences, and starting synthesis on the first sentence while the rest still streams (already done).
 
+**2026-09-10 — M2d, measured against the live engine at every emotion speed:**
+
+`postPhonemeLength` **is** divided by `speedScale`, like `prePhonemeLength`. Controlled test at
+speaker 53, `pre=0`: post 0.0->0.5 adds 0.5013 s at speed 1.0 and **0.2453 s at speed 2.0**. The
+mapper already divides both, so its arithmetic is correct.
+
+| emotion | speed | mean err | max abs err |
+|---|---|---|---|
+| neutral | 1.0 | +13.2 ms | 24.3 ms |
+| happy | 1.05 | +0.3 ms | 13.2 ms |
+| thinking | 0.95 | -5.8 ms | 19.9 ms |
+| surprised | 1.1 | -9.5 ms | 23.3 ms |
+| serious | 0.95 | -5.8 ms | 19.9 ms |
+
+- **The residual is VOICEVOX's, not ours.** At speed 2.0 the engine returns 0.3627 s where exact
+  division of the speed-1 mora time would give 0.3520 s — **10.7 ms longer**, because it rounds
+  every mora to sample boundaries. No change to `visemes.py` can remove that; matching it exactly
+  would mean reimplementing the engine's rounding.
+- **Gate M2d therefore depends on a frame rate the gate never states.** Worst case 24.3 ms:
+  **over** one frame at 60 fps (16.7 ms), **inside** one frame at 30 fps (33.3 ms). For reference
+  the perceptual audio-visual sync window is roughly -125 ms to +45 ms (ITU-R BT.1359), so 24 ms
+  of end-of-timeline drift is not visible — but "not visible" is not what the gate says.
+- **Open question for the user:** pin M2d's tolerance (one frame at 30 fps, or an explicit ms
+  figure), or keep 60 fps and accept the gate cannot be met. Not a decision to make by quietly
+  loosening the number.
+
 **2026-09-09 — voice stability, measured (V0.3 follow-up):**
 
 The user reported たなか's voice as "unstable between phonemes". Measured rather than guessed, on
