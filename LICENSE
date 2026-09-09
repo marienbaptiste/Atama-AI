@@ -1,0 +1,104 @@
+MIT License
+
+Copyright (c) 2026 Baptiste MARIEN
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+================================================================================
+THIRD-PARTY TERMS — THE MIT LICENCE ABOVE COVERS THE CODE, NOT THESE
+================================================================================
+
+Two obligations survive the MIT licence. Neither is optional, and the second one
+attaches to what the application SAYS OUT LOUD, not merely to this repository.
+
+
+1. THE AVATAR IS NON-COMMERCIAL. REPLACING IT IS NOT ENOUGH ON ITS OWN.
+--------------------------------------------------------------------------------
+
+The avatar this project ships with as a working default was created at Ready
+Player Me and is distributed by the TalkingHead project under
+
+    Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+
+Personal, educational and other non-commercial use is permitted with credit. Any
+commercial use is not — not "probably fine", not "with attribution".
+
+READ THIS PART BEFORE ASSUMING YOU CAN FIX IT BY MAKING YOUR OWN. Ready Player Me
+retains the intellectual property in avatars created through their platform, and
+avatars made on their website are themselves licensed CC BY-NC-SA 4.0 —
+non-commercial AND ShareAlike, which is stricter than the default avatar's terms,
+not looser. Swapping in an avatar you made yourself therefore does NOT remove the
+restriction; it may tighten it.
+
+For non-commercial use — which includes personal study, the case this project was
+built for — the shipped avatar is fine as it stands. Credit it.
+
+For commercial use you need one of:
+
+  * registration as a Ready Player Me Partner, which they offer free of charge
+    and which is what grants commercial rights to RPM avatars; or
+  * an avatar from a source whose terms you have read and that permits your use.
+    A CC0 or self-authored model (Blender, MakeHuman/MPFB) carries no such
+    condition at all; note that TalkingHead's own CC0 example, mpfb.glb, is
+    missing the viseme_sil blendshape and will not close its mouth, so verify any
+    candidate with `python -m backend.tools.check_avatar` before relying on it.
+
+Replacing the avatar is mechanically trivial — the persona file names its own GLB
+(`<!-- avatar: name.glb -->`), so it is one file:
+
+    1. Obtain a full-body GLB with a Mixamo-compatible rig
+    2. It must carry BOTH morph target groups, ARKit (52) and Oculus visemes (15).
+       From Ready Player Me that means:
+       https://models.readyplayer.me/<YOUR_ID>.glb?morphTargets=ARKit,Oculus%20Visemes
+    3. Save it under the name the persona declares, e.g. frontend/public/minami.glb
+    4. Verify it:  python -m backend.tools.check_avatar --all
+
+The MIT licence above grants you no rights whatsoever to any avatar. If you fork
+this repository and ship it commercially, the avatar is your responsibility to
+license, and this is not legal advice — read the terms yourself.
+
+
+2. VOICEVOX REQUIRES ATTRIBUTION WHEREVER THE VOICE IS HEARD
+--------------------------------------------------------------------------------
+
+The synthesised voice comes from VOICEVOX. Its character voices permit
+commercial and non-commercial use, but ONLY if the character is credited. The
+credit is per character, not per engine, so it depends on which persona is
+configured (TUTOR_PERSONA):
+
+    tanaka  (default)  VOICEVOX:麒ヶ島宗麟
+    minami             VOICEVOX:No.7
+    hayashi            VOICEVOX:栗田まろん
+    mori               VOICEVOX:冥鳴ひまり
+
+Show the credit wherever the audio appears — in the application, in a video, in
+a description. Adding a persona means checking that character's own terms; they
+are set per character by their respective rights holders and are not uniform.
+
+
+3. EVERYTHING ELSE
+--------------------------------------------------------------------------------
+
+TalkingHead (MIT), faster-whisper (MIT), Silero VAD (MIT), three.js (MIT) and
+the remaining Python dependencies carry permissive licences and impose no
+condition beyond retaining their notices.
+
+The tutor's persona files under prompts/ and the code in this repository are
+covered by the MIT licence at the top of this file.

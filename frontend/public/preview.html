@@ -3,25 +3,54 @@
 <title>Sensei preview</title>
 <style>
   html,body{margin:0;height:100%;background:#15171a;color:#e6e6e6;
-            font:14px system-ui,-apple-system,sans-serif;overflow:hidden}
+            font:13px system-ui,-apple-system,sans-serif;overflow:hidden}
   #stage{position:fixed;inset:0}
-  #ui{position:fixed;top:14px;left:14px;z-index:10;background:#1e2126d9;padding:12px 14px;
-      border-radius:10px;backdrop-filter:blur(8px);min-width:240px}
-  h1{font-size:13px;margin:0 0 10px;letter-spacing:.04em;text-transform:uppercase;color:#9aa3ad}
-  button,select{font:13px system-ui;padding:6px 10px;background:#2a2e35;color:#e6e6e6;
+  #ui{position:fixed;top:12px;left:12px;z-index:10;background:#1e2126e6;padding:12px 14px;
+      border-radius:10px;backdrop-filter:blur(10px);width:300px;max-height:calc(100vh - 24px);
+      overflow:auto}
+  h2{font-size:11px;margin:14px 0 6px;letter-spacing:.08em;text-transform:uppercase;color:#7f8892}
+  h2:first-of-type{margin-top:10px}
+  button,select{font:12px system-ui;padding:5px 9px;background:#2a2e35;color:#e6e6e6;
                 border:1px solid #3a3f47;border-radius:6px;cursor:pointer}
-  button:hover{background:#343943}
-  button:disabled{opacity:.4;cursor:default}
-  .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
-  #log{margin-top:10px;font-size:12px;color:#9aa3ad;line-height:1.6;max-width:320px}
+  button:hover{background:#3a404a}
+  button.on{background:#3f6fd0;border-color:#5b86e0}
+  select{width:100%}
+  .row{display:flex;gap:5px;flex-wrap:wrap}
+  label{display:flex;align-items:center;gap:6px;color:#9aa3ad;margin-top:6px}
+  input[type=range]{flex:1}
+  #log{margin-top:12px;font-size:11px;color:#8b939d;line-height:1.6;
+       border-top:1px solid #2c3138;padding-top:9px}
   .err{color:#ff8a80}
+  code{background:#2a2e35;padding:1px 4px;border-radius:3px}
 </style>
 
 <div id="stage"></div>
 <div id="ui">
-  <h1>Sensei preview</h1>
   <select id="who"></select>
+
+  <h2>say it</h2>
+  <div class="row" id="emotions"></div>
+
+  <h2>mood</h2>
   <div class="row" id="moods"></div>
+
+  <h2>gesture</h2>
+  <div class="row" id="gestures"></div>
+  <label><input type="checkbox" id="mirror" checked> right hand</label>
+  <label>hold <input type="range" id="dur" min="1" max="8" step="1" value="3"><span id="durv">3s</span></label>
+
+  <h2>posture</h2>
+  <div class="row" id="poses"></div>
+
+  <h2>reaction</h2>
+  <div class="row" id="emojis"></div>
+
+  <h2>stillness</h2>
+  <div class="row">
+    <button id="freeze">freeze all motion</button>
+    <button id="reset">reset</button>
+  </div>
+
   <div id="log">loading…</div>
 </div>
 
@@ -36,84 +65,157 @@
 <script type="module">
 import { TalkingHead } from "talkinghead";
 
+// Read out of talkinghead.mjs on 2026-09-10, not the README: the README lists seven gestures and
+// omits `namaste`, and never mentions the yes/no emoji animations at all.
+const MOODS    = ["neutral","happy","angry","sad","fear","disgust","love","sleep"];
+const GESTURES = ["handup","index","ok","thumbup","thumbdown","side","shrug","namaste"];
+const POSES    = ["side","hip","turn","bend","back","straight","wide","oneknee","kneel","sitting"];
+const EMOJIS   = ["yes","no"];          // nod / shake — spec §8's あいづち listening reaction
+
 // persona -> the GLB it declares, mirroring prompts/<persona>.md (ADR-026: one character choice)
 const CAST = [
   { id:"minami",  glb:"minami.glb",  body:"F", label:"みなみ先生 — female teacher" },
   { id:"hayashi", glb:"hayashi.glb", body:"M", label:"はやし先生 — younger man" },
   { id:"mori",    glb:"yui.glb",     body:"F", label:"ゆい — teenager" },
-  { id:"tanaka",  glb:"tanaka.glb",  body:"M", label:"たなか先生 — older man (not made yet)" },
+  { id:"tanaka",  glb:"tanaka.glb",  body:"M", label:"たなか先生 — older man" },
 ];
-// Only these four tags exist in our prompt; TalkingHead's mood set has just neutral+happy of
-// them (V0.4), so the other three ride on neutral plus blendshapes later.
-const MOODS = ["neutral","happy","thinking","surprised","serious"];
-const TH_MOOD = { neutral:"neutral", happy:"happy", thinking:"neutral",
-                  surprised:"neutral", serious:"neutral" };
 
-const who = document.getElementById("who"), moods = document.getElementById("moods"),
-      log = document.getElementById("log");
-CAST.forEach(c => who.add(new Option(c.label, c.id)));
+// Spec §8's emotion -> rig table. Only neutral and happy are real TalkingHead moods (V0.4), so
+// the other three ride on `neutral` plus ARKit blendshapes pinned with setFixedValue.
+const RIG = {
+  neutral:   { mood:"neutral", shapes:{} },
+  happy:     { mood:"happy",   shapes:{}, gesture:"ok" },
+  thinking:  { mood:"neutral", gesture:"shrug", pose:"hip",
+               shapes:{ eyesRotateX:-0.35, eyesRotateY:0.45, browDownLeft:0.25,
+                        browDownRight:0.25, mouthPucker:0.15 } },
+  surprised: { mood:"neutral", gesture:"handup", release:1200,
+               shapes:{ browInnerUp:0.9, browOuterUpLeft:0.7, browOuterUpRight:0.7,
+                        eyeWideLeft:0.6, eyeWideRight:0.6, jawOpen:0.18 } },
+  serious:   { mood:"neutral", gesture:"index",
+               shapes:{ browDownLeft:0.55, browDownRight:0.55, mouthPressLeft:0.3,
+                        mouthPressRight:0.3, eyeSquintLeft:0.2, eyeSquintRight:0.2 } },
+};
 
-const head = new TalkingHead(document.getElementById("stage"), {
-  // The constructor THROWS on a falsy ttsEndpoint (talkinghead.mjs:813) even though we never
-  // call their TTS — we only ever use speakAudio() with VOICEVOX audio. A placeholder satisfies
-  // the check; nothing ever requests it. Verified 2026-09-10.
+const $ = id => document.getElementById(id);
+const log = m => { $("log").innerHTML = m; };
+CAST.forEach(c => $("who").add(new Option(c.label, c.id)));
+
+const head = new TalkingHead($("stage"), {
+  // Constructor THROWS on a falsy ttsEndpoint (talkinghead.mjs:813) even though we never call
+  // their TTS — VOICEVOX makes every sound here. A placeholder satisfies it; nothing requests it.
   ttsEndpoint: "unused://voicevox-makes-the-audio",
-  lipsyncModules: [],         // we always supply visemes explicitly
-  cameraView: "upper",        // waist-up, per spec §8
+  lipsyncModules: [],
+  cameraView: "upper",
   avatarMood: "neutral",
-  // It multiplies this by window.devicePixelRatio itself — passing devicePixelRatio squares it.
-  modelPixelRatio: 1,
+  modelPixelRatio: 1,          // it multiplies by devicePixelRatio itself; passing it squares it
 });
 
-let payloads = null, ctx = null;
-function say(msg) { log.innerHTML = msg; }
+let payloads = null, ctx = null, held = [], frozen = false;
+
+function buttons(host, names, fn) {
+  $(host).innerHTML = "";
+  for (const n of names) {
+    const b = document.createElement("button");
+    b.textContent = n;
+    b.onclick = () => fn(n);
+    $(host).appendChild(b);
+  }
+}
+
+function clearShapes() { held.forEach(s => head.setFixedValue(s, null)); held = []; }
+
+function applyRig(name) {
+  const r = RIG[name] || RIG.neutral;
+  clearShapes();
+  head.setMood(r.mood);
+  held = Object.keys(r.shapes);
+  held.forEach(s => head.setFixedValue(s, r.shapes[s]));
+  if (r.release) setTimeout(clearShapes, r.release);
+  if (r.pose) { try { head.setPoseFromTemplate(r.pose, 1200); } catch (e) {} }
+  if (r.gesture) head.playGesture(r.gesture, +$("dur").value, $("mirror").checked, 800);
+}
+
+async function speak(tag) {
+  const p = payloads && payloads[tag];
+  if (!p) return;
+  ctx = ctx || new AudioContext();
+  await ctx.resume();
+  const bytes = Uint8Array.from(atob(p.audio_b64), c => c.charCodeAt(0));
+  const buf = await ctx.decodeAudioData(bytes.buffer);
+  applyRig(tag);
+  // `words` is REQUIRED for supplied visemes to be read at all: in speakAudio the
+  // `if (r.visemes)` branch is nested inside `if (r.words)`, while `if (r.audio)` sits outside —
+  // omit it and you get audio with a frozen face. One span over the utterance opens the gate
+  // without competing with our timeline, since the word-derived path runs only when !r.visemes.
+  head.speakAudio({ audio: buf, words: [p.text], wtimes: [0], wdurations: [buf.duration * 1000],
+                    visemes: p.visemes, vtimes: p.vtimes, vdurations: p.vdurations });
+  log("<b>" + tag + "</b> — " + p.visemes.length + " visemes over "
+      + Math.round(buf.duration * 1000) + " ms");
+}
+
+buttons("moods", MOODS, m => { head.setMood(m); log("mood <b>" + m + "</b>"); });
+
+buttons("gestures", GESTURES.concat(["stop"]), g => {
+  if (g === "stop") {
+    if (head.stopGesture) head.stopGesture(500);
+    log("gesture cleared — arms return to the idle pose");
+    return;
+  }
+  head.playGesture(g, +$("dur").value, $("mirror").checked, 800);
+  log("gesture <b>" + g + "</b> · " + $("dur").value + "s · "
+      + ($("mirror").checked ? "right" : "left") + " hand");
+});
+
+buttons("poses", POSES, p => {
+  try { head.setPoseFromTemplate(p, 1200); log("posture <b>" + p + "</b>"); }
+  catch (e) { log('<span class="err">pose ' + p + ": " + e + "</span>"); }
+});
+
+buttons("emojis", EMOJIS, e => {
+  head.playGesture(e, 2, false, 400);
+  log("reaction <b>" + e + "</b> — " + (e === "yes" ? "nod (あいづち)" : "shake"));
+});
+
+$("dur").oninput = () => { $("durv").textContent = $("dur").value + "s"; };
+
+$("freeze").onclick = () => {
+  frozen = !frozen;
+  if (frozen) head.stop(); else head.start();
+  $("freeze").classList.toggle("on", frozen);
+  log(frozen ? "motion frozen — this halts the whole render loop, so lip-sync stops too"
+             : "motion resumed");
+};
+
+$("reset").onclick = () => {
+  clearShapes();
+  head.setMood("neutral");
+  try { head.setPoseFromTemplate("straight", 800); } catch (e) {}
+  log("reset to neutral");
+};
 
 async function pick(id) {
   const c = CAST.find(x => x.id === id);
-  moods.innerHTML = ""; payloads = null;
-  say(`loading ${c.glb}…`);
+  payloads = null;
+  $("emotions").innerHTML = "";
+  log("loading " + c.glb + "…");
   try {
-    await head.showAvatar({ url: c.glb, body: c.body, avatarMood:"neutral", lipsyncLang:"en" });
+    await head.showAvatar({ url: c.glb, body: c.body, avatarMood: "neutral", lipsyncLang: "en" });
   } catch (e) {
-    say(`<span class="err">avatar failed: ${e}</span><br>` +
-        (id === "tanaka" ? "Make him at readyplayer.me, then <code>check_avatar</code>." : ""));
+    log('<span class="err">' + c.glb + " failed to load.</span><br>Make them at readyplayer.me, "
+        + "download with <code>?morphTargets=ARKit,Oculus%20Visemes</code>, then "
+        + "<code>check_avatar</code>.");
     return;
   }
   try {
-    payloads = await (await fetch(`${id}.speak.json`)).json();
-  } catch (e) { say(`<span class="err">no audio for ${id}: ${e}</span>`); return; }
-  MOODS.forEach(m => {
-    const b = document.createElement("button");
-    b.textContent = m; b.onclick = () => speak(m); moods.appendChild(b);
-  });
-  say(`${c.glb} ready — pick a mood to hear ${id} speak.<br>` +
-      `audio: VOICEVOX · visemes: ours · timing: milliseconds`);
+    payloads = await (await fetch(id + ".speak.json")).json();
+  } catch (e) {
+    log('<span class="err">no audio for ' + id + "</span> — run <code>make_preview</code>");
+    return;
+  }
+  buttons("emotions", Object.keys(RIG), speak);
+  log("<b>" + c.glb + "</b> ready · audio VOICEVOX · visemes ours · times in ms");
 }
 
-async function speak(mood) {
-  const p = payloads?.[mood]; if (!p) return;
-  ctx = ctx || new AudioContext();
-  await ctx.resume();
-  const bytes = Uint8Array.from(atob(p.audio_b64), ch => ch.charCodeAt(0));
-  const buf = await ctx.decodeAudioData(bytes.buffer);
-  head.setMood(TH_MOOD[mood] || "neutral");
-  // `words` IS REQUIRED even when we supply visemes ourselves. In talkinghead.mjs the whole
-  // lipsync block — including `if (r.visemes)` — is nested inside `if (r.words)`, while
-  // `if (r.audio)` sits outside it. Omit words and you get audio with a completely frozen face,
-  // which is precisely what happened (2026-09-10). The README documents `visemes` as an
-  // independent optional field; it is not.
-  // One span covering the utterance is enough to open the gate: with `visemes` present the
-  // word-derived path is skipped (`if (!r.visemes)`), so this cannot fight our own timeline.
-  const total = buf.duration * 1000;
-  head.speakAudio({
-    audio: buf,
-    words: [p.text], wtimes: [0], wdurations: [total],
-    visemes: p.visemes, vtimes: p.vtimes, vdurations: p.vdurations,
-  });
-  say(`speaking as <b>${who.value}</b> · mood <b>${mood}</b> · ` +
-      `${p.visemes.length} visemes over ${Math.round(p.vtimes.at(-1) + p.vdurations.at(-1))} ms`);
-}
-
-who.onchange = () => pick(who.value);
+$("who").onchange = () => pick($("who").value);
 pick(CAST[0].id);
 </script>

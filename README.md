@@ -234,25 +234,32 @@ Then get an avatar — see below — allow mic access, and start talking.
 
 ### The avatar (you have to supply this)
 
-**No avatar ships with this repo.** `*.glb` is git-ignored: the example avatars available online
-are licensed for non-commercial use by their creators, so redistributing one inside a public
-repo is not ours to do. A fresh clone therefore has no face until you put one at
-**`frontend/public/avatar.glb`**.
+> **The default avatar is non-commercial. If you are shipping anything commercial, replace it
+> first — and note that making your own at Ready Player Me does *not* lift the restriction.**
+> See [LICENSE](LICENSE) §1 for what actually does. For personal study, which is what this is
+> for, it is fine as it stands.
+
+`*.glb` is git-ignored, so a fresh clone has no face until you fetch one. Each persona names its
+own file — `prompts/minami.md` declares `<!-- avatar: minami.glb -->` — so the filename is the
+whole wiring.
 
 It must be a **full-body GLB** with a Mixamo-compatible rig and **both** blendshape sets —
 **ARKit (52)** and **Oculus visemes (15)**. TalkingHead needs all of them, and this is the part
 that goes wrong quietly: an avatar missing them loads, renders perfectly, and simply never moves
 its mouth.
 
-The quickest known-good option is TalkingHead's own reference avatar (CC BY-NC 4.0, so fine for
-personal use, not for anything commercial):
+Fetch the known-good default (TalkingHead's reference avatar, CC BY-NC 4.0):
 
 ```bash
-curl -L -o frontend/public/avatar.glb   https://raw.githubusercontent.com/met4citizen/TalkingHead/main/avatars/brunette.glb
+python -m backend.tools.get_avatar
 ```
 
-Or make your own at [Ready Player Me](https://readyplayer.me) or
-[Avaturn](https://avaturn.me) and export it with both morph-target groups.
+Or supply your own from [Ready Player Me](https://readyplayer.me) or
+[Avaturn](https://avaturn.me), exported with both morph-target groups:
+
+```
+https://models.readyplayer.me/<YOUR_ID>.glb?morphTargets=ARKit,Oculus%20Visemes
+```
 
 **Always verify before building on it:**
 
