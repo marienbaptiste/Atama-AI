@@ -48,6 +48,12 @@ class SpeechQueue:
         # One output stream for the session: a stream opened per sentence drops its own first
         # ~100 ms while starting, which clipped every opening syllable (fixed 2026-09-09).
         self._player = audio_mod.Player(self.device)
+        # Open it now, not on the first sentence: an unopened stream eats its own first ~100 ms,
+        # which clipped the tutor's opening syllable (2026-09-09).
+        try:
+            await asyncio.to_thread(self._player.open)
+        except Exception:  # noqa: BLE001 - a device that will not pre-open may still play
+            pass
         self._task = asyncio.create_task(self._play_loop())
 
     async def say(self, chunk: Chunk) -> None:

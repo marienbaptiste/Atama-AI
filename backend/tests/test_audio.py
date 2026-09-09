@@ -253,3 +253,54 @@ def test_player_reopens_when_the_sample_rate_changes(monkeypatch):
     player.play(make_wav(np.zeros(100, dtype=np.float32), rate=24000))
     player.play(make_wav(np.zeros(100, dtype=np.float32), rate=16000))
     assert [s.kw["samplerate"] for s in sd.streams] == [24000, 16000]
+
+# ----------------------------------------------------- host APIs (Windows duplicates)
+WIN_APIS = [{"name": "MME"}, {"name": "Windows DirectSound"},
+            {"name": "Windows WASAPI"}, {"name": "Windows WDM-KS"}]
+#: The same physical microphone, published four times — exactly what Windows does.
+WIN_DEVICES = [
+    {"name": "Microphone (Audeze)", "hostapi": 0, "max_input_channels": 1, "max_output_channels": 0, "default_samplerate": 44100},
+    {"name": "Microphone (Audeze)", "hostapi": 1, "max_input_channels": 1, "max_output_channels": 0, "default_samplerate": 44100},
+    {"name": "Microphone (Audeze)", "hostapi": 2, "max_input_channels": 1, "max_output_channels": 0, "default_samplerate": 48000},
+    {"name": "Microphone (Realtek)", "hostapi": 3, "max_input_channels": 1, "max_output_channels": 0, "default_samplerate": 44100},
+]
+
+
+@pytest.fixture
+def windows_sd(monkeypatch):
+    sd = FakeSd()
+    monkeypatch.setattr(sd, "query_devices",
+                        lambda index=None, kind=None: WIN_DEVICES[index] if isinstance(index, int) else WIN_DEVICES)
+    sd.query_hostapis = lambda: WIN_APIS
+    monkeypatch.setattr(audio_mod, "_sd", lambda: sd)
+    return sd
+
+
+def test_hostapis_that_cannot_capture_are_flagged_unusable(windows_sd):
+    """WASAPI will not resample to our fixed 16 kHz; WDM-KS has no blocking API (2026-09-09)."""
+    by_api = {d.hostapi: d.usable for d in audio_mod.list_devices("input")}
+    assert by_api == {"MME": True, "Windows DirectSound": True,
+                      "Windows WASAPI": False, "Windows WDM-KS": False}
+
+
+def test_a_name_resolves_to_a_device_that_actually_opens(windows_sd):
+    """Matching used to return whichever duplicate came first, which could be the WDM-KS one."""
+    assert audio_mod.resolve_device("Microphone (Audeze)", "input") == 0   # MME, best ranked
+    assert audio_mod.resolve_device("audeze", "input") == 0                # substring, same rule
+
+
+def test_a_device_only_present_on_an_unusable_hostapi_is_not_selectable(windows_sd):
+    """Better None (system default) than an index that fails with a PortAudio error."""
+    assert audio_mod.resolve_device("Realtek", "input") is None
+
+
+def test_an_explicit_index_overrides_our_opinion(windows_sd):
+    """If the user names an index, they mean it — we only refuse indices that do not exist."""
+    assert audio_mod.resolve_device(3, "input") == 3
+    assert audio_mod.resolve_device(99, "input") is None
+
+
+def test_devices_without_hostapi_information_stay_usable(fake_sd):
+    """A backend that does not report host APIs must not have every device hidden."""
+    assert all(d.usable for d in audio_mod.list_devices())
+    assert audio_mod.resolve_device("Audeze", "input") == 1
