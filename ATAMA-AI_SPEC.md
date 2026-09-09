@@ -428,19 +428,41 @@ Capping it is cheaper than rotating more often.
   stops deciding when the turn ends. `vad` remains the default: hands-free is the point of the
   product, and push-to-talk is the escape hatch for noisy rooms and long thinking pauses.
 
-### 9b. Starting over — clearing the conversation (M3, user directive 2026-09-10)
+### 9b. Discarding a bad capture — "no, let me say that again" (M3, user directive 2026-09-10)
 
-A lesson that goes wrong should be abandonable without restarting the app. **Clear** ends the
-current conversation and begins a fresh one:
+A stutter, a cough, someone talking in the room: the capture is garbage and the student wants it
+gone, not answered. A UI button or key binding (§8), not an automatic behaviour — only the student
+knows their own sentence was wrong.
 
-- The brain is a subprocess with an orchestrator-assigned `--session-id` (§4), so clearing is a
-  respawn with a **new** id — explicitly *not* `--resume`, which is the crash-recovery path and
-  would carry the ruined context back in.
+**The window matters, because the brain's session is append-only.** Once `brain.turn(text)` has
+written to the subprocess stdin, that text is in the conversation for good; the CLI has no rewind,
+and `--resume` replays the session *including* the garbage. So:
+
+- **Before the send** — between `speech_end` and `brain.turn()` sits STT and the hallucination
+  filter, typically a few hundred ms. Discarding here is free: drop the audio, return to
+  `listening`, nothing was ever said. **This is the case to design for**, and the reason the
+  transcript should be shown the instant it exists rather than only once the reply starts.
+- **After the send** — cancelling now is the existing barge-in path, which stops the *reply* but
+  cannot unsay the *prompt*. The tutor's context keeps the garbled line. Recovering properly means
+  respawning with a new `--session-id` and replaying the good turns, which is the §9c reset below
+  wearing a different hat, and costs a full restart of the conversation. Do not pretend a cheap
+  undo exists here: either accept the polluted turn, or reset.
+- **Push-to-talk makes this mostly moot**, which is a strong argument for it: releasing the key is
+  the commit point, so an abandoned press (drag off the button, or a cancel key) throws the audio
+  away before STT ever runs. In `vad` mode the commit happens on its own, which is exactly why the
+  discard button is needed there.
+
+### 9c. Starting over — clearing the whole conversation (M3)
+
+Heavier sibling of §9b, for a lesson that has gone wrong rather than one bad sentence:
+
+- A respawn with a **new** `--session-id` (§4) — explicitly *not* `--resume`, which is the
+  crash-recovery path and would carry the ruined context back in.
 - The student profile is **not** re-fetched. ADR-024 confines SRS calls to launch and manual
   Refresh, so the rendered prompt is rebuilt from the existing snapshot.
-- Everything conversational resets with it: the chunker, the speech queue (cancel and re-arm, see
-  the barge-in latch), the per-turn timings, and the transcript panel. The status chips do not:
-  VOICEVOX, Whisper and the SRS sync survive, because none of them is part of the conversation.
+- Everything conversational resets: the chunker, the speech queue (cancel and re-arm — see the
+  barge-in latch), the per-turn timings, the transcript panel. The status chips do not: VOICEVOX,
+  Whisper and the SRS sync are not part of the conversation.
 - The session log records the clear as an event rather than starting a new file, so an abandoned
   attempt is still minable afterwards (§15).
 
