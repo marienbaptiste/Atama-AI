@@ -73,6 +73,8 @@ class VoiceActivityDetector:
     bargein_threshold_factor: float = 2.0
     bargein_min_speech_ms: int = 250
     playback_onset_ignore_ms: int = 150
+    #: How long a dip may last before a forming utterance is abandoned. Speech is not continuous.
+    onset_tolerance_ms: int = 200
     mode: Mode = Mode.LISTENING
 
     _session: object | None = field(default=None, init=False, repr=False)
@@ -187,8 +189,13 @@ class VoiceActivityDetector:
                 self._in_speech = False
                 self._speech_ms = 0.0
                 self._utterance.clear()
-            elif not self._in_speech:
-                self._speech_ms = 0.0        # a blip that never became speech
+            elif not self._in_speech and self._silence_ms_run >= self.onset_tolerance_ms:
+                # Only give up on a forming utterance after a SUSTAINED gap. Resetting on the
+                # first sub-threshold frame made the 300 ms requirement mean "300 ms with no dip
+                # at all", which real speech never satisfies: plosives and gaps between syllables
+                # dip below the threshold constantly, so the counter never reached the bar and
+                # speech was simply never detected (found in testing, 2026-09-09).
+                self._speech_ms = 0.0
         return events
 
     # ----------------------------------------------------------------- private

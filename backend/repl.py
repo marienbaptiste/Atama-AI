@@ -185,12 +185,16 @@ async def _listen(cfg, brain, voice) -> None:
     meter_state = {"last": 0.0, "peak": 0.0}
 
     def show_level(level: float, prob: float) -> None:
-        meter_state["peak"] = max(meter_state["peak"] * 0.995, level)   # slow decay, so peaks linger
+        meter_state["peak"] = max(meter_state["peak"], level)   # peak-hold between redraws
         now = time.monotonic()
-        if now - meter_state["last"] < 0.08:                            # ~12 fps, not 31
+        if now - meter_state["last"] < 0.05:                    # 20 fps: responsive, not flickery
             return
         meter_state["last"] = now
-        bars = int(min(1.0, meter_state["peak"] * 25) * 28)
+        peak = meter_state["peak"]
+        meter_state["peak"] = peak * 0.45                       # ~decays to nothing in 0.2 s
+        # Quiet mics are the norm here (this one peaks around 0.02 on speech), so scale by the
+        # square root: a linear bar on a 0-1 range barely twitches and reads as "not hearing you".
+        bars = int(min(1.0, (peak * 30) ** 0.5) * 28)
         hot = prob >= vad.active_threshold
         colour = BOLD if hot else DIM
         label = "HEARING YOU" if hot else "listening   "

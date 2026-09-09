@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import io
 import sys
+import threading
 import wave
 from dataclasses import dataclass
 from typing import Any, Iterator
@@ -125,6 +126,70 @@ def stop() -> None:
         _sd().stop()
     except AudioUnavailable:
         pass
+
+
+class Player:
+    """One output stream, held open for the whole session.
+
+    `sd.play()` opens a fresh stream per call, and the device drops roughly its first 100 ms
+    while it spins up — so EVERY sentence lost its opening syllable and faded in (reported and
+    reproduced 2026-09-09). Keeping the stream running means audio starts the instant we write.
+
+    Writing in blocks also makes barge-in immediate: `cancel()` is noticed between blocks
+    instead of after the sentence finishes.
+    """
+
+    #: VOICEVOX synthesises at 24 kHz mono (verified 0.25.2).
+    DEFAULT_RATE = 24000
+    BLOCK = 1024
+
+    def __init__(self, device: str | int | None = None, samplerate: int = DEFAULT_RATE):
+        self._sd = _sd()
+        self._device = resolve_device(device, "output")
+        self._rate = samplerate
+        self._stream = None
+        self._cancel = threading.Event()
+        self._lock = threading.Lock()
+
+    def _ensure(self, rate: int) -> None:
+        if self._stream is not None and self._rate == rate:
+            return
+        self.close()
+        self._rate = rate
+        self._stream = self._sd.OutputStream(samplerate=rate, channels=1, dtype="float32",
+                                             device=self._device, blocksize=self.BLOCK)
+        self._stream.start()
+        # Prime with a few blocks of silence so the very first sample of real audio lands in a
+        # stream that is already running, not one that is still starting.
+        self._stream.write(np.zeros(self.BLOCK * 2, dtype=np.float32))
+
+    def play(self, wav_bytes: bytes) -> float:
+        """Play a WAV through the open stream. Returns seconds actually played."""
+        samples, rate = decode_wav(wav_bytes)
+        with self._lock:
+            self._cancel.clear()
+            self._ensure(rate)
+            written = 0
+            for start in range(0, len(samples), self.BLOCK):
+                if self._cancel.is_set():
+                    break
+                block = samples[start:start + self.BLOCK]
+                self._stream.write(np.ascontiguousarray(block, dtype=np.float32))  # type: ignore[union-attr]
+                written += len(block)
+        return written / float(rate or SAMPLE_RATE)
+
+    def cancel(self) -> None:
+        """Stop the sentence in flight. Safe from another thread — that is the point."""
+        self._cancel.set()
+
+    def close(self) -> None:
+        stream, self._stream = self._stream, None
+        if stream is not None:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:  # noqa: BLE001 - closing audio must never raise on shutdown
+                pass
 
 
 def capture(device: str | int | None = None, frame_samples: int = FRAME_SAMPLES) -> Iterator[np.ndarray]:

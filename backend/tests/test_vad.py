@@ -143,3 +143,24 @@ def test_real_silero_scores_silence_low_and_is_deterministic():
     first = v.probability(silence)
     v.reset()
     assert v.probability(silence) == pytest.approx(first)   # reset really resets the state
+
+
+# ------------------------------------------------- onset tolerance (real speech dips)
+def test_a_dip_between_syllables_does_not_abandon_a_forming_utterance():
+    """Real speech is not 300 ms of uninterrupted probability. Plosives and syllable gaps dip
+    below the threshold constantly; resetting on the first one meant speech was NEVER detected
+    (found in live testing, 2026-09-09)."""
+    v = detector(min_speech_ms=300, onset_tolerance_ms=200)
+    events = []
+    for _ in range(5):                     # 5 x (64 ms speech + 64 ms dip) = 320 ms of speech
+        events += feed(v, 0.9, 64)
+        events += feed(v, 0.1, 64)
+    assert EventKind.SPEECH_START in kinds(events)
+
+
+def test_a_sustained_gap_still_abandons_it():
+    v = detector(min_speech_ms=300, onset_tolerance_ms=200)
+    feed(v, 0.9, 200)                      # not yet enough to start
+    feed(v, 0.0, 300)                      # a real gap, past the tolerance
+    assert v._speech_ms == 0.0
+    assert feed(v, 0.9, 200) == []         # the counter restarted, so 200 ms is not enough

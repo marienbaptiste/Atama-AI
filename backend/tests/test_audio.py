@@ -162,3 +162,94 @@ def test_pcm16_conversion_clips_instead_of_wrapping():
     loud = np.array([2.0, -2.0, 0.0], dtype=np.float32)
     values = np.frombuffer(audio_mod.to_pcm16(loud), dtype="<i2")
     assert values.tolist() == [32767, -32767, 0]
+
+
+# ---------------------------------------------------------------------- Player
+class FakeStream:
+    def __init__(self, **kw):
+        self.kw = kw
+        self.written = []
+        self.started = False
+
+    def start(self):
+        self.started = True
+
+    def write(self, block):
+        self.written.append(np.asarray(block).copy())
+
+    def stop(self):
+        self.started = False
+
+    def close(self):
+        pass
+
+
+class PlayerSd(FakeSd):
+    def __init__(self):
+        super().__init__()
+        self.streams = []
+
+    def OutputStream(self, **kw):  # noqa: N802 - mirrors the sounddevice API
+        s = FakeStream(**kw)
+        self.streams.append(s)
+        return s
+
+
+def test_player_opens_one_stream_and_keeps_it(monkeypatch):
+    """A stream per sentence drops its own first ~100 ms, clipping every opening syllable."""
+    sd = PlayerSd()
+    monkeypatch.setattr(audio_mod, "_sd", lambda: sd)
+    player = audio_mod.Player()
+    wav = make_wav(np.zeros(24000, dtype=np.float32))
+    player.play(wav)
+    player.play(wav)
+    player.play(wav)
+    assert len(sd.streams) == 1 and sd.streams[0].started
+
+
+def test_player_primes_with_silence_before_the_first_sample(monkeypatch):
+    sd = PlayerSd()
+    monkeypatch.setattr(audio_mod, "_sd", lambda: sd)
+    player = audio_mod.Player()
+    player.play(make_wav(np.full(2048, 0.5, dtype=np.float32)))
+    first = sd.streams[0].written[0]
+    assert np.all(first == 0.0)          # the stream is already running when real audio arrives
+
+
+def test_cancel_stops_mid_sentence(monkeypatch):
+    """Barge-in must cut the sentence in flight, not wait for it to finish (spec §8)."""
+    sd = PlayerSd()
+    monkeypatch.setattr(audio_mod, "_sd", lambda: sd)
+    player = audio_mod.Player()
+
+    # Interrupt after a few blocks, the way the student talking over the avatar does.
+    original = FakeStream.write
+    calls = {"n": 0}
+
+    def interrupting_write(self, block):
+        calls["n"] += 1
+        original(self, block)
+        if calls["n"] >= 5:
+            player.cancel()
+
+    monkeypatch.setattr(FakeStream, "write", interrupting_write)
+    played = player.play(make_wav(np.zeros(24000, dtype=np.float32)))   # a full second
+    assert 0.0 < played < 0.5, "playback should have been cut well before the end"
+
+
+def test_each_sentence_starts_uncancelled(monkeypatch):
+    """A cancel belongs to the sentence it interrupted; the next turn must still be audible."""
+    sd = PlayerSd()
+    monkeypatch.setattr(audio_mod, "_sd", lambda: sd)
+    player = audio_mod.Player()
+    player.cancel()
+    assert player.play(make_wav(np.zeros(2048, dtype=np.float32))) > 0.0
+
+
+def test_player_reopens_when_the_sample_rate_changes(monkeypatch):
+    sd = PlayerSd()
+    monkeypatch.setattr(audio_mod, "_sd", lambda: sd)
+    player = audio_mod.Player()
+    player.play(make_wav(np.zeros(100, dtype=np.float32), rate=24000))
+    player.play(make_wav(np.zeros(100, dtype=np.float32), rate=16000))
+    assert [s.kw["samplerate"] for s in sd.streams] == [24000, 16000]

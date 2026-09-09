@@ -37,14 +37,18 @@ class SpeechQueue:
     tts: VoicevoxClient
     device: str | int | None = None
     on_event: Callable[[str, SpokenChunk], None] | None = None
+    _player: audio_mod.Player | None = field(default=None, init=False, repr=False)
     _queue: asyncio.Queue | None = field(default=None, init=False)
-    _player: asyncio.Task | None = field(default=None, init=False)
+    _task: asyncio.Task | None = field(default=None, init=False)
     _cancelled: bool = field(default=False, init=False)
 
     async def start(self) -> None:
         self._queue = asyncio.Queue()
         self._cancelled = False
-        self._player = asyncio.create_task(self._play_loop())
+        # One output stream for the session: a stream opened per sentence drops its own first
+        # ~100 ms while starting, which clipped every opening syllable (fixed 2026-09-09).
+        self._player = audio_mod.Player(self.device)
+        self._task = asyncio.create_task(self._play_loop())
 
     async def say(self, chunk: Chunk) -> None:
         """Synthesise one sentence and queue it. Returns as soon as the audio exists."""
@@ -70,7 +74,8 @@ class SpeechQueue:
     def cancel(self) -> None:
         """Barge-in: stop the current sentence and drop the rest."""
         self._cancelled = True
-        audio_mod.stop()
+        if self._player is not None:
+            self._player.cancel()
         if self._queue is not None:
             while not self._queue.empty():
                 try:
@@ -81,12 +86,15 @@ class SpeechQueue:
 
     async def aclose(self) -> None:
         self.cancel()
-        if self._player is not None:
-            self._player.cancel()
+        if self._task is not None:
+            self._task.cancel()
             try:
-                await self._player
+                await self._task
             except asyncio.CancelledError:
                 pass
+            self._task = None
+        if self._player is not None:
+            self._player.close()
             self._player = None
 
     # ------------------------------------------------------------------ inner
@@ -95,10 +103,10 @@ class SpeechQueue:
         while True:
             speech, record = await self._queue.get()
             try:
-                if not self._cancelled:
+                if not self._cancelled and self._player is not None:
                     record.played_at = time.monotonic()
                     self._emit("playing", record)
-                    await asyncio.to_thread(audio_mod.play, speech.wav, self.device)
+                    await asyncio.to_thread(self._player.play, speech.wav)
             except (audio_mod.AudioUnavailable, OSError) as exc:
                 record.error = f"playback failed: {exc}"
                 self._emit("error", record)
