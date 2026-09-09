@@ -161,6 +161,24 @@ async def _listen(cfg, brain, voice) -> None:
     registry.report("stt", "warm", f"{cfg.WHISPER_MODEL} · load {stt.load_ms / 1000:.1f}s · warm {stt.warmup_ms / 1000:.1f}s")
     print(f"{DIM}whisper ready: load {stt.load_ms / 1000:.1f}s, warm-up {stt.warmup_ms / 1000:.1f}s{RESET}")
 
+    # A mic that opens but delivers digital silence is the most likely failure here, and it looks
+    # exactly like "the app is broken" if we say nothing (found while testing, 2026-09-09).
+    from backend import audio as audio_mod
+    try:
+        level = await asyncio.to_thread(audio_mod.input_level, cfg.AUDIO_INPUT_DEVICE, 1.0)
+    except audio_mod.AudioUnavailable as exc:
+        print(f"{BOLD}no microphone:{RESET} {exc}", file=sys.stderr)
+        return
+    if level < audio_mod.SILENT_RMS:
+        device = cfg.AUDIO_INPUT_DEVICE or "system default"
+        print(f"\n{BOLD}The microphone ({device}) is silent{RESET} — rms {level:.6f}. It opened, so the "
+              f"device exists; it is muted or blocked. Check:\n"
+              f"  1. the physical mute on the headset (on many, flipping the boom up mutes it)\n"
+              f"  2. Settings > Privacy & security > Microphone > 'Let desktop apps access your microphone'\n"
+              f"  3. Settings > System > Sound > Input > device level is not 0\n"
+              f"  Watch it live with:  python -m backend.audio --meter\n"
+              f"Starting anyway — speak and see.\n")
+
     vad = VoiceActivityDetector.from_config(cfg)
     loop = VoiceLoop(
         brain=brain, stt=stt, vad=vad, voice=voice, input_device=cfg.AUDIO_INPUT_DEVICE,

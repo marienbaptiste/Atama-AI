@@ -10,6 +10,7 @@ Thin wrapper over PortAudio (`sounddevice`). Two jobs:
 
     python -m backend.audio            # list devices
     python -m backend.audio --test     # play a tone on the configured output
+    python -m backend.audio --meter    # live input level + speech probability
 """
 from __future__ import annotations
 
@@ -145,6 +146,60 @@ def to_pcm16(frame: np.ndarray) -> bytes:
     return (np.clip(frame, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
 
 
+#: Below this RMS over a second of audio, the microphone is delivering digital silence — muted
+#: at the OS or hardware level, or blocked by privacy settings. Verified on a muted headset
+#: 2026-09-09: rms 0.00001, i.e. three orders of magnitude below a quiet room.
+SILENT_RMS = 0.0005
+
+
+def input_level(device: str | int | None = None, seconds: float = 1.0) -> float:
+    """RMS of a short capture. 0.0 means nothing is arriving at all."""
+    sd = _sd()
+    frames = []
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                        blocksize=FRAME_SAMPLES, device=resolve_device(device, "input")) as stream:
+        for _ in range(max(1, int(seconds * SAMPLE_RATE / FRAME_SAMPLES))):
+            frames.append(stream.read(FRAME_SAMPLES)[0][:, 0])
+    audio = np.concatenate(frames) if frames else np.zeros(1, dtype=np.float32)
+    return float(np.sqrt(np.mean(np.square(audio))))
+
+
+def meter(device: str | int | None = None, seconds: float = 30.0) -> int:
+    """Live input level and speech probability, so a dead microphone is visible, not mysterious."""
+    from backend import config
+    from backend.vad import VoiceActivityDetector
+
+    sd = _sd()
+    resolved = resolve_device(device, "input")
+    name = sd.query_devices(resolved if resolved is not None else sd.default.device[0])["name"]
+    print(f"listening on: {name}")
+    print("speak — the bar should move. Ctrl+C to stop.\n")
+    try:
+        vad = VoiceActivityDetector.from_config(config.load())
+    except Exception:
+        vad = None
+    peak_seen = 0.0
+    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                        blocksize=FRAME_SAMPLES, device=resolved) as stream:
+        for _ in range(int(seconds * SAMPLE_RATE / FRAME_SAMPLES)):
+            frame = stream.read(FRAME_SAMPLES)[0][:, 0]
+            level = float(np.sqrt(np.mean(np.square(frame))))
+            peak_seen = max(peak_seen, level)
+            prob = vad.probability(frame) if vad is not None else 0.0
+            bars = int(min(1.0, level * 20) * 40)
+            flag = " SPEECH" if prob >= 0.5 else ""
+            print(f"\r|{'#' * bars:<40}| rms {level:.4f}  speech {prob:.2f}{flag}   ", end="", flush=True)
+    print()
+    if peak_seen < SILENT_RMS:
+        print(f"\nNothing arrived (peak rms {peak_seen:.5f}). The stream opened, so the device exists —")
+        print("it is muted or blocked, not missing. Check, in order:")
+        print("  1. the physical mute on the headset/mic")
+        print("  2. Windows Settings > Privacy & security > Microphone > 'Let desktop apps access'")
+        print("  3. Windows Sound settings > Input > the device level is not 0")
+        return 1
+    return 0
+
+
 def _main(argv: list[str]) -> int:
     try:
         devices = list_devices()
@@ -157,6 +212,9 @@ def _main(argv: list[str]) -> int:
             print(f"  [{d.index:>2}] {'*' if d.is_default else ' '} {d.name[:58]:<58} {d.samplerate or '?'} Hz")
     print("\n* = system default. Put a NAME (or a substring of one) in AUDIO_INPUT_DEVICE /"
           "\nAUDIO_OUTPUT_DEVICE — names survive reboots, indices do not.")
+    if "--meter" in argv:
+        from backend import config
+        return meter(config.load().AUDIO_INPUT_DEVICE)
     if "--test" in argv:
         from backend import config
         cfg = config.load()
