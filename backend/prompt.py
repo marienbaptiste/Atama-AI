@@ -25,6 +25,7 @@ DEFAULT_PERSONA = "tanaka"
 #: Character and voice are one choice — switching tutor should not mean remembering to change a
 #: speaker id as well, and a mismatch (a male persona in a female voice) is jarring.
 _VOICE_DECLARATION = re.compile(r"<!--\s*voice:\s*(\d+)\s*-->")
+_AVATAR_DECLARATION = re.compile(r"<!--\s*avatar:\s*([A-Za-z0-9_.-]+\.glb)\s*-->")
 
 SOUL_MAX_TOKENS = 400
 PROFILE_MAX_TOKENS = 600
@@ -102,6 +103,18 @@ def declared_voice(name_or_path: str | Path | None = None) -> int | None:
     path = name_or_path if isinstance(name_or_path, Path) else persona_path(name_or_path)
     match = _VOICE_DECLARATION.search(_read(path))
     return int(match.group(1)) if match else None
+
+
+def declared_avatar(name_or_path: str | Path | None = None) -> str | None:
+    """The GLB this persona is written for, if it names one.
+
+    The face belongs to the same choice as the voice (ADR-026): たなか先生 is a fifty-year-old man
+    and putting him behind a teenager's face is exactly as jarring as putting him in her voice.
+    So the persona declares both, and switching `TUTOR_PERSONA` moves the whole character.
+    """
+    path = name_or_path if isinstance(name_or_path, Path) else persona_path(name_or_path)
+    match = _AVATAR_DECLARATION.search(_read(path))
+    return match.group(1) if match else None
 
 
 def load_soul(path: Path | None = None, name: str | None = None) -> str:

@@ -1,0 +1,119 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sensei preview</title>
+<style>
+  html,body{margin:0;height:100%;background:#15171a;color:#e6e6e6;
+            font:14px system-ui,-apple-system,sans-serif;overflow:hidden}
+  #stage{position:fixed;inset:0}
+  #ui{position:fixed;top:14px;left:14px;z-index:10;background:#1e2126d9;padding:12px 14px;
+      border-radius:10px;backdrop-filter:blur(8px);min-width:240px}
+  h1{font-size:13px;margin:0 0 10px;letter-spacing:.04em;text-transform:uppercase;color:#9aa3ad}
+  button,select{font:13px system-ui;padding:6px 10px;background:#2a2e35;color:#e6e6e6;
+                border:1px solid #3a3f47;border-radius:6px;cursor:pointer}
+  button:hover{background:#343943}
+  button:disabled{opacity:.4;cursor:default}
+  .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  #log{margin-top:10px;font-size:12px;color:#9aa3ad;line-height:1.6;max-width:320px}
+  .err{color:#ff8a80}
+</style>
+
+<div id="stage"></div>
+<div id="ui">
+  <h1>Sensei preview</h1>
+  <select id="who"></select>
+  <div class="row" id="moods"></div>
+  <div id="log">loading…</div>
+</div>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  "talkinghead":"https://cdn.jsdelivr.net/gh/met4citizen/TalkingHead@1.4/modules/talkinghead.mjs"
+}}
+</script>
+
+<script type="module">
+import { TalkingHead } from "talkinghead";
+
+// persona -> the GLB it declares, mirroring prompts/<persona>.md (ADR-026: one character choice)
+const CAST = [
+  { id:"minami",  glb:"minami.glb",  body:"F", label:"みなみ先生 — female teacher" },
+  { id:"hayashi", glb:"hayashi.glb", body:"M", label:"はやし先生 — younger man" },
+  { id:"mori",    glb:"yui.glb",     body:"F", label:"ゆい — teenager" },
+  { id:"tanaka",  glb:"tanaka.glb",  body:"M", label:"たなか先生 — older man (not made yet)" },
+];
+// Only these four tags exist in our prompt; TalkingHead's mood set has just neutral+happy of
+// them (V0.4), so the other three ride on neutral plus blendshapes later.
+const MOODS = ["neutral","happy","thinking","surprised","serious"];
+const TH_MOOD = { neutral:"neutral", happy:"happy", thinking:"neutral",
+                  surprised:"neutral", serious:"neutral" };
+
+const who = document.getElementById("who"), moods = document.getElementById("moods"),
+      log = document.getElementById("log");
+CAST.forEach(c => who.add(new Option(c.label, c.id)));
+
+const head = new TalkingHead(document.getElementById("stage"), {
+  // The constructor THROWS on a falsy ttsEndpoint (talkinghead.mjs:813) even though we never
+  // call their TTS — we only ever use speakAudio() with VOICEVOX audio. A placeholder satisfies
+  // the check; nothing ever requests it. Verified 2026-09-10.
+  ttsEndpoint: "unused://voicevox-makes-the-audio",
+  lipsyncModules: [],         // we always supply visemes explicitly
+  cameraView: "upper",        // waist-up, per spec §8
+  avatarMood: "neutral",
+  // It multiplies this by window.devicePixelRatio itself — passing devicePixelRatio squares it.
+  modelPixelRatio: 1,
+});
+
+let payloads = null, ctx = null;
+function say(msg) { log.innerHTML = msg; }
+
+async function pick(id) {
+  const c = CAST.find(x => x.id === id);
+  moods.innerHTML = ""; payloads = null;
+  say(`loading ${c.glb}…`);
+  try {
+    await head.showAvatar({ url: c.glb, body: c.body, avatarMood:"neutral", lipsyncLang:"en" });
+  } catch (e) {
+    say(`<span class="err">avatar failed: ${e}</span><br>` +
+        (id === "tanaka" ? "Make him at readyplayer.me, then <code>check_avatar</code>." : ""));
+    return;
+  }
+  try {
+    payloads = await (await fetch(`${id}.speak.json`)).json();
+  } catch (e) { say(`<span class="err">no audio for ${id}: ${e}</span>`); return; }
+  MOODS.forEach(m => {
+    const b = document.createElement("button");
+    b.textContent = m; b.onclick = () => speak(m); moods.appendChild(b);
+  });
+  say(`${c.glb} ready — pick a mood to hear ${id} speak.<br>` +
+      `audio: VOICEVOX · visemes: ours · timing: milliseconds`);
+}
+
+async function speak(mood) {
+  const p = payloads?.[mood]; if (!p) return;
+  ctx = ctx || new AudioContext();
+  await ctx.resume();
+  const bytes = Uint8Array.from(atob(p.audio_b64), ch => ch.charCodeAt(0));
+  const buf = await ctx.decodeAudioData(bytes.buffer);
+  head.setMood(TH_MOOD[mood] || "neutral");
+  // `words` IS REQUIRED even when we supply visemes ourselves. In talkinghead.mjs the whole
+  // lipsync block — including `if (r.visemes)` — is nested inside `if (r.words)`, while
+  // `if (r.audio)` sits outside it. Omit words and you get audio with a completely frozen face,
+  // which is precisely what happened (2026-09-10). The README documents `visemes` as an
+  // independent optional field; it is not.
+  // One span covering the utterance is enough to open the gate: with `visemes` present the
+  // word-derived path is skipped (`if (!r.visemes)`), so this cannot fight our own timeline.
+  const total = buf.duration * 1000;
+  head.speakAudio({
+    audio: buf,
+    words: [p.text], wtimes: [0], wdurations: [total],
+    visemes: p.visemes, vtimes: p.vtimes, vdurations: p.vdurations,
+  });
+  say(`speaking as <b>${who.value}</b> · mood <b>${mood}</b> · ` +
+      `${p.visemes.length} visemes over ${Math.round(p.vtimes.at(-1) + p.vdurations.at(-1))} ms`);
+}
+
+who.onchange = () => pick(who.value);
+pick(CAST[0].id);
+</script>

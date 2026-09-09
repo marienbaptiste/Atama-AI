@@ -1,4 +1,5 @@
 <!-- voice: 29 -->
+<!-- avatar: minami.glb -->
 <!-- みなみ先生 — female. Voice: No.7 ノーマル (VOICEVOX style 29), which also owns
      アナウンス=30 and 読み聞かせ=31, so her emotions change voice and not only pitch.
      A different person from たなか先生, not the same character in another voice: she is warm,

@@ -48,3 +48,6 @@ frontend/dist/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Generated preview audio (backend.tools.make_preview) — megabytes of base64 WAV.
+frontend/public/*.speak.json

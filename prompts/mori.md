@@ -1,4 +1,5 @@
 <!-- voice: 14 -->
+<!-- avatar: yui.glb -->
 <!-- ゆい — female, a TEENAGER/young adult, and deliberately NOT a 先生. Voice: 冥鳴ひまり
      (VOICEVOX style 14). Chosen by ear from a measured shortlist (ROADMAP V0.3, 2026-09-09):
      F0 255 Hz, jitter 15.3 cents, flux 0.0428 — one of the steadiest voices in the catalogue.

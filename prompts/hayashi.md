@@ -1,4 +1,5 @@
 <!-- voice: 67 -->
+<!-- avatar: hayashi.glb -->
 <!-- はやし先生 — male, the YOUNGER of the two men. Voice: 栗田まろん (VOICEVOX style 67).
      Chosen by ear from a measured shortlist (ROADMAP V0.3, 2026-09-09): F0 156 Hz, jitter
      22.0 cents, and the fastest of the shortlist to synthesise (~643 ms/sentence), which is why

@@ -1,4 +1,5 @@
 <!-- voice: 53 -->
+<!-- avatar: tanaka.glb -->
 <!-- たなか先生 — male, the OLDER of the two men. Voice: 麒ヶ島宗麟 (VOICEVOX style 53).
      Chosen by ear from a measured shortlist (ROADMAP V0.3, 2026-09-09). 53 is the least steady
      voice in the catalogue — F0 jitter 33.4 cents against the best male voice's 19.9 — but on a
