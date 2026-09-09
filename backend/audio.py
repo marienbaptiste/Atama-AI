@@ -179,16 +179,22 @@ def meter(device: str | int | None = None, seconds: float = 30.0) -> int:
     except Exception:
         vad = None
     peak_seen = 0.0
-    with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
-                        blocksize=FRAME_SAMPLES, device=resolved) as stream:
-        for _ in range(int(seconds * SAMPLE_RATE / FRAME_SAMPLES)):
-            frame = stream.read(FRAME_SAMPLES)[0][:, 0]
-            level = float(np.sqrt(np.mean(np.square(frame))))
-            peak_seen = max(peak_seen, level)
-            prob = vad.probability(frame) if vad is not None else 0.0
-            bars = int(min(1.0, level * 20) * 40)
-            flag = " SPEECH" if prob >= 0.5 else ""
-            print(f"\r|{'#' * bars:<40}| rms {level:.4f}  speech {prob:.2f}{flag}   ", end="", flush=True)
+    try:
+        with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                            blocksize=FRAME_SAMPLES, device=resolved) as stream:
+            for _ in range(int(seconds * SAMPLE_RATE / FRAME_SAMPLES)):
+                frame = stream.read(FRAME_SAMPLES)[0][:, 0]
+                level = float(np.sqrt(np.mean(np.square(frame))))
+                peak_seen = max(peak_seen, level)
+                prob = vad.probability(frame) if vad is not None else 0.0
+                bars = int(min(1.0, level * 20) * 40)
+                flag = " SPEECH" if prob >= 0.5 else ""
+                # Six decimals: a muted mic reads 0.00002, which four decimals rounds to 0.0000
+                # and makes indistinguishable from a device delivering literally nothing.
+                print(f"\r|{'#' * bars:<40}| rms {level:.6f}  speech {prob:.2f}{flag}   ",
+                      end="", flush=True)
+    except KeyboardInterrupt:
+        pass          # Ctrl+C is how this tool is meant to end, not a crash
     print()
     if peak_seen < SILENT_RMS:
         print(f"\nNothing arrived (peak rms {peak_seen:.5f}). The stream opened, so the device exists —")
@@ -229,4 +235,7 @@ def _main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(_main(sys.argv[1:]))
+    try:
+        sys.exit(_main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        sys.exit(130)
