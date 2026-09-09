@@ -145,7 +145,11 @@ async def _listen(cfg, brain, voice) -> None:
     from backend.voice_loop import VoiceLoop
 
     if voice is None:
-        print(f"{BOLD}--listen needs --speak{RESET} (there is no point hearing you if she cannot answer).",
+        # --listen implies --speak, so getting here means the mouth failed to open, not that the
+        # user forgot a flag. Say which, or they go hunting through argv for a problem that is in
+        # Docker.
+        print(f"{BOLD}cannot listen without a voice{RESET} — VOICEVOX is not answering at "
+              f"{cfg.VOICEVOX_URL}. Start it with `docker compose up -d voicevox` and try again.",
               file=sys.stderr)
         return
 
@@ -284,8 +288,10 @@ def main() -> int:
     ap.add_argument("--no-open", action="store_true", help="do not let Sensei speak first")
     ap.add_argument("--speak", action="store_true", help="speak each sentence aloud via VOICEVOX")
     ap.add_argument("--listen", action="store_true", help="talk to her: mic -> VAD -> Whisper (implies --speak)")
+    args = ap.parse_args()
+    args.speak = args.speak or args.listen      # the help says implies; make it true (2026-09-09)
     try:
-        return asyncio.run(run(ap.parse_args()))
+        return asyncio.run(run(args))
     except KeyboardInterrupt:
         return 130
 
