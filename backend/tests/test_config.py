@@ -22,7 +22,7 @@ def test_resolution_order(tmp_path):
     cfg = config.load(settings, env={"PORT": "9002"})
     assert cfg.PORT == 9002            # env wins
     assert cfg.CLAUDE_MODEL == "opus"  # settings.json wins over default
-    assert cfg.VAD_SILENCE_MS == 600   # default
+    assert cfg.VAD_SILENCE_MS == 900   # default
     assert cfg.first_run is False
 
 

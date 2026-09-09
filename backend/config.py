@@ -66,7 +66,7 @@ SCHEMA: tuple[Setting, ...] = (
     # Speech detection
     Setting("WHISPER_MODEL", "large-v3", str, "speech", "faster-whisper model (fallback: medium)"),
     Setting("WHISPER_COMPUTE_TYPE", "float16", str, "speech", "CTranslate2 compute type. float16 is the default because int8 buys nothing on a GPU that does fp16 natively: measured 2026-09-09, same median latency (287 vs 290 ms) and better transcripts, for 1.7 GB of headroom we were not spending. int8_float16 is the fallback if VRAM ever gets tight"),
-    Setting("VAD_SILENCE_MS", 600, int, "speech", "Silence that ends an utterance"),
+    Setting("VAD_SILENCE_MS", 900, int, "speech", "Silence that ends an utterance. Raised 600 -> 900 on 2026-09-10: 600 ms cut the student off mid-thought. It is spent DIRECTLY from the 3.0 s voice->voice budget (spec S10 allots 0.50 s to this stage), so raising it buys patience with latency"),
     Setting("VAD_MIN_SPEECH_MS", 300, int, "speech", "Minimum speech before an utterance counts"),
     Setting("BARGEIN_THRESHOLD_FACTOR", 2.0, float, "speech", "VAD threshold multiplier while the avatar speaks"),
     Setting("BARGEIN_MIN_SPEECH_MS", 250, int, "speech", "Sustained speech required to barge in"),

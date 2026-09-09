@@ -417,9 +417,32 @@ Capping it is cheaper than rotating more often.
 ## 9. STT DETAILS
 
 - faster-whisper `large-v3`, `language="ja"`, `beam_size=5`, `condition_on_previous_text=False`, `vad_filter=False` (we run silero ourselves upstream).
-- Silero VAD on the incoming stream; end-of-utterance = configurable silence (default 600 ms) after speech ≥ 300 ms. VAD emits `speech_start` / `speech_end` events; the orchestrator gates them by state — during `speaking`, the barge-in threshold and onset rules of §8 apply, so the avatar's own voice through the speakers does not end its turn.
+- Silero VAD on the incoming stream; end-of-utterance = configurable silence (`VAD_SILENCE_MS`, default 900 ms — 600 ms cut a learner off mid-thought, 2026-09-10) after speech ≥ 300 ms. VAD emits `speech_start` / `speech_end` events; the orchestrator gates them by state — during `speaking`, the barge-in threshold and onset rules of §8 apply, so the avatar's own voice through the speakers does not end its turn.
 - **DO** filter known Japanese Whisper hallucinations on silence/noise: discard results matching a blocklist (e.g. ご視聴ありがとうございました, おやすみなさい variants when energy was near-silence) and any transcript whose avg logprob / no-speech prob crosses thresholds. Make the blocklist a data file.
 - Warm the model at startup with a 1 s dummy transcription so the first real turn isn't slow.
+- **Push-to-talk is a first-class turn mode (M3, user directive 2026-09-10).** `TURN_MODE=vad|ptt`.
+  Under `ptt` the key/button holds the turn open and releasing it *is* `speech_end` — the silence
+  window is not consulted at all, which removes this stage from the §10 budget entirely and makes
+  the tutor's own voice a non-issue, so barge-in becomes explicit rather than inferred. The VAD
+  still runs, because the level meter and the listening reactions (§8) read from it; it simply
+  stops deciding when the turn ends. `vad` remains the default: hands-free is the point of the
+  product, and push-to-talk is the escape hatch for noisy rooms and long thinking pauses.
+
+### 9b. Starting over — clearing the conversation (M3, user directive 2026-09-10)
+
+A lesson that goes wrong should be abandonable without restarting the app. **Clear** ends the
+current conversation and begins a fresh one:
+
+- The brain is a subprocess with an orchestrator-assigned `--session-id` (§4), so clearing is a
+  respawn with a **new** id — explicitly *not* `--resume`, which is the crash-recovery path and
+  would carry the ruined context back in.
+- The student profile is **not** re-fetched. ADR-024 confines SRS calls to launch and manual
+  Refresh, so the rendered prompt is rebuilt from the existing snapshot.
+- Everything conversational resets with it: the chunker, the speech queue (cancel and re-arm, see
+  the barge-in latch), the per-turn timings, and the transcript panel. The status chips do not:
+  VOICEVOX, Whisper and the SRS sync survive, because none of them is part of the conversation.
+- The session log records the clear as an event rather than starting a new file, so an abandoned
+  attempt is still minable afterwards (§15).
 
 ## 10. LATENCY BUDGET — HARD REQUIREMENT: ≤ 3.0 s voice→voice (instrument it — log per-turn timings as structured JSON)
 
