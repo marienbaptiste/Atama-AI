@@ -368,6 +368,31 @@ prompt size.
   + WS delivery" is 400 ms, so this is over already, before any WebSocket. Levers for M3: shorter first
   sentences, and starting synthesis on the first sentence while the rest still streams (already done).
 
+**2026-09-10 — V0.4, TalkingHead verified (README + modules/talkinghead.mjs):**
+
+- `speakAudio(audio, [opt={}], [onsubtitles=null])`, where `audio` carries `visemes[]`,
+  `vtimes[]`, `vdurations[]`. **All times are MILLISECONDS.** This was the dangerous unknown —
+  seconds would have been a silent 1000x drift — and our `as_message()` already emits ms
+  (`vtimes[0] == 100.0` for a 0.1 s prePhonemeLength). **No conversion needed at the WS boundary.**
+- `visemes[]` takes **bare** Oculus ids (`aa`, `PP`), not the `viseme_`-prefixed morph names.
+  TalkingHead's set is 15; our mapper emits 14 of them and never emits anything outside it —
+  the only one missing is `TH`, which Japanese has no sound for. Checked programmatically, not
+  by eye.
+- **Moods are a closed set of 8:** `neutral, happy, angry, sad, fear, disgust, love, sleep`.
+  Three of our four tags — `thinking`, `surprised`, `serious` — **are not moods**, and an unknown
+  name is a silent no-op. Spec §8's table already routes them to `neutral` + blendshape
+  overrides, so the guess it was carrying turns out to be right; it is now verified rather than
+  assumed.
+- Blendshape control: `head.setFixedValue("jawOpen", 1)`, released with `null`; or an `anim`
+  object `{dt: [ms], vs: {shape: [values]}}` passed to `speakAudio` for audio-synced motion.
+- Gestures exist: `handup, index, ok, thumbup, thumbdown, side, shrug`, left-handed unless
+  `mirror` is set.
+- **Avatar requirement: full-body GLB, Mixamo-compatible rig, ARKit (52) + Oculus visemes (15).**
+  Avaturn Type-2 avatars are stated compatible. **Still open:** the README does not give the
+  Ready Player Me URL parameters that guarantee both blendshape sets in the export, and it is
+  exactly the kind of thing that silently produces a face that cannot move. Confirm against Ready
+  Player Me's own docs before the user downloads one — do not guess it here.
+
 **2026-09-10 — M2c, first-chunk synthesis on the target box (speaker 53, CPU VOICEVOX):**
 
 | chars | synth | audio | RTF |
@@ -944,6 +969,37 @@ is defaults → `settings.json` → env. Secrets never return to the browser in 
 - **Integrate** — The `settings` / `settings_test` messages (subsystem 7) and the status
   registry (subsystem 16).
 - **Gate M5b** — The M5 acceptance: clone → first conversation without ever creating a `.env`.
+
+---
+
+### 20. Second brain provider — OpenAI, headless — `backend/brain/openai_cli.py` — **deferred, user directive 2026-09-10**
+
+ADR-027 made the brain a provider behind an interface precisely so this is a new module rather
+than a rewrite: `BRAIN_PROVIDER` already exists as a config key and already says
+"Implemented: claude-cli". Nothing upstream of the chunker imports a provider.
+
+**This does NOT reopen ADR-001.** That decision forbids *substituting* the Anthropic API for the
+`claude` CLI — subscription auth, no per-token billing. A second provider sitting beside it is
+the case ADR-027 was written for. Adding OpenAI must not change how the Claude provider is
+spawned or authenticated.
+
+- **Open question before any code: which "headless" is meant.** Two readings, and they are not
+  the same project:
+  1. **The OpenAI CLI (`codex`) driven headless as a subprocess**, mirroring `claude -p` — same
+     shape as the existing provider, same subscription-auth argument, and the streaming/session
+     flags would need pinning live exactly as V0.1/V0.2 did for Claude.
+  2. **The OpenAI HTTP API**, which is per-token billing and the thing ADR-001 refused for
+     Anthropic. Defensible as an *option the user opts into*, but it needs its own ADR saying so,
+     because it contradicts the reasoning ADR-001 is built on.
+- **Test** — The provider contract test runs against BOTH implementations: the same `Brain`
+  interface, the same event types (`TextDelta`, `Thinking`, `ToolCall`, `ToolOutcome`,
+  `RateLimited`, `TurnComplete`), the same restart/resume behaviour. A provider that cannot
+  produce the full event set is a provider the pipeline cannot use.
+- **Do not fabricate the interface** (ADR-015). Whichever reading wins, its flags or endpoint
+  shapes get verified live and pinned in `constants.py` with a date, like every other external
+  interface here.
+- **Sequencing:** after M3. The brain already works; a second one buys optionality, not a
+  milestone, and M2/M3 are not blocked by it.
 
 ---
 

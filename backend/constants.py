@@ -113,7 +113,30 @@ BUNPRO_READ_ENDPOINTS = {
 }
 
 # --- VOICEVOX / TalkingHead ---------------------------------------------------
-# Pinned at V0.3 / V0.4 (M2/M3). Not yet verified — do not add guesses here.
+# TalkingHead verified 2026-09-10 (V0.4), against the README and modules/talkinghead.mjs.
+#
+#   speakAudio(audio, [opt={}], [onsubtitles=null])
+#   audio = {audio, words[], wtimes[], wdurations[], visemes[], vtimes[], vdurations[], anim}
+#
+# **All time values are MILLISECONDS.** Our `VisemeTimeline.as_message()` already emits ms
+# (vtimes[0] == 100.0 for a 0.1 s prePhonemeLength), so no conversion at the WS boundary. This
+# was the single most dangerous unknown in V0.4: seconds would have been a silent 1000x drift.
+#
+# `visemes[]` holds BARE Oculus ids, not the `viseme_`-prefixed morph target names.
+TALKINGHEAD_VISEMES = ("aa", "E", "I", "O", "U", "PP", "SS", "TH", "DD", "FF",
+                       "kk", "nn", "RR", "CH", "sil")
+# Our mapper emits 14 of those 15 — everything except TH, which Japanese has no sound for.
+#
+# Moods are a CLOSED set, and "thinking"/"surprised"/"serious" are NOT in it. An unknown mood
+# name is a silent no-op, so those three tags drive `neutral` plus explicit blendshape overrides
+# (spec §8), never a mood string.
+TALKINGHEAD_MOODS = ("neutral", "happy", "angry", "sad", "fear", "disgust", "love", "sleep")
+TALKINGHEAD_GESTURES = ("handup", "index", "ok", "thumbup", "thumbdown", "side", "shrug")
+# Blendshape override: head.setFixedValue("jawOpen", 1) and setFixedValue(name, null) to release;
+# or an `anim` object {dt: [ms], vs: {shape: [values]}} inside speakAudio for audio-synced motion.
+# Avatar: full-body GLB, Mixamo-compatible rig, ARKit (52 shapes) + Oculus visemes (15).
+# Constructor: cameraView is one of "full" | "mid" | "upper" | "head"; lipsyncModules defaults to
+# ["en","fi","lt"] and we pass [] because we always supply visemes ourselves.
 
 # Verified live against VOICEVOX 0.25.2 /openapi.json on 2026-09-09.
 # The engine loads a style's model on FIRST USE, so `GET /version` answering 200 means the

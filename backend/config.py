@@ -39,7 +39,7 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("BUNPRO_API_TOKEN", "", str, "account", "Bunpro -> Settings -> API -> Account API Token", secret=True),
     Setting("CLAUDE_CODE_OAUTH_TOKEN", "", str, "account", "Optional; from `claude setup-token`. Empty = interactive login", secret=True),
     # Model
-    Setting("BRAIN_PROVIDER", "claude-cli", str, "model", "Which brain implementation to use (ADR-027). Implemented: claude-cli"),
+    Setting("BRAIN_PROVIDER", "claude-cli", str, "model", "Which brain implementation to use (ADR-027). Implemented: claude-cli. An OpenAI headless provider is planned (ROADMAP subsystem 20)"),
     Setting("CLAUDE_MODEL", "sonnet", str, "model", "Model alias for the tutor subprocess"),
     Setting("CLAUDE_EFFORT", "medium", str, "model", "CLI effort level (low|medium|high|xhigh|max). Measured 2026-09-09, median first-token BETWEEN turns / opening turn: low 2.75s/8.6s, medium 2.14s/5.8s, high 3.75s/19.2s. Medium is the floor, not a compromise: it is the fastest of the three on BOTH numbers, so dropping to low would buy nothing. The first lever pulled against the 1.60s Claude stage budget (spec S10)"),
     Setting("CLAUDE_FALLBACK_MODEL", "haiku", str, "model", "Fallback when the model is overloaded / rate limited"),
