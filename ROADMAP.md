@@ -79,6 +79,26 @@ Throwaway scripts, deleted or moved into `backend/tests/fixtures/` when done. Ea
   that first.
 
 
+**2026-09-09 — M2b, part 1: does the startup warm-up earn its place? Yes.** Same six clips,
+replayed twice in separate processes (`large-v3` @ `float16`), once loading the model and going
+straight to work, once doing the 1 s dummy transcribe first:
+
+| | first clip | median of the rest | p50 | p90 |
+|---|---|---|---|---|
+| no warm-up | **413.5 ms** | 276.4 ms | 299.1 ms | **388.0 ms** |
+| with warm-up (419 ms at startup) | **235.5 ms** | 283.4 ms | 280.0 ms | **343.0 ms** |
+
+- **The first-turn penalty is real and the warm-up removes it.** The identical clip costs 413.5 ms
+  cold and 235.5 ms warm — ~140 ms above the median, paid by the student's first sentence, which is
+  the worst possible place for it. 419 ms at startup buys it back. This is the third instance of the
+  same bug shape in this codebase (VOICEVOX styles, the output stream, now Whisper): *a subsystem
+  that reports ready before it can actually work*. Only this one was already fixed.
+- **p90 is 343 ms against the 350 ms budget — but this is NOT gate M2b.** Six clips cannot produce a
+  p90, the margin is 7 ms, and the roadmap asks for **20 recorded utterances at the user's own
+  speaking level**. Treat this as evidence the budget is reachable, not as evidence it is met.
+- Still outstanding for M2b: the 20-utterance run, and zero hallucinated transcripts across a
+  2-minute silent recording. Neither can run until the microphone is unmuted.
+
 **2026-09-09 — quantisation (V0.13 addendum), replayed on the same six clips:**
 
 | | VRAM | median | utt_02 | utt_06 |
