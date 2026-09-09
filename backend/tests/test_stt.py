@@ -65,9 +65,24 @@ def test_missing_blocklist_file_degrades_to_empty(tmp_path):
 
 
 # ------------------------------------------------------------------ thresholds
-def test_high_no_speech_probability_is_rejected():
-    result = speaker("なにか", no_speech=0.9).listen(loud())
-    assert not result and "no_speech_prob" in result.reason
+def test_high_no_speech_probability_alone_does_not_reject_confident_loud_speech():
+    """Regression, 2026-09-09: 「台風ではありません。今、ヨーロッパに住んでいる。」 — a coherent,
+    on-topic answer spoken normally — scored 0.77 and was thrown away. Whisper's no-speech head is
+    unreliable on utterances that start abruptly, which is all of ours: Silero has already trimmed
+    the leading silence. Silero is the better witness, so no_speech_prob needs corroboration."""
+    result = speaker("なにか", no_speech=0.9, avg_logprob=-0.2).listen(loud())
+    assert result, result.reason
+
+
+def test_high_no_speech_probability_rejects_when_the_audio_is_quiet():
+    result = speaker("なにか", no_speech=0.9, avg_logprob=-0.2).listen(quiet())
+    assert not result and "no_speech_prob" in result.reason and "quiet" in result.reason
+
+
+def test_high_no_speech_probability_rejects_when_the_text_is_also_weakly_predicted():
+    """Neither signal is damning alone; together they are."""
+    result = speaker("なにか", no_speech=0.9, avg_logprob=-0.9).listen(loud())
+    assert not result and "no_speech_prob" in result.reason and "avg_logprob" in result.reason
 
 
 def test_low_confidence_is_rejected():

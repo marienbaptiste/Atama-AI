@@ -36,7 +36,12 @@ FRAME_MS = FRAME_SAMPLES * 1000 // SAMPLE_RATE      # 32
 CONTEXT_SAMPLES = 64
 SPEECH_THRESHOLD = 0.5
 #: Keep this much audio from before speech was detected, so the first phoneme is not clipped.
+#: A floor, not the whole story — see `preroll_ms()`, which sizes the ring against the onset
+#: window it actually has to reach back across.
 PREROLL_MS = 300
+#: Extra lead-in kept beyond the onset window: a little silence before the first phoneme helps
+#: Whisper, and costs 64 KB per second of float32 at 16 kHz.
+PREROLL_MARGIN_MS = 300
 MODEL_URL = "https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.onnx"
 
 
@@ -219,8 +224,21 @@ class VoiceActivityDetector:
         return events
 
     # ----------------------------------------------------------------- private
+    def preroll_ms(self) -> int:
+        """How far back the ring must reach — derived, never a bare constant.
+
+        `SPEECH_START` fires once `_speech_ms` (accumulated *speech*) crosses `min_speech_ms`, but
+        that accumulation spans much more **wall clock** than that: dips between syllables do not
+        increment the counter, and `onset_tolerance_ms` lets each dip run 200 ms before the attempt
+        is abandoned. A flat 300 ms ring had therefore already slid past the true start of the
+        utterance by the time the trigger fired, so every sentence lost its opening — reported
+        2026-09-09, and the reason this is computed rather than tuned.
+        """
+        return max(PREROLL_MS,
+                   self.required_speech_ms + self.onset_tolerance_ms + PREROLL_MARGIN_MS)
+
     def _remember_preroll(self, frame: np.ndarray) -> None:
         self._preroll.append(frame)
-        keep = max(1, PREROLL_MS // FRAME_MS)
+        keep = max(1, self.preroll_ms() // FRAME_MS)
         if len(self._preroll) > keep:
             del self._preroll[:-keep]

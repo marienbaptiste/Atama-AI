@@ -244,3 +244,21 @@ def test_real_japanese_speech_is_detected(scale, label):
     assert EventKind.SPEECH_END in got, f"{label}: utterance never ended"
     end = [e for e in events if e.kind is EventKind.SPEECH_END][0]
     assert end.audio is not None and end.audio.size > 16000     # the utterance came back with it
+
+
+def test_preroll_reaches_back_across_the_whole_onset_window(tmp_path):
+    """Regression, 2026-09-09: every sentence lost its opening.
+
+    SPEECH_START fires once *accumulated* speech passes `min_speech_ms`, but that accumulation
+    spans far more wall clock — dips between syllables do not count toward it, and each may run
+    `onset_tolerance_ms`. A flat 300 ms ring had already slid past the true start by then.
+    """
+    v = vad_mod.VoiceActivityDetector(model_path=tmp_path / "m.onnx",
+                                      min_speech_ms=300, onset_tolerance_ms=200)
+    assert v.preroll_ms() >= v.required_speech_ms + v.onset_tolerance_ms
+    assert v.preroll_ms() > vad_mod.PREROLL_MS          # the old flat constant was not enough
+
+    # It tracks the thresholds instead of drifting from them.
+    slow = vad_mod.VoiceActivityDetector(model_path=tmp_path / "m.onnx",
+                                         min_speech_ms=800, onset_tolerance_ms=500)
+    assert slow.preroll_ms() > v.preroll_ms()

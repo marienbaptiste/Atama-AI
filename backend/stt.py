@@ -32,6 +32,19 @@ QUIET_RMS = 0.012
 #: faster-whisper's own confidence signals (spec §9).
 MIN_AVG_LOGPROB = -1.0
 MAX_NO_SPEECH_PROB = 0.6
+#: `no_speech_prob` may not veto on its own — it needs a second opinion (2026-09-09).
+#:
+#: Measured in a live session: 「台風ではありません。今、ヨーロッパに住んでいる。」 — a coherent,
+#: on-topic answer, spoken normally — came back at 0.77 and was thrown away. Whisper's
+#: no-speech head is unreliable on utterances that start abruptly, which is every utterance here,
+#: because Silero has already trimmed the leading silence off before we hand the audio over.
+#:
+#: We have a better witness than Whisper anyway: Silero decided this span was speech (ADR-006),
+#: and it is a purpose-built detector rather than a by-product of a transcription model. So a high
+#: `no_speech_prob` only rejects when something corroborates it — the audio really is near-silent,
+#: or the transcript is also weakly predicted. The blocklist rule already works this way, for the
+#: same reason: the signal alone is not enough.
+CORROBORATING_AVG_LOGPROB = -0.7
 _TRAILING = "。．.！!？?、,・…　 \t\r\n"
 
 
@@ -154,8 +167,9 @@ class SpeechToText:
         if normalise(text) in self.blocklist and level < QUIET_RMS:
             # The phrase alone is not enough: a student really can say ありがとうございました.
             return self._reject(result, "blocklisted phrase on near-silent audio")
-        if no_speech > MAX_NO_SPEECH_PROB:
-            return self._reject(result, f"no_speech_prob {no_speech:.2f}")
+        if no_speech > MAX_NO_SPEECH_PROB and (level < QUIET_RMS or avg_logprob < CORROBORATING_AVG_LOGPROB):
+            why = "quiet audio" if level < QUIET_RMS else f"avg_logprob {avg_logprob:.2f}"
+            return self._reject(result, f"no_speech_prob {no_speech:.2f} + {why}")
         if avg_logprob < MIN_AVG_LOGPROB:
             return self._reject(result, f"avg_logprob {avg_logprob:.2f}")
         return result

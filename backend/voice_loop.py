@@ -40,6 +40,9 @@ class TurnTiming:
     total_ms: float = 0.0
     transcript: str = ""
     chunks: int = 0
+    #: The student talked over this turn, so it was cut short. Recorded, but never counted in the
+    #: §10 p90 as a completed turn — it did not fail to be fast, it was interrupted.
+    barged_in: bool = False
 
     def voice_to_voice_ms(self) -> float:
         return self.first_audio_ms
@@ -66,6 +69,13 @@ class VoiceLoop:
     _stop: threading.Event = field(default_factory=threading.Event, init=False)
     _mic: threading.Thread | None = field(default=None, init=False)
     _speaking: bool = field(default=False, init=False)
+    #: The turn runs as its own task so the consume loop below never stops feeding the VAD.
+    #: Awaiting it inline blocks frame consumption for the whole turn, which overflows the queue
+    #: and — worse — makes barge-in impossible, because the detector sees nothing while the avatar
+    #: is speaking (fixed 2026-09-09).
+    _turn_task: asyncio.Task | None = field(default=None, init=False)
+    #: Frames dropped because the loop fell behind. Should stay 0; a rising count is a real signal.
+    dropped_frames: int = field(default=0, init=False)
     timings: list[TurnTiming] = field(default_factory=list, init=False)
 
     # ------------------------------------------------------------------ public
@@ -102,9 +112,9 @@ class VoiceLoop:
                 if self._stop.is_set():
                     break
                 try:
-                    loop.call_soon_threadsafe(self._frames.put_nowait, frame)  # type: ignore[union-attr]
-                except (RuntimeError, asyncio.QueueFull):
-                    pass          # loop gone, or we are behind: dropping a frame beats blocking
+                    loop.call_soon_threadsafe(self._offer, frame)
+                except RuntimeError:
+                    break         # loop gone: the conversation is over, stop reading the mic
         except audio_mod.AudioUnavailable:
             pass
         finally:
@@ -113,17 +123,47 @@ class VoiceLoop:
             except RuntimeError:
                 pass
 
+    def _offer(self, frame) -> None:
+        """Hand one mic frame to the loop. Runs ON the event loop, and never raises.
+
+        `call_soon_threadsafe` only *schedules* the call, so a `put_nowait` that overflows raises
+        here — inside a bare asyncio handle, where nothing catches it and it prints a traceback per
+        frame (50 a second). A full queue means we fell behind; the oldest frame is the one worth
+        losing, because the VAD only cares about recent audio.
+        """
+        queue = self._frames
+        if queue is None:
+            return
+        while queue.full():
+            try:
+                queue.get_nowait()
+                self.dropped_frames += 1
+            except asyncio.QueueEmpty:
+                break
+        try:
+            queue.put_nowait(frame)
+        except asyncio.QueueFull:            # cannot happen after the drain above; never raise
+            self.dropped_frames += 1
+
     async def _handle(self, event) -> None:
         if event.kind is EventKind.SPEECH_START and self._speaking:
             # The student is talking over the avatar: stop, drop the rest, take the new turn.
             self.voice.cancel()
+            if self._turn_task is not None and not self._turn_task.done():
+                self._turn_task.cancel()     # _turn's finally records the timing and marks it
+            # Reset here as well as in _turn's finally, and deliberately: the student is talking
+            # *now*, so the detector needs LISTENING thresholds now, not whenever the cancellation
+            # finishes unwinding. Both paths are idempotent, and a new turn cannot start until the
+            # cancelled task reports done, so the late finally cannot clobber a fresh turn.
             self._speaking = False
             self.vad.enter(Mode.LISTENING)
+            self._state("listening")
             if self.on_bargein is not None:
                 self.on_bargein()
-            self._state("listening")
         elif event.kind is EventKind.SPEECH_END and event.audio is not None:
-            await self._turn(event.audio)
+            if self._turn_task is not None and not self._turn_task.done():
+                return                       # a turn is already in flight; one at a time
+            self._turn_task = asyncio.create_task(self._turn(event.audio))
 
     async def _turn(self, audio: np.ndarray) -> None:
         heard_at = time.monotonic()
@@ -157,23 +197,30 @@ class VoiceLoop:
                     timing.first_audio_ms = (time.monotonic() - heard_at) * 1000.0
                 self._state("speaking")
 
-        async for ev in self.brain.turn(transcript.text):  # type: ignore[attr-defined]
-            if isinstance(ev, TextDelta):
-                await emit(chunker.push(ev.text))
-            elif isinstance(ev, (Thinking, ToolCall, ToolOutcome, RateLimited, BrainError)):
-                pass                                   # surfaced by the caller's own handlers
-            elif isinstance(ev, TurnComplete):
-                await emit(chunker.close())
-                await self.voice.drain()
-                break
-
-        timing.total_ms = (time.monotonic() - heard_at) * 1000.0
-        self.timings.append(timing)
-        if self.on_turn is not None:
-            self.on_turn(timing)
-        self._speaking = False
-        self.vad.enter(Mode.LISTENING)
-        self._state("listening")
+        try:
+            async for ev in self.brain.turn(transcript.text):  # type: ignore[attr-defined]
+                if isinstance(ev, TextDelta):
+                    await emit(chunker.push(ev.text))
+                elif isinstance(ev, (Thinking, ToolCall, ToolOutcome, RateLimited, BrainError)):
+                    pass                               # surfaced by the caller's own handlers
+                elif isinstance(ev, TurnComplete):
+                    await emit(chunker.close())
+                    await self.voice.drain()
+                    break
+        except asyncio.CancelledError:
+            # Barge-in cancelled us. The student is already mid-sentence, so the rest of this
+            # reply is not wanted — but the turn still gets recorded, marked, so a cut-short turn
+            # never lands in the §10 p90 as if it had completed.
+            timing.barged_in = True
+            raise
+        finally:
+            timing.total_ms = (time.monotonic() - heard_at) * 1000.0
+            self.timings.append(timing)
+            if self.on_turn is not None:
+                self.on_turn(timing)
+            self._speaking = False
+            self.vad.enter(Mode.LISTENING)
+            self._state("listening")
 
     def _state(self, name: str) -> None:
         if self.on_state is not None:
