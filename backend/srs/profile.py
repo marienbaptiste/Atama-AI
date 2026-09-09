@@ -171,31 +171,63 @@ def _detail(service: str, prof) -> str:
     return f"{prof.current_jlpt()}, {len(prof.ghosts)} ghosts, due {prof.due_grammar}"
 
 
+def _stale_or_error(service: str, cache_path: Path, registry: StatusRegistry, budget_s: float):
+    """A fetch that ran out of budget still has a snapshot to fall back on.
+
+    Spec §5b defines `stale` as "serving cache; last fetch failed" and reserves `error` for
+    "no cache, fetch failed" — so a timeout with a snapshot on disk is `stale`, not `error`.
+    Dropping the source instead would silently strip Sensei's profile for the whole session.
+    """
+    detail = f"timed out after {budget_s:.0f}s"
+    errors = {"timeout": f"> {budget_s}s"}
+    cached_raw, fetched_at = snapshot_load(cache_path)
+    if cached_raw is None:
+        registry.report(service, "error", f"{detail}, no snapshot")
+        return None, "error", errors
+    try:
+        prof = (wk.parse if service == "wanikani" else bp.parse)(cached_raw)
+    except Exception as exc:  # a corrupt snapshot is no better than none
+        registry.report(service, "error", f"{detail}, snapshot unreadable",
+                        last_error=f"{type(exc).__name__}: {exc}")
+        return None, "error", errors
+    registry.report(service, "stale",
+                    f"{_detail(service, prof)} (snapshot {_hhmm(fetched_at)}, {detail})")
+    return prof, "stale", errors
+
+
 def build(wanikani_token: str, bunpro_token: str, cache_dir: Path, min_age_s: float, budget_s: float,
           registry: StatusRegistry, client_overrides: dict[str, dict] | None = None,
           force: bool = False) -> StudentProfile:
-    """Fetch both sources in parallel within `budget_s`. Never raises. Called at app launch
+    """Fetch both sources in parallel, each within its own `budget_s`. Never raises. A source
+    that runs out of budget falls back to its last snapshot as `stale` (spec §5b) rather than
+    being dropped. Called at app launch
     (force=False) and on manual refresh (force=True) — nowhere else (spec §5 fetch policy).
     `client_overrides` maps service -> extra SrsClient kwargs (tests: transport=, sleep=)."""
     import time as _t
 
     client_overrides = client_overrides or {}
     profile = StudentProfile()
-    deadline = _t.monotonic() + budget_s
     jobs = {
         "wanikani": (wanikani_token, cache_dir / "wanikani.json"),
         "bunpro": (bunpro_token, cache_dir / "bunpro.json"),
     }
+    # `budget_s` is PER SERVICE, not a pot the services share. Futures are collected in order,
+    # so one absolute deadline let a slow WaniKani starve Bunpro of the time it needed
+    # (observed 2026-09-09: wanikani ok, bunpro "timed out after 10s" — while that same run
+    # went on to write bunpro.json). The late-report guard has to cover the worst case, which
+    # is every service spending its full budget.
+    deadline = _t.monotonic() + budget_s * len(jobs)
     ex = cf.ThreadPoolExecutor(max_workers=2)
     try:
         futs = {svc: ex.submit(_one, svc, tok, path, min_age_s, registry, deadline, client_overrides.get(svc), force)
                 for svc, (tok, path) in jobs.items()}
         for svc, fut in futs.items():
             try:
-                prof, state, errors = fut.result(timeout=max(0.0, deadline - _t.monotonic()))
+                prof, state, errors = fut.result(timeout=budget_s)   # per service (see above)
             except cf.TimeoutError:
-                registry.report(svc, "error", f"timed out after {budget_s:.0f}s")
-                prof, state, errors = None, "error", {"timeout": f"> {budget_s}s"}
+                # The worker is still running and may even succeed a moment later (observed
+                # 2026-09-09: bunpro.json was written by the very run that reported a timeout).
+                prof, state, errors = _stale_or_error(svc, jobs[svc][1], registry, budget_s)
             except Exception as e:  # pragma: no cover - defensive
                 registry.report(svc, "error", "unexpected", last_error=f"{type(e).__name__}: {e}")
                 prof, state, errors = None, "error", {"unexpected": f"{type(e).__name__}: {e}"}

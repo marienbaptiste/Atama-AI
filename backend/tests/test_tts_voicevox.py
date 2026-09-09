@@ -89,6 +89,8 @@ def engine(req: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=GREETING)
     if path == "/synthesis":
         return httpx.Response(200, content=b"RIFFfake", headers={"content-type": "audio/wav"})
+    if path == "/initialize_speaker":
+        return httpx.Response(204)
     return httpx.Response(404)
 
 
@@ -179,3 +181,41 @@ def test_sentence_padding_is_applied(tmp_path):
     c.say("こんにちは。")
     body = json.loads([r for r in calls if r.url.path == "/synthesis"][-1].content)
     assert body["prePhonemeLength"] == 0.0 and body["postPhonemeLength"] == pytest.approx(0.08)
+
+# ------------------------------------------------------------------- warm-up
+def test_warm_up_preloads_every_distinct_style_in_the_emotion_table(tmp_path):
+    """`is_up()` only proves the engine answers; a style's model loads on first use, so the
+    opening line would otherwise pay it as silence (spec §5b, VOICEVOX 0.25.2 2026-09-09)."""
+    tts, calls = client(tmp_path)
+    loaded, elapsed_ms = tts.warm_up()
+
+    init = [c for c in calls if c.url.path == "/initialize_speaker"]
+    styles = sorted(int(c.url.params["speaker"]) for c in init)
+    assert styles == sorted({p.style_id for p in tts.table.values()})
+    assert loaded == len(styles) and len(styles) > 1, "the emotion table spans several styles"
+    assert all(c.method == "POST" for c in init)
+    # idempotent: never force a reload of a style the engine already holds
+    assert all(c.url.params["skip_reinit"] == "true" for c in init)
+    assert elapsed_ms >= 0.0
+
+
+def test_warm_up_is_the_step_that_happens_before_any_synthesis(tmp_path):
+    """Ordering is the whole point: nothing is synthesised until every style is loaded."""
+    tts, calls = client(tmp_path)
+    tts.warm_up()
+    tts.say("こんにちは")
+    paths = [c.url.path for c in calls]
+    assert paths.index("/synthesis") > max(
+        i for i, p in enumerate(paths) if p == "/initialize_speaker")
+
+
+def test_warm_up_raises_when_the_engine_refuses_to_load_a_style(tmp_path):
+    def refuses(req):
+        if req.url.path == "/initialize_speaker":
+            return httpx.Response(500, text="core error")
+        return engine(req)
+
+    tts, _ = client(tmp_path, handler=refuses)
+    with pytest.raises(tts_voicevox.VoicevoxError) as exc:
+        tts.warm_up()
+    assert "could not load style" in str(exc.value)

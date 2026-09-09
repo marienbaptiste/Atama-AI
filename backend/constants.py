@@ -114,3 +114,15 @@ BUNPRO_READ_ENDPOINTS = {
 
 # --- VOICEVOX / TalkingHead ---------------------------------------------------
 # Pinned at V0.3 / V0.4 (M2/M3). Not yet verified — do not add guesses here.
+
+# Verified live against VOICEVOX 0.25.2 /openapi.json on 2026-09-09.
+# The engine loads a style's model on FIRST USE, so `GET /version` answering 200 means the
+# engine is running, NOT that it can speak. Without an explicit warm-up the student's very
+# first sentence pays that load as silence, which is indistinguishable from a hang.
+#   POST /initialize_speaker     ?speaker=<style_id>&skip_reinit=<bool> -> 204 No Content
+#   GET  /is_initialized_speaker ?speaker=<style_id>                    -> true|false
+# Measured 2026-09-09 (style 53): forced reinit 534 ms; skip_reinit=true when already
+# loaded 2 ms. `speaker` here is a STYLE id — the same id audio_query/synthesis take — so
+# every distinct style in the emotion table needs its own call.
+VOICEVOX_INIT_SPEAKER = "/initialize_speaker"
+VOICEVOX_IS_INITIALIZED = "/is_initialized_speaker"

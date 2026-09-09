@@ -351,7 +351,7 @@ value is configured:
 | Bunpro       | same, for the session-start fetch                                                |
 | Bunpro MCP   | `disabled` · `starting` · `connected` · `failed` · `used` (last call HH:MM, ok/error) |
 | Claude       | `starting` · `ready` · `thinking` · `rate_limited` · `fallback` · `restarting` · `error` |
-| VOICEVOX     | `ok` (engine version) · `down`                                                   |
+| VOICEVOX     | `loading` · `warm` (engine version, N styles) · `ok` (up, not preloaded) · `down` |
 | STT          | `loading` · `warm` (model, VRAM MB) · `error`                                    |
 
 `stale` is not an error — the tutor still has a profile, just an older one. Click a chip for

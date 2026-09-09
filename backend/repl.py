@@ -26,7 +26,7 @@ from backend.chunker import SentenceChunker
 from backend.brain import BrainError, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome, TurnComplete
 from backend.speaker import SpeechQueue
 from backend.srs import profile as profile_api
-from backend.tts_voicevox import VoicevoxClient
+from backend.tts_voicevox import VoicevoxClient, VoicevoxError
 from backend.status import registry
 from backend.tools import mcp_config
 
@@ -85,11 +85,28 @@ async def run(args: argparse.Namespace) -> int:
     if args.speak:
         tts = VoicevoxClient.from_config(cfg)
         if tts.is_up():
-            registry.report("voicevox", "ok", f"engine {tts.version} · speaker {tts.speaker}")
+            registry.report("voicevox", "loading", f"engine {tts.version} · speaker {tts.speaker}")
             for warning in tts.warnings:
                 print(f"{DIM}voice: {warning}{RESET}")
             voice = SpeechQueue(tts, device=cfg.AUDIO_OUTPUT_DEVICE)
             await voice.start()
+            # The engine loads a style's model on first use, so answering /version is not the
+            # same as being able to speak. Pay that here rather than inside Sensei's opening
+            # line: otherwise the student's first experience is silence they cannot read as
+            # either warming up or broken (spec §5b, constants: VOICEVOX_INIT_SPEAKER).
+            try:
+                loaded, warm_ms = await asyncio.to_thread(tts.warm_up)
+                registry.report("voicevox", "warm",
+                                f"engine {tts.version} · speaker {tts.speaker} · "
+                                f"{loaded} style(s) · warm {warm_ms / 1000:.1f}s")
+                print(f"{DIM}voice ready: {loaded} style(s) loaded in {warm_ms / 1000:.1f}s{RESET}")
+            except VoicevoxError as exc:
+                # The engine is up but would not preload; let her talk and let the first
+                # sentence pay for it, rather than refusing to run.
+                registry.report("voicevox", "ok",
+                                f"engine {tts.version} · speaker {tts.speaker} · not preloaded",
+                                last_error=str(exc))
+                print(f"{DIM}voice: could not preload styles; the first sentence may lag{RESET}")
         else:
             registry.report("voicevox", "down", f"no engine at {cfg.VOICEVOX_URL}")
             print(f"{BOLD}VOICEVOX is not running{RESET} — `docker compose up -d voicevox`. Continuing in text only.")

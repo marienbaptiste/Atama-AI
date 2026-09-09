@@ -19,7 +19,7 @@ STATES: dict[str, frozenset[str]] = {
     # `brain`, not `claude`: the provider is named in the detail (ADR-027).
     "brain": frozenset({"starting", "ready", "thinking", "rate_limited", "fallback", "restarting", "error"}),
     "search": frozenset({"disabled", "ok", "down", "used"}),
-    "voicevox": frozenset({"ok", "down"}),
+    "voicevox": frozenset({"loading", "ok", "warm", "down"}),
     "stt": frozenset({"loading", "warm", "error"}),
 }
 

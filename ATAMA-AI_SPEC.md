@@ -206,7 +206,7 @@ The UI must show, at all times, whether each external dependency is actually wor
 | `bunpro`       | same set, for the session-start fetch (JLPT level, N ghosts)                             | the fetcher |
 | `bunpro_mcp`   | `disabled` · `starting` · `connected` · `failed` · `used` (last tool call HH:MM, ok/error) | `init.mcp_servers[]` entry for the Bunpro server (reports `pending` at init — verified 2026-09-09 — so `connected` comes from the first successful `tool_result` or a later status event), then every `tool_use`/`tool_result` pair on the stream. The server itself only reads the snapshot; its "health" is "process up + snapshot present". |
 | `claude`       | `starting` · `ready` · `thinking` · `rate_limited` (from `rate_limit_event`) · `fallback` (fallback model active) · `restarting` · `error` | the ClaudeSession event stream |
-| `voicevox`     | `ok` (engine version) · `down`                                                            | `GET /version` at startup, re-checked on any synthesis failure |
+| `voicevox`     | `loading` · `warm` (engine version, N styles) · `ok` (engine up, styles not preloaded) · `down` | `GET /version`, then `POST /initialize_speaker` for every style in the emotion table — completed BEFORE Sensei's opening line, so `warm` means "can speak now". Re-checked on any synthesis failure |
 | `stt`          | `loading` · `warm` (model name, VRAM MB) · `error`                                        | model load + warm-up |
 
 Rules:

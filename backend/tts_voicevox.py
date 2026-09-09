@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 
+from backend import constants
 from backend import emotions as emotions_mod
 from backend import visemes as visemes_mod
 from backend.chunker import NEUTRAL
@@ -111,6 +112,28 @@ class VoicevoxClient:
 
     def is_up(self) -> bool:
         return bool(self._version())
+
+    def warm_up(self) -> tuple[int, float]:
+        """Load every style the emotion table can ask for, before Sensei's first sentence.
+
+        `is_up()` only proves the engine answers; VOICEVOX loads a style's model on first use,
+        so without this the opening line pays that load as silence and the student cannot tell
+        a warming engine from a broken one (spec §5b). Idempotent: `skip_reinit=true` costs
+        2 ms once a style is loaded (verified against 0.25.2, 2026-09-09).
+
+        Returns (styles loaded, elapsed ms). Raises VoicevoxError if the engine refuses.
+        """
+        styles = sorted({p.style_id for p in self.table.values()}) or [self.speaker]
+        started = time.monotonic()
+        for style_id in styles:
+            try:
+                resp = self.http.post(constants.VOICEVOX_INIT_SPEAKER,
+                                      params={"speaker": style_id, "skip_reinit": True})
+                resp.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise VoicevoxError(
+                    f"VOICEVOX could not load style {style_id}: {type(exc).__name__}: {exc}") from None
+        return len(styles), (time.monotonic() - started) * 1000.0
 
     # --------------------------------------------------------------- synthesis
     def params_for(self, emotion: str) -> emotions_mod.VoiceParams:

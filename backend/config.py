@@ -86,7 +86,7 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("LOG_DIR", "logs", str, "advanced", "Session logs"),
     Setting("CACHE_DIR", ".cache", str, "advanced", "Generated/personal files"),
     Setting("SRS_CACHE_TTL_S", 3600, int, "advanced", "SRS disk cache TTL"),
-    Setting("SRS_FETCH_BUDGET_S", 10, int, "advanced", "Session-start fetch budget"),
+    Setting("SRS_FETCH_BUDGET_S", 10, int, "advanced", "Session-start fetch budget, PER SERVICE (they fetch in parallel). Measured 2026-09-09: bunpro 5.1s, wanikani 4.3s, so 10s is roughly 2x headroom. On timeout the last snapshot is served as stale, never dropped"),
 )
 # fmt: on
 

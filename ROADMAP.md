@@ -331,6 +331,15 @@ prompt size.
 - **`prePhonemeLength` IS divided by `speedScale`.** Confirmed by computing the timeline and comparing
   with the real synthesised WAV across 4 samples x 2 speeds: agreement within 46 ms worst case, most
   under 30 ms (VOICEVOX rounds to sample boundaries, so exact equality would be asserting its rounding).
+- **`/version` answering is NOT readiness.** The engine loads a style's model on first *use*, so a
+  green status chip could still be followed by a silent first sentence — indistinguishable, to the
+  student, from a hang. `POST /initialize_speaker?speaker=<style_id>&skip_reinit=<bool>` -> 204 and
+  `GET /is_initialized_speaker?speaker=<style_id>` -> bool fix that. Measured (style 53): forced
+  reinit **534 ms**, `skip_reinit=true` on an already-loaded style **2 ms**, so warming at startup is
+  free once warm and idempotent. `speaker` is a STYLE id, so *every distinct style in the emotion
+  table* needs its own call — warming only the default leaves the first emotional sentence cold.
+  Startup now warms all of them before Sensei's opening line, and `voicevox` gained `loading`/`warm`
+  states so "ready" on screen means "can speak now" (spec §5b).
 - `GET /speakers` -> `[{name, speaker_uuid, styles: [{id, name, type}], supported_features, version}]`,
   43 speakers. **Styles are resolved by NAME**, not id, so an engine upgrade renumbering ids is safe.
   Chosen default: **No.7** — ノーマル=29, アナウンス=30 (crisp/formal), 読み聞かせ=31 (warm read-aloud):
