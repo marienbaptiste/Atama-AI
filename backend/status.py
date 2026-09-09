@@ -10,13 +10,15 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-SERVICES = ("wanikani", "bunpro", "bunpro_mcp", "claude", "voicevox", "stt")
+SERVICES = ("wanikani", "bunpro", "bunpro_mcp", "brain", "search", "voicevox", "stt")
 
 STATES: dict[str, frozenset[str]] = {
     "wanikani": frozenset({"disabled", "syncing", "ok", "stale", "error"}),
     "bunpro": frozenset({"disabled", "syncing", "ok", "stale", "error"}),
     "bunpro_mcp": frozenset({"disabled", "starting", "connected", "failed", "used"}),
-    "claude": frozenset({"starting", "ready", "thinking", "rate_limited", "fallback", "restarting", "error"}),
+    # `brain`, not `claude`: the provider is named in the detail (ADR-027).
+    "brain": frozenset({"starting", "ready", "thinking", "rate_limited", "fallback", "restarting", "error"}),
+    "search": frozenset({"disabled", "ok", "down", "used"}),
     "voicevox": frozenset({"ok", "down"}),
     "stt": frozenset({"loading", "warm", "error"}),
 }

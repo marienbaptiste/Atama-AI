@@ -214,6 +214,38 @@ engine upgrade.
   events carry complete content blocks (`text` / `tool_use{name,input}`); `user` events carry
   `tool_result{content,is_error}`; `system/status {"status":"requesting"}` precedes each API call.
 
+**2026-09-09 — M1(e), the brain running for real (spec §4, ADR-027/029):**
+
+Four bugs, each of which presented as something else. Written down because the symptom never
+pointed at the cause:
+
+- **`init` arrives only AFTER the first user turn.** `start()` waited for `init` before sending
+  anything; the CLI waits for a turn before emitting `init`. Mutual deadlock, reported as "claude
+  did not emit an init event". The `apiKeySource` assertion therefore happens on the first turn,
+  and `make doctor` is the pre-flight that catches bad auth before the app runs. The MCP ready
+  marker, by contrast, *does* appear without a turn (~1.1 s), so `start()` waits on that.
+- **stderr must be drained continuously.** With `--verbose` the CLI fills the stderr pipe buffer,
+  then blocks on write and stops producing stdout. Looked exactly like a slow model. A second
+  pump thread keeps a bounded tail, which also gives startup failures something to report.
+- **Multi-line `--system-prompt` truncates at the first newline AND swallows the following
+  flags.** Our prompt has lines starting with `-`; `--mcp-config` placed after it was silently
+  ignored and the tutor ran with **no tools**, with nothing logged. Fixed by
+  `--system-prompt-file` (ADR-029). The one-line version of the same prompt parsing correctly is
+  what identified newlines as the trigger.
+- **`--append-system-prompt` leaves the coding agent in charge.** Sensei introduced herself as
+  「私はClaude Codeです…ソフトウェアエンジニアリングのタスクを支援します」 in markdown bullets, and
+  `init.tools` was empty. `--system-prompt-file` (replace) → in character, tools present.
+
+Also found: **Claude Code exports `CLAUDE_EFFORT` and friends into the shell**, and our config
+keys have the same names, so running the app from inside a Claude Code session picked up the
+parent's values. Process-environment overrides now require the `ATAMA_` prefix; the `.env` file
+keeps bare names.
+
+**Measured (sonnet, `--effort high`, prompt 1 739 tokens: soul 345 + profile 594):** first
+sentence 1.8–2.4 s, ttft 1.6–2.2 s, MCP tool call 10 ms. The Claude stage budget is 1.60 s
+(§10) — currently over, with the levers (`--effort`, model, prompt size) untouched. Latency is
+M3's gate, not M1's; the numbers are recorded here so the M3 work starts from data.
+
 **Gate V0:** every external interface this project touches has a pinned, dated finding in the
 repo. No code calls an unverified interface.
 
@@ -311,7 +343,7 @@ events.
 - **Validate** — Live mic in a real room. Tune the silence window against actual conversational
   pauses; confirm the 0.50 s VAD budget line holds.
 - **Integrate** — Upstream of STT; also the barge-in trigger (subsystem 8) and the listening
-  reactions (subsystem 9).
+  reactions (subsystem 9).have you planned the conne
 - **Gate M2a** — No false end-of-turn in 3 minutes of natural speech with normal pauses.
 
 ### 4. STT — `backend/stt.py` — **M2**

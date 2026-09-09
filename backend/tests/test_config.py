@@ -26,6 +26,20 @@ def test_resolution_order(tmp_path):
     assert cfg.first_run is False
 
 
+def test_process_env_is_read_only_under_the_atama_prefix(monkeypatch):
+    """Our key names collide with Claude Code's own exports; bare env vars must not win."""
+    monkeypatch.setenv("CLAUDE_EFFORT", "max")        # what Claude Code sets in its shell
+    monkeypatch.setenv("ATAMA_CLAUDE_EFFORT", "low")  # what we would set deliberately
+    monkeypatch.setenv("ATAMA_NOT_A_SETTING", "x")
+    assert config.env_overrides() == {"CLAUDE_EFFORT": "low"}
+
+
+def test_bare_claude_env_var_does_not_leak_into_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_EFFORT", "max")
+    monkeypatch.setattr(config, "read_dotenv", lambda p: {})
+    assert config.load(tmp_path / "s.json").CLAUDE_EFFORT == "high"
+
+
 def test_dotenv_parser(tmp_path):
     p = tmp_path / ".env"
     p.write_text('# comment\nWANIKANI_TOKEN=abc123  # trailing\nBUNPRO_API_TOKEN="quoted=value"\nEMPTY=\nbad line\n', encoding="utf-8")

@@ -74,12 +74,24 @@ def announce_ready() -> Path | None:
 
 
 def clear_marker() -> None:
+    """Remove the marker only if it is OURS.
+
+    The path is shared by every instance. A stale server exiting must not delete the marker a
+    freshly started one just wrote — that race made readiness look like a timeout while the new
+    server was in fact connected (found 2026-09-09).
+    """
     m = _marker()
-    if m is not None:
-        try:
-            m.unlink()
-        except FileNotFoundError:
-            pass
+    if m is None:
+        return
+    try:
+        if json.loads(m.read_text(encoding="utf-8")).get("pid") != os.getpid():
+            return
+    except (OSError, ValueError):
+        return
+    try:
+        m.unlink()
+    except FileNotFoundError:
+        pass
 
 
 async def _on_initialized(ctx, params) -> None:  # signature: (ServerRequestContext, NotificationParams)
@@ -162,7 +174,10 @@ def _assert_surface() -> None:
 
 def main() -> int:
     _assert_surface()
-    clear_marker()  # a stale marker from a crashed run must not look like "connected"
+    # A marker left by a crashed run must not read as "connected"; ours is written on initialize.
+    m = _marker()
+    if m is not None:
+        m.unlink(missing_ok=True)
     print("bunpro-mcp: read-only stdio server, 3 tools, snapshot reader (no network)", file=sys.stderr)
     server.run("stdio")
     return 0

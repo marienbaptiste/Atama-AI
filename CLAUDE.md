@@ -18,10 +18,17 @@ other documents to open, when, and what each one is authoritative for.
 **Project in one line:** a local-first, real-time voice Japanese tutor with a 3D avatar, whose
 brain is the `claude` CLI running headless as a persistent subprocess.
 
-**Current state:** specification stage. `ATAMA-AI_SPEC.md`, `ROADMAP.md`, `ADR.md`, `README.md`,
-`.gitignore` and `.env.example` exist; no code has been written yet. Building starts at
-milestone **M0**. ROADMAP **V0.1** (CLI flags) is already done and its findings are logged in
-`ROADMAP.md` — copy them into `backend/constants.py` at M0.
+**Current state: M0 done, M1 done.** The read-only gate, config/settings store, status registry,
+GET-only SRS client, WaniKani + Bunpro fetchers, profile renderer, Bunpro MCP server, sentence
+chunker, prompt assembly, the `Brain` interface with its Claude CLI provider, and the text REPL
+all exist with tests (`make test`). Verified live: Sensei answers in character, uses the MCP
+tools, and weaves in the student's ghost reviews.
+
+Next: **M2** (mic → VAD → Whisper → VOICEVOX → playback). Do not start it until M1's gate is
+signed off in `ROADMAP.md`.
+
+Run the tutor: `.venv/Scripts/python -m backend.repl` (`--refresh` to re-sync SRS, `--no-srs`
+offline). V0 spikes still open: V0.3 VOICEVOX, V0.4 TalkingHead, V0.6 VRAM, V0.11 SearxNG.
 
 ---
 

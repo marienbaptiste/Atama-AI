@@ -9,7 +9,7 @@ Nothing in here is a guess. Each block names what was checked, how, and when.
 CLAUDE_CLI_VERSION_VERIFIED = "2.1.159"
 
 # Base argv for the persistent tutor subprocess (spec §4). Model/fallback/session id/
-# prompt file/mcp config are appended by claude_session.py at spawn.
+# prompt/mcp config are appended by backend/brain/claude_cli.py at spawn.
 CLAUDE_BASE_ARGS = (
     "claude", "-p",
     "--input-format", "stream-json",
@@ -39,6 +39,18 @@ CLAUDE_INIT_APIKEYSOURCE_SUBSCRIPTION = "none"
 # MUST wait on it before writing the first user turn.
 CLAUDE_MCP_TOOL_PREFIX = "mcp__bunpro__"
 CLAUDE_MCP_READY_TIMEOUT_S = 20.0
+CLAUDE_INIT_TIMEOUT_S = 30.0
+# System prompt: ALWAYS use the file variants. `--system-prompt-file` / `--append-system-prompt-file`
+# do exist (they are listed only inside the `--bare` help text, not in the main option list).
+# Verified 2026-09-09: passing a MULTI-LINE prompt to the string variants truncates it at the
+# first newline AND makes the CLI lose every flag that follows, so `--mcp-config` placed after it
+# was silently ignored and the tutor ran with no tools. The file variant fixes all of it and keeps
+# the student profile out of `ps`.
+# `--system-prompt-file` (replace) is the default: with `--append-system-prompt-file` the tutor
+# inherits Claude Code's coding-agent prompt and introduces itself as "Claude Code ...
+# ソフトウェアエンジニアリングのタスクを支援" (measured), and init.tools came back empty.
+# `--effort <low|medium|high|xhigh|max>` is the lever for spec §10's "extended thinking OFF":
+# a default-effort haiku turn spent 602 characters thinking to produce 41 characters of speech.
 # Even with the marker, keep --allowedTools on the three MCP names (ADR-021 belt-and-braces).
 # Observed stream types: system/init, system/status ({"status":"requesting"} before each API
 # call), rate_limit_event ({"rate_limit_info": {status, resetsAt, rateLimitType: "five_hour",

@@ -35,6 +35,11 @@ reasoning behind it. Build sequencing is in [ROADMAP.md](ROADMAP.md).
 | 022 | Configuration lives in a settings interface; `.env` is an optional override | Accepted |
 | 023 | Bunpro MCP server is written in-repo; credential is the Settings→API token only | Accepted |
 | 024 | SRS APIs are called only at launch and manual refresh; MCP tools read the snapshot | Accepted |
+| 025 | Session topic seed fetched by the orchestrator, never by the tutor | Superseded by ADR-028 |
+| 026 | Sensei has a soul file: persona lives in `prompts/soul.md` | Accepted |
+| 027 | The brain is a provider behind an interface; Claude CLI is the only implementation | Accepted |
+| 028 | The tutor finds its own topic, through a search tool we provide | Accepted (not yet implemented — V0.11) |
+| 029 | Sensei's prompt replaces Claude Code's, and is passed as a file | Accepted |
 
 ---
 
@@ -708,6 +713,222 @@ process. Measured: launch fetch of both sources 4.6 s (budget 10 s).
 
 **Reversed if:** never for the trigger policy (user directive). The snapshot format may change
 freely.
+
+---
+
+## ADR-025 — Session topic seed fetched by the orchestrator, never by the tutor
+
+**Status:** Superseded by ADR-028 (2026-09-09, same day, before any code shipped). The user's
+judgement: a pre-fetched list of headlines injected into the prompt is rigid, and the tutor
+picking its own subject is what makes it a conversation rather than a reading. The
+prompt-injection and sanitisation reasoning below carries over to ADR-028 unchanged. Original
+reasoning kept as written.
+
+**Context.** The user wants each session to open on a real subject — news from Japan and the
+wider world — discussed naturally while weaving in their recent WaniKani vocabulary and the
+grammar they are currently studying. Without a seed, a voice tutor opens with 「今日はどうですか」
+every time and the conversation dies.
+
+The obvious implementation is to give Sensei a web-search tool. That is wrong three times over:
+it breaches `--tools ""` (ADR-016), it adds tool-definition tokens to every turn's prompt
+(ADR-011), and it puts a network round-trip *inside* the 3.0 s voice→voice budget (§10).
+
+**Decision.** The **orchestrator** fetches headlines at app launch and on manual Refresh — the
+same two triggers as SRS (ADR-024) — sanitises them, and renders them into the system prompt as
+a seed. The tutor keeps zero web tools and pays zero per-turn cost. Several headlines are
+offered and the tutor picks one, so sessions vary without another fetch.
+
+Source chain, each optional and degrading to the next:
+1. **SearxNG** (`SEARXNG_URL`) — the user's suggestion and a good fit for a local-first app.
+   **Not implemented:** no instance was available to verify against, and ADR-015 forbids coding
+   against an unverified interface. The config key and ROADMAP V0.11 hold the place.
+2. **NHK RSS** — verified live 2026-09-09, six categories including `cat6` 国際 (world news).
+   Japanese-language throughout, so world events arrive already in the target language: no
+   translation step, and the headline itself is study material.
+3. **`backend/data/topics.txt`** — evergreen subjects, always available, works offline.
+
+NHK **News Web Easy** (やさしい日本語) would have been ideal for a learner and is unusable: its
+`news-list.json` now redirects to `news.web.nhk` and returns `401 missing_token` (JWT). Verified,
+not assumed.
+
+**Prompt-injection surface.** Headlines are third-party text entering a system prompt. Only
+titles are used — never article bodies — stripped of control characters and of `[`/`]` (which
+would collide with the emotion tags of ADR-020), length-capped, with the feed's own channel
+title discarded. The tutor has no tools, so the worst outcome is an odd remark, not an action.
+
+**Consequences.** One more optional network dependency at launch, inside the existing fetch
+budget, with its own status chip. The topic is as fresh as the last sync — correct for a tutor
+that is told the age of its data.
+
+**Reversed if:** never for the "orchestrator fetches, tutor does not" split. Sources may change
+freely.
+
+---
+
+## ADR-026 — Sensei has a soul file: persona lives in `prompts/soul.md`
+
+**Status:** Accepted (2026-09-09) — user directive
+
+**Context.** The user wants "background and life" for the teacher. A tutor with a consistent
+history — where she is from, what she does on Sundays, what she finds funny — has something to
+say when the student stalls, and gives the conversation somewhere to go. A model told only
+"you are a tutor" produces a customer-service voice.
+
+**Decision.** A second versioned, user-editable prompt file, `prompts/soul.md`, rendered into
+`{{soul}}` at the **top** of the system prompt. Same rule as ADR-012: never hardcoded in Python,
+so the user shapes Sensei's character without touching code. Optional — absent, she is a neutral
+competent tutor.
+
+Two constraints keep it from doing damage:
+- **Position.** Persona comes first, the HARD OUTPUT RULES last, so the voice-pipeline
+  constraints win by position; the soul file itself states that it may colour *how* she speaks
+  and never override those rules.
+- **Budget.** Capped at 400 tokens by the same estimator as the profile (ADR-011), asserted in
+  tests. Backstory is exactly the sort of thing that grows until it silently eats the latency
+  budget.
+
+**Consequences.** Three prompt inputs to assemble (`soul`, `student_profile`, `topic`) instead
+of one. A renderer with a token budget per section, and a test that the assembled prompt stays
+within its total.
+
+**Reversed if:** never. This is a user directive and the cost is one file.
+
+---
+
+## ADR-027 — The brain is a provider behind an interface; Claude CLI is the only implementation
+
+**Status:** Accepted (2026-09-09) — user directive. Refines ADR-001, does not supersede it.
+
+**Context.** ADR-001 fixes the brain as the `claude` CLI subprocess for a good reason
+(subscription auth, no per-token billing). But the rest of the pipeline — VAD, STT, chunker,
+TTS, visemes, avatar — has nothing to do with *which* model produces the text. The user wants
+the option to swap in a local model or another vendor later without that being a rewrite. Raised
+before `claude_session.py` was written, when the seam costs nothing; adding it afterwards would
+mean unpicking Claude-shaped types from the orchestrator, the status registry and the logs.
+
+**Decision.** Introduce a narrow **`Brain`** interface. Everything upstream of the chunker talks
+to it and never imports a provider module.
+
+```
+start()                 -> ready to take turns
+send(text)              -> async iterator of BrainEvent
+aclose()
+```
+
+`BrainEvent` is deliberately provider-neutral: `TextDelta`, `ToolCall`, `ToolOutcome`,
+`RateLimited`, `BrainError`, `TurnComplete(text, ttft_ms, duration_ms, usage)`. Nothing in it
+names Claude, MCP, or a CLI flag.
+
+Three things the interface refuses to assume, because they are where providers actually differ:
+
+1. **Conversation memory is the provider's problem.** The Claude CLI keeps history itself
+   (`--session-id` + `--resume`); an OpenAI or llama.cpp provider would keep a transcript and
+   resend it. The orchestrator only ever sends the latest user turn.
+2. **Tool access is not MCP.** The three Bunpro tools are plain Python functions over a local
+   snapshot (ADR-024) — no network, no credentials. `backend/srs/bunpro_tools.py` holds the
+   implementations; the MCP server is a thin adapter over them *for Claude*, and a provider with
+   native function-calling would bind the same functions directly.
+3. **Health is reported as `brain`, not `claude`.** The status chip carries the provider name in
+   its detail (`claude-cli · sonnet`). `apiKeySource` and `rate_limit_event` are Claude-specific
+   signals mapped onto the neutral states of §5b.
+
+**Only `ClaudeCliBrain` is implemented, and ADR-001 still governs it** — subscription auth,
+`--tools ""`, allowlisted env, out-of-repo cwd, `--resume` on crash. No second provider is
+written until someone actually wants one (ADR-013: do not gold-plate). The interface is the
+deliverable; speculative adapters are not.
+
+**Consequences.** One extra indirection and a small event-type vocabulary. In exchange, swapping
+brains touches one directory. It also makes the session testable without a subprocess: tests
+drive a `FakeBrain` over the same interface, which is how the chunker, timing and status paths
+get covered without spawning a CLI.
+
+**Reversed if:** never realistically — the cost is an interface file.
+
+---
+
+## ADR-028 — The tutor finds its own topic, through a search tool we provide
+
+**Status:** Accepted (2026-09-09) — user directive. Supersedes ADR-025.
+
+**Context.** ADR-025 had the orchestrator fetch headlines at launch and paste them into the
+prompt. The user rejected it: a fixed list is rigid, it cannot follow the conversation, and it
+makes the opening a recitation. If Sensei can *look things up*, she can pick something worth
+talking about, follow the student's interest into it, and check a fact when the conversation
+actually needs one.
+
+**Decision.** Give the tutor a **search tool** backed by **SearxNG** — self-hosted metasearch,
+no API key, no third-party account, which keeps the local-first property intact. It is added to
+`docker-compose.yml` next to VOICEVOX so one `docker compose up -d` brings up everything.
+
+Boundaries, which is where the real design is:
+
+- **A separate MCP server** (`backend/search_mcp.py`), never a fourth tool on the Bunpro server.
+  The Bunpro server's three-tool surface is asserted by the Golden Rule gate (spec §0 rule 5);
+  that assertion stays exactly as it is.
+- **Read-only and rationed by the prompt**: search at the start of a session to find something
+  to talk about, and afterwards only when the conversation genuinely needs a fact — not every
+  turn. Same discipline as the Bunpro tools (ADR-010).
+- **The latency cost lands where it is affordable.** A search happens on the *opening* turn,
+  before the student has said anything, where a couple of seconds is invisible. The 3.0 s
+  voice→voice budget (§10) governs conversational turns; a turn in which Sensei chooses to
+  search is logged with its tool time broken out so the p90 measurement stays honest.
+- **Results are untrusted text** (ADR-025's reasoning, retained): titles and short snippets
+  only, control characters and `[`/`]` stripped (they would collide with the emotion tags of
+  ADR-020), length-capped, count-capped. The tutor still has no built-in tools (ADR-016), so a
+  hostile result can make her say something odd and nothing more.
+- **Optional, degrading cleanly.** No SearxNG reachable → the tool reports that, the chip reads
+  `down`, and Sensei opens from the student's profile and last session instead. The app never
+  blocks on it. There is no static topic list; the fallback is her own memory and curiosity.
+
+**Not yet implemented — ADR-015 applies.** SearxNG's JSON API (`/search?format=json`) has not
+been verified against a running instance: none was reachable and the Docker daemon was down.
+The compose service and the config key exist; the client is written only once a live instance
+answers (ROADMAP **V0.11**).
+
+**Consequences.** A fourth tool in the tutor's prompt and one more optional service. Sessions
+start differently every time, which is the point. Search results reach the model unmediated, so
+the sanitiser is load-bearing.
+
+**Reversed if:** searching proves too slow even on the opening turn, or the user would rather
+not run another container — in which case ADR-025's pre-fetch returns as the cheap alternative.
+
+---
+
+## ADR-029 — Sensei's prompt replaces Claude Code's, and is passed as a file
+
+**Status:** Accepted (2026-09-09). Refines spec §4, which originally specified
+`--append-system-prompt "$(cat …)"`.
+
+**Context.** The spec assumed appending our tutor prompt to Claude Code's default one. Running it
+showed three separate problems, all measured on 2026-09-09 against CLI 2.1.159:
+
+1. **Append leaves a coding agent in front of the tutor.** Asked to introduce herself, Sensei
+   said 「私はClaude Codeです。Anthropicが開発したAIアシスタントで、ソフトウェアエンジニアリング
+   のタスクを支援します」 and offered to debug code, in markdown bullets — every HARD OUTPUT RULE
+   broken. `init.tools` also came back empty. With the prompt *replaced* she is みなみ先生, speaks
+   in short sentences with emotion tags, and the three MCP tools are present.
+2. **The string flags truncate at the first newline.** A three-line prompt given to
+   `--system-prompt` reached the model as line one only: it ignored its own name on line 2 and an
+   explicit instruction on line 3. The same text joined onto one line was applied in full.
+3. **They also swallow every following flag.** Our prompt contains lines starting with `-`, so a
+   multi-line value made the CLI lose the `--mcp-config` that came after it. The tutor started
+   with no tools, silently. Nothing logged an error; it looked exactly like a broken MCP server,
+   and cost an afternoon of bisection.
+
+**Decision.** Pass the rendered prompt with **`--system-prompt-file`** (replace). The file
+variants — `--system-prompt-file`, `--append-system-prompt-file` — exist but are documented only
+inside the `--bare` help text, which is why the first pass concluded they did not. Append remains
+available via `CLAUDE_REPLACE_SYSTEM_PROMPT=false` for anyone who wants Claude Code's default
+behaviour back. `--mcp-config` is still ordered before the prompt flag, defensively.
+
+**Consequences.** The tutor loses Claude Code's built-in system prompt entirely — correct here,
+since none of it is about teaching Japanese, and it removes ~7 000 tokens of irrelevant
+instructions from every turn. Our prompt is now the *whole* prompt, so `prompts/tutor.md` carries
+full responsibility for behaviour. Passing a file also keeps the student profile out of `ps`,
+which the earlier argv approach could not.
+
+**Reversed if:** a future CLI fixes multi-line handling *and* someone wants the default agent
+behaviour back — neither of which changes the persona argument for replacing.
 
 ---
 

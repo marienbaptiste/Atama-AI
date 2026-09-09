@@ -1,8 +1,14 @@
 """Configuration (spec §11, ADR-022).
 
-Resolution order: built-in defaults -> settings.json -> environment variables.
+Resolution order: built-in defaults -> settings.json -> .env file -> ATAMA_-prefixed env vars.
 One schema drives config, the settings page, and .env.example (a test asserts they match).
 Secrets never leave the backend in full: use `hint()` for display.
+
+Why the prefix on the last layer: our keys are named after what they configure (CLAUDE_MODEL,
+CLAUDE_EFFORT...), and Claude Code exports variables of its own with those exact names — running
+the app from inside a Claude Code session picked up CLAUDE_EFFORT=high from the parent shell
+(found 2026-09-09). The `.env` file is ours and keeps bare names; the process environment, which
+we do not own, is read only under `ATAMA_`.
 """
 from __future__ import annotations
 
@@ -33,14 +39,18 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("BUNPRO_API_TOKEN", "", str, "account", "Bunpro -> Settings -> API -> Account API Token", secret=True),
     Setting("CLAUDE_CODE_OAUTH_TOKEN", "", str, "account", "Optional; from `claude setup-token`. Empty = interactive login", secret=True),
     # Model
+    Setting("BRAIN_PROVIDER", "claude-cli", str, "model", "Which brain implementation to use (ADR-027). Implemented: claude-cli"),
     Setting("CLAUDE_MODEL", "sonnet", str, "model", "Model alias for the tutor subprocess"),
+    Setting("CLAUDE_EFFORT", "high", str, "model", "CLI effort level (low|medium|high|xhigh|max). Measured 2026-09-09: 'high' still gave a first chunk at 0.87-1.14s, inside the 1.60s Claude budget"),
     Setting("CLAUDE_FALLBACK_MODEL", "haiku", str, "model", "Fallback when the model is overloaded / rate limited"),
+    Setting("CLAUDE_REPLACE_SYSTEM_PROMPT", True, bool, "model", "true: --system-prompt (Sensei only). false: --append-system-prompt, which leaves Claude Code's coding-agent prompt in front and breaks the persona"),
     Setting("CLAUDE_TURN_TIMEOUT_S", 60, int, "model", "Per-turn timeout before SIGINT + apology"),
     Setting("CLAUDE_CWD", "", str, "advanced", "Dir the claude subprocess runs in. Empty = platform default OUTSIDE the repo (Claude Code walks up the tree for CLAUDE.md and keys project memory by it — verified 2026-09-09)"),
     # Network
     Setting("HOST", "127.0.0.1", str, "advanced", "Bind address. Loopback only (ADR-017)"),
     Setting("PORT", 8000, int, "advanced", "Orchestrator port"),
     Setting("VOICEVOX_URL", "http://127.0.0.1:50021", str, "advanced", "VOICEVOX engine (local Docker)"),
+    Setting("SEARXNG_URL", "http://127.0.0.1:8888", str, "advanced", "Self-hosted SearxNG for the tutor's search tool (ADR-028). Not implemented yet — ROADMAP V0.11"),
     # Voice
     Setting("VOICEVOX_SPEAKER", 1, int, "voice", "Base style id (real ids from GET /speakers)"),
     Setting("VOICEVOX_SPEED_SCALE", 0.9, float, "voice", "Default speech speed for learners"),
@@ -173,10 +183,20 @@ def read_dotenv(path: Path) -> dict[str, str]:
     return out
 
 
+ENV_PREFIX = "ATAMA_"
+
+
+def env_overrides(environ: dict[str, str] | None = None) -> dict[str, str]:
+    """Process-environment overrides, read ONLY under `ATAMA_` (see module docstring)."""
+    environ = os.environ if environ is None else environ
+    return {k[len(ENV_PREFIX):]: v for k, v in environ.items()
+            if k.startswith(ENV_PREFIX) and k[len(ENV_PREFIX):] in _BY_KEY}
+
+
 def load(settings_file: str | os.PathLike | None = None, env: dict[str, str] | None = None) -> Config:
     if env is None:
-        # Layer order: defaults < settings.json < .env file < real environment.
-        env = {**read_dotenv(REPO_ROOT / ".env"), **os.environ}
+        # defaults < settings.json < .env (bare names, our file) < ATAMA_* (not our namespace)
+        env = {**read_dotenv(REPO_ROOT / ".env"), **env_overrides()}
     settings_path = Path(settings_file or env.get("SETTINGS_FILE") or _BY_KEY["SETTINGS_FILE"].default)
     if not settings_path.is_absolute():
         settings_path = REPO_ROOT / settings_path
