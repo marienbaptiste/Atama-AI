@@ -52,7 +52,7 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("VOICEVOX_URL", "http://127.0.0.1:50021", str, "advanced", "VOICEVOX engine (local Docker)"),
     Setting("SEARXNG_URL", "http://127.0.0.1:8888", str, "advanced", "Self-hosted SearxNG for the tutor's search tool (ADR-028). Not implemented yet — ROADMAP V0.11"),
     # Voice
-    Setting("VOICEVOX_SPEAKER", -1, int, "voice", "Base VOICEVOX style id. -1 = take it from the persona, which is what you usually want. 29 = No.7 (みなみ先生), 53 = 麒ヶ島宗麟 (たなか先生)"),
+    Setting("VOICEVOX_SPEAKER", -1, int, "voice", "Base VOICEVOX style id. -1 = take it from the persona, which is what you usually want. 53 = 麒ヶ島宗麟 (たなか), 67 = 栗田まろん (はやし), 29 = No.7 (みなみ), 14 = 冥鳴ひまり (ゆい)"),
     Setting("VOICEVOX_SPEED_SCALE", 0.9, float, "voice", "Default speech speed for learners"),
     Setting("VOICEVOX_INTONATION_SCALE", 1.0, float, "voice", "Default intonation. Above 1 is livelier, below 1 flatter"),
     Setting("VOICEVOX_PITCH_SCALE", 0.0, float, "voice", "Baseline pitch shift for every emotion. Negative lowers the register: -0.06 to -0.12 makes a well-trained female voice read as male without losing its quality"),
@@ -76,7 +76,7 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("LATENCY_WARN_S", 3.0, float, "advanced", "Warn when a turn exceeds this"),
     Setting("VRAM_WARN_GB", 10, int, "advanced", "Warn above this GPU memory use"),
     # Display
-    Setting("TUTOR_PERSONA", "tanaka", str, "voice", "Which tutor: a name in prompts/ (tanaka = male, minami = female) or a path. The persona declares its own voice, so this one setting switches both"),
+    Setting("TUTOR_PERSONA", "tanaka", str, "voice", "Which tutor: a name in prompts/ (tanaka, hayashi, minami, mori) or a path. The persona declares its own voice, so this one setting switches character and voice together (ADR-030)"),
     Setting("SUBTITLES", "jp", str, "display", "jp | off"),
     Setting("AUDIO_INPUT_DEVICE", "", str, "audio", "Microphone. Empty = system default. Name or index; list them with `python -m backend.audio`"),
     Setting("AUDIO_OUTPUT_DEVICE", "", str, "audio", "Speakers/headphones. Empty = system default. Name or index; list them with `python -m backend.audio`"),

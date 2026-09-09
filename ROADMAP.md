@@ -44,6 +44,8 @@ Throwaway scripts, deleted or moved into `backend/tests/fixtures/` when done. Ea
 | **V0.9** | WaniKani token permissions: confirm from `/v2/user` which fields expose the token's granted permissions, so `make doctor` can warn on a write-capable token (ADR-021). | Pinned field name + a sanitised fixture for both a read-only and a write-capable token. | **Done 2026-09-09 — negative result.** `/v2/user.data` keys are `current_vacation_started_at, id, level, preferences, profile_url, started_at, subscription, username`; **token scopes are not exposed** and probing them would require a write. Read-only scope can only be guaranteed at token creation; the doctor and the settings page *instruct*, they cannot verify. Test pins the absence. |
 | **V0.8** | Do MCP tools survive `--tools ""`? Spawn with the Bunpro MCP configured and `--tools ""`; check `init.tools[]` for the MCP tool names. | Pinned: either `--tools ""` stands, or the fallback `--disallowedTools` list of the 20 built-in names from `init.tools`. | **Done 2026-09-09 — `--tools ""` stands**, *provided the MCP server is connected before the first turn*. See findings log ("Claude subprocess, live"). The disallow fallback is retired (tool names vary by platform). |
 
+| **V0.12** | **Context: how big is the window, and what does the provider do when it fills?** Drive one long real session, logging `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` per turn until the CLI compacts on its own. Answer: the usable window in tokens; how compaction announces itself on the stream (an event? silence?); **how long it stalls**; and whether the session id survives it. | Pinned constants: usable window, a safe `CONTEXT_ROTATE_AT` fraction under it, and the measured stall — the number that justifies ADR-032. Plus a fixture of whatever the stream emits. | Open — **blocks the rotation half of M4c.** The memory half (ADR-031) does not depend on it and ships first. |
+
 ### V0 findings log
 
 Pinned facts, dated, to be copied into `backend/constants.py` at M0. Re-verify on every CLI or
@@ -293,12 +295,45 @@ compare), flux = mean frame-to-frame L2 change of the normalised magnitude spect
   and the model's own wobble with it: at the spread's 1.54, jitter went 2.15% -> 2.41% and flux
   0.0773 -> 0.0821. Split into `SINGLE_STYLE_PITCH_SPREAD` (1.8, kept — a constant log-F0 offset
   carries the emotion at no stability cost) and `SINGLE_STYLE_INTONATION_SPREAD` (1.0, i.e. none).
-- **たなか moved 53 -> 100**, confirmed by ear by the user. **This costs ~260 ms per sentence** and
-  M2 must measure the 3.0 s voice->voice p90 against the new number, not the old one. If the gate
-  fails on it, 53 is the cheap fallback and 玄野武宏 11 the middle one.
+- **The steadiest voice is not the right voice.** 53 was swapped to 黒沢冴白 (100) on the numbers,
+  then swapped back after listening: on a fifty-year-old ex-engineer the unsteadiness reads as age.
+  53 stays for `tanaka`, deliberately. This is why the selection rule ends in a human (ADR-030) —
+  a gate that maximised the metric would have discarded the right answer.
 - 玄野武宏 11 has four styles (ノーマル/喜び/ツンギレ/悲しみ), but only 喜び matches a name in
   `DEFAULT_TABLE`, so `surprised` and `serious` still fall back to ノーマル — the multi-style
   advantage is mostly unrealised, and he is slower than 53 anyway.
+
+**Full sweep, both registers** (every speaker's base style, one fixed sentence, 2026-09-09).
+Male/low register, 11 voices; female/high register, 30 voices. Best of each, and what was chosen:
+
+| register | best measured | jitter | chosen for a persona | jitter | why not the best |
+|---|---|---|---|---|---|
+| male | 白上虎太郎 12 | 19.9 | 麒ヶ島宗麟 **53** (`tanaka`) | 33.4 | unsteadiness reads as age, and cheapest to synthesise |
+| male | — | — | 栗田まろん **67** (`hayashi`) | 22.0 | right age, and fastest of the shortlist (~643 ms) |
+| female | 雨晴はう 10 | 11.1 | No.7 **29** (`minami`) | 20.2 | the top female voices are 300+ Hz anime registers, wrong for a 40-year-old |
+| female | — | — | 冥鳴ひまり **14** (`mori`) | 15.3 | steadiest voice that still sounds nineteen |
+
+- **No.7 (29) came last of all 30 female voices** on jitter and was kept anyway, by ear. Worth
+  knowing if みなみ is ever reported as rough — it is the known-weakest of the four.
+- **The catalogue has a ceiling.** The top four male voices sit within 2 cents of each other and
+  the top female voices within 2. The residual synthetic quality the user still hears after the
+  swap is therefore the **vocoder**, not the speaker — no choice inside VOICEVOX addresses it.
+  Confirmed negative on the obvious explanations: the intended F0 contour is rich, not a staircase
+  (25 distinct pitches over 25 moras, 11.8 semitones); rendered range 9.9 st vs the reference's
+  9.0; periodicity 0.62, *lower* (less buzzy) than No.7's 0.79; mora timing is not metronomic
+  (duration CV 28-41% across the field).
+- **Open, if naturalness ever becomes a gate:** replace the engine. The candidate is
+  **AivisSpeech**, believed to expose a VOICEVOX-compatible HTTP API over Style-Bert-VITS2 models —
+  which would keep `audio_query`/`synthesis` and, critically, the mora timings the viseme pipeline
+  depends on. **Unverified**: per ADR-015 this needs its own spike against the live `/docs` before
+  anything is pinned, and it likely wants GPU, which collides with Whisper's §10b budget. This is
+  an ADR-005 supersede conversation, not a swap.
+- **Rejected: a DSP repair pass.** An EQ-style filter cannot touch F0 jitter — the whole harmonic
+  stack moves together, and an LTI filter has a fixed response, so it would convert pitch
+  instability into amplitude artifacts. WORLD or TD-PSOLA resynthesis *would* work, and VOICEVOX
+  hands us the intended per-mora F0 so the target contour is known rather than guessed. Not built:
+  the voice swap already solved the reported wobble, and this stage is 2x over its 400 ms budget.
+  Revisit only if a persona is forced back onto a rough voice for latency reasons.
 
 **2026-09-09 — the ears (M2), on the target box:**
 
@@ -666,7 +701,58 @@ covers, at the moment those sentences start playing (ADR-020).
 - **Gate M3f** — The scripted turn passes by eye and ear; tags appear in ≥ 30 % of turns in a
   normal conversation.
 
-### 18. Settings store & interface — `backend/config.py` + `frontend/src/settings.ts` — **M0 (store) / M3 (drawer) / M5 (full page)**
+### 18. Memory and context — `backend/memory.py` + `backend/session.py` — **M4**
+
+Cross-session recall (ADR-031) and pre-emptive session rotation (ADR-032). Spec §6b. Both exist to
+serve one rule: **nothing that is not speech goes on the critical path.** Everything here runs at
+session start, at session end, or in the *speaking gap* — the seconds after `TurnComplete` while
+the avatar is still playing audio and the orchestrator is idle.
+
+- **Build order.** (a) turn log first — it is the input to everything else and to the Anki mine;
+  (b) start-of-session read into the prompt; (c) end-of-session summariser; (d) rotation last,
+  because it depends on the log and is the only piece that can break a live conversation.
+
+- **Test — turn log.** Schema contract test against the §6b shape, asserting field names and that
+  every value is JSON-serialisable; append-only test (a second session appends, never rewrites);
+  a crash mid-write leaves the file parseable up to the last complete line. Hermetic.
+- **Test — prompt assembly.** Memory sections respect `MEMORY_MAX_TOKENS`, truncate at a line
+  boundary, and are reported in `RenderedPrompt.truncated` — the same golden machinery as soul and
+  profile. Absent memory files degrade to no section, never to an error or an empty heading.
+- **Test — the critical path is clean.** The strongest test in this subsystem: drive a full turn
+  with fakes and assert that **no memory read, write or rotation call occurs between speech-end and
+  first audio**. Implement it by recording call timestamps against the turn's phase, not by mocking
+  and hoping. This is the regression that matters; the rest is detail.
+- **Test — best-effort.** A memory write that raises, hangs, or is cancelled mid-flight must not
+  fail the turn, and must leave the log parseable. Simulate the student barging in during a write
+  and assert the write is abandoned and the turn proceeds.
+- **Test — summariser.** Runs off a fixture turn log, never a live conversation; produces output
+  within budget; a failed summarise leaves the previous brief intact rather than truncating it to
+  nothing. Deterministic given the same log.
+- **Test — rotation, hermetic.** With a fake brain reporting rising `usage`, assert: rotation arms
+  above the threshold; the swap happens only at a turn boundary; a not-ready replacement keeps the
+  old session and retries; the old process is closed only after the new one has taken a turn; a
+  crash mid-rotation resumes the *authoritative* session (the old one until the swap lands).
+
+- **Validate live.** A 40-minute lesson that crosses the rotation threshold at least once. Watch
+  for: a visible or audible seam at the swap; the tutor forgetting something it should still know;
+  any turn slower than usual attributable to rotation. Then close the app and reopen it — the tutor
+  must open from the last-session brief, and `student.md` must contain something a human would agree
+  is worth remembering.
+- **Validate the fallback.** Force rotation to fail (make the second spawn error) and confirm the
+  conversation continues on the old session, the provider's own compaction is logged as a latency
+  event, and nothing crashes.
+
+- **Gate M4c** — Across a 40-minute lesson: zero compaction stalls visible to the student; p90
+  voice→voice unchanged within noise between turns before and after a rotation; the turn log parses
+  100% and matches the schema; a fresh launch demonstrably recalls the previous session.
+
+**Known risk.** Rotation is the only feature in this milestone that can break a working
+conversation, and its failure mode is subtle — a tutor that quietly forgets. Ship the log, the
+start-of-session read and the summariser first; run them for several real lessons before enabling
+rotation. `CONTEXT_ROTATE_AT` unset means "never rotate", which must remain a supported
+configuration.
+
+### 19. Settings store & interface — `backend/config.py` + `frontend/src/settings.ts` — **M0 (store) / M3 (drawer) / M5 (full page)**
 
 **Contract:** one schema drives `config.py`, `.env.example`, and the settings page. Resolution
 is defaults → `settings.json` → env. Secrets never return to the browser in full (ADR-022).
@@ -734,7 +820,10 @@ Runs from M2 onward, every milestone, before any gate is called met:
    fixture.
 8. **Secret hygiene** — no `.env`, `settings.json`, `mcp.json`, GLB, model weights, or personal
    SRS data in `git status`; redaction test green, including `settings` echoes.
-9. **Read-only guarantee (Golden Rule §0, ADR-021)** — `make check-readonly` runs first and
+9. **Critical path is speech only (ADR-031/032)** — the recorded-phase test proves no memory
+   read, write, summarise or rotation call falls between speech-end and first audio. A 40-minute
+   run shows zero compaction stalls and no p90 regression across a rotation.
+10. **Read-only guarantee (Golden Rule §0, ADR-021)** — `make check-readonly` runs first and
    passes; the recording-transport test over a full mocked session (session-start fetches,
    `resync`, all three Bunpro MCP tools) reports zero non-`GET` requests; the violation fixture
    tree is still fully caught. Any of these failing is a release blocker regardless of anything

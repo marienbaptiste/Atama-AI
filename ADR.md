@@ -937,6 +937,221 @@ which the earlier argv approach could not.
 **Reversed if:** a future CLI fixes multi-line handling *and* someone wants the default agent
 behaviour back — neither of which changes the persona argument for replacing.
 
+## ADR-030 — A tutor is a persona *and* a voice; voices are shortlisted by measurement and chosen by ear
+
+**Status:** Accepted (2026-09-09). Extends ADR-026 (soul file), refines spec §7.
+
+**Context.** ADR-026 gave Sensei a persona file. It did not say who picks the voice, and the first
+implementation kept them in two settings: `TUTOR_PERSONA` chose the character, `VOICEVOX_SPEAKER`
+chose the voice. They drifted immediately — a male persona ran in a female voice, which is jarring
+in a way that no amount of good prompt text repairs.
+
+Worse, the voice had been picked by browsing names. The user then reported that たなか "sounds
+unstable between phonemes", which was correct and which no test caught, because nothing in the
+repo measured a voice at all. Choosing by name is choosing at random.
+
+**Decision — three parts.**
+
+1. **The persona declares its voice.** `prompts/<name>.md` carries `<!-- voice: NN -->` on its own
+   line; `VOICEVOX_SPEAKER=-1` (the default) means "ask the persona". The declaration is stripped
+   before the file reaches the model — it is configuration, not character. `VOICEVOX_SPEAKER` set
+   to a real id still overrides, for auditioning.
+
+2. **Voices are shortlisted by measurement, never by name.** Before a voice may be declared in a
+   persona file, it is measured across the whole `GET /speakers` catalogue on one fixed sentence:
+   - **F0 jitter**, mean frame-to-frame |ΔF0| over mean F0, autocorrelation tracker at a 5 ms hop,
+     reported in **cents** so registers compare;
+   - **spectral flux**, mean L2 change of the normalised magnitude spectrum — the "rough between
+     phonemes" axis;
+   - **shimmer**, frame-to-frame RMS change over mean RMS;
+   - **synthesis time per sentence**, because it is charged against the §10 budget.
+   The numbers produce a shortlist. They do **not** produce the answer.
+
+3. **The human picks from the shortlist by ear.** Measurement is necessary and not sufficient: it
+   ranks stability, and stability is not the same as suitability. たなか is the proof — he runs on
+   the *least* steady voice in the catalogue (麒ヶ島宗麟, 33.4 cents against the best male voice's
+   19.9) because on a fifty-year-old ex-engineer that unsteadiness reads as age. A gate that
+   maximised the metric would have thrown that away.
+
+**The catalogue** (`prompts/`, each file declaring its own voice):
+
+| persona | who | voice | jitter | synth |
+|---|---|---|---|---|
+| `tanaka` | 50, male, ex-engineer, dry, explains by example | 麒ヶ島宗麟 53 | 33.4 cents | ~615 ms |
+| `hayashi` | 28, male, fast, current usage over textbook order | 栗田まろん 67 | 22.0 cents | ~643 ms |
+| `minami` | 40s, female, linguistics, warm, literary | No.7 29 | 20.2 cents | ~874 ms |
+| `mori` | 19, female, **not a teacher** — a 語学交換 conversation partner | 冥鳴ひまり 14 | 15.3 cents | ~933 ms |
+
+`mori` exists because the range that mattered turned out to be *role*, not only age: a partner who
+lets you finish a wrong sentence is a different tool from a teacher who corrects it, and the young
+voice is what makes that role credible. The other three are teachers.
+
+**Consequences.**
+
+- Adding a tutor is adding one file. No Python changes, no config changes.
+- `SINGLE_STYLE_SPREAD` was split into `SINGLE_STYLE_PITCH_SPREAD` (1.8) and
+  `SINGLE_STYLE_INTONATION_SPREAD` (1.0, i.e. none). Widening `intonationScale` stretches the
+  model's own F0 wobble along with the contour — measured 2.15% → 2.41% jitter at the old 1.8× —
+  so single-style speakers now buy emotional range with pitch offset only, which costs nothing.
+- Synthesis cost is now a **persona-level** property, from ~615 ms to ~1010 ms per sentence across
+  the voices auditioned. The §10 voice→voice p90 must be measured against the *configured*
+  persona, not against a single pinned number.
+- A voice cannot be swapped casually: it needs the sweep re-run and a listening pass.
+
+**What this does NOT decide.** Whether VOICEVOX itself is the right engine. The sweep showed the
+top four male voices within 2 cents of each other and the top female voices within 2 — i.e. the
+residual synthetic quality the user still hears is the vocoder, not the speaker, and no choice
+inside this catalogue addresses it. Replacing the engine is ADR-005's business and would need its
+own verification spike; see ROADMAP V0.3.
+
+**Reversed if:** the engine changes (a new engine's voices need their own sweep), or personas ever
+need to share one voice — in which case the declaration moves back out to config.
+
+---
+
+## ADR-031 — Memory is read once at session start and written in the gaps; never retrieved mid-turn
+
+**Status:** Accepted (2026-09-09). Extends ADR-024's principle to a second kind of expensive work.
+See spec §6b.
+
+**Context.** Spec §6 and ADR-028 already tell Sensei to open "from what she knows about them or
+from last session" — but nothing stored a last session, so that instruction had nothing behind it.
+A tutor who forgets you between lessons is not a tutor; asking 「先週の旅行はどうでしたか」 is most
+of what makes the persona worth having.
+
+The obvious implementation is the wrong one. A retrieval step — a vector store, or a memory tool
+the model calls when it feels like it — puts a lookup between the student finishing a sentence and
+the first audio coming back. The §10 budget for that whole path is 3.0 s and the first sentence
+already costs 1.8-2.4 s. A 300 ms retrieval is a large slice of the remaining headroom, spent at
+the one moment the student is waiting. Worse, it is *variable*, and in a voice conversation an
+unpredictable pause reads as the tutor not having understood you.
+
+**Decision.** Memory never touches the critical path. Three tiers, each with one read moment and
+one write moment:
+
+| tier | file | read | written |
+|---|---|---|---|
+| turn log | `logs/sessions/<date>-<session>.jsonl` | never by the tutor | appended in the gap after each turn |
+| student notes | `<state>/memory/student.md` | session start, into the prompt | session end |
+| last-session brief | `<state>/memory/last-session.md` | session start, into the prompt | session end |
+
+1. **Reads happen once, at session start**, and become part of the system prompt beside the soul
+   and the SRS profile — same machinery, same token budgeting, a new `MEMORY_MAX_TOKENS` section
+   truncated at a line boundary and reported (ADR-011, `prompt.py`). After that the model has
+   everything it will get. There is no memory tool, and there will not be one.
+
+2. **Writes happen in the dead air.** When `TurnComplete` fires, the avatar still has seconds of
+   synthesised audio to play and the orchestrator is idle. That gap is where the turn record is
+   appended. Nothing is written while the student is speaking or while a turn is in flight.
+
+3. **Summarising happens at session end**, as a separate short-lived `Brain` call — not by the
+   tutor mid-conversation, which would spend a turn and pollute the transcript. Its input is the
+   turn log, so it is deterministic and re-runnable; if the app is killed before the summary is
+   written, the next launch rebuilds it from the log it finds.
+
+4. **Best-effort, always.** Every memory operation is cancellable and none may block a turn. If the
+   student speaks while a write is in flight, the conversation wins and the write is abandoned. A
+   lost turn record is a small loss; a hesitation is the product being bad.
+
+5. **Human-editable, and outside the repo.** `student.md` is markdown the user can open and fix,
+   like the soul file (ADR-026). A wrong memory confidently recalled is worse than no memory, and
+   the only practical correction mechanism is a text editor. It lives in the per-user state
+   directory, is gitignored, and is never committed: it holds the student's life, not the
+   project's.
+
+**What goes in `student.md`** — pedagogically shaped, not a transcript: grammar points missed more
+than once, vocabulary the student produced *unprompted* (evidence they own it, rather than that
+they were shown it), topics that got them talking, and facts about their life the tutor should not
+have to be told twice. Explicitly not: full transcripts, and not anything already in the SRS
+profile — WaniKani and Bunpro are the authority on what is being studied (ADR-024), and duplicating
+it would let the two disagree.
+
+**Consequences.**
+
+- Cross-session recall costs **zero** milliseconds per turn. It is prompt tokens, which are cached
+  (`cache_read_input_tokens` is non-zero on every turn after the first), not latency.
+- The tutor cannot look something up mid-conversation. If it was not loaded at start, it is not
+  known. Accepted: a tutor who says 「あれ、なんだっけ」 is more human than one that stalls.
+- The turn log stops being only a repo convention. It is also the Anki mine, so its schema is a
+  stable contract from its first commit.
+- Session end acquires a job that can fail. It fails silently into "no brief next time".
+
+**Rejected: a vector store / RAG.** ADR-013 (no database), plus the latency argument above. The
+corpus is one student's lessons — small enough that the interesting parts fit in a prompt section,
+which makes retrieval machinery pure cost.
+
+**Rejected: letting the tutor write memory through a tool.** It spends a turn, it happens at a
+moment the model chooses rather than one we control, and it puts a write on the critical path —
+the exact thing this ADR exists to prevent.
+
+**Reversed if:** a student accumulates so much history that `student.md` cannot be summarised into
+its budget without losing things that matter. The next step then is scoping by topic at session
+start — still a start-of-session read, still not per-turn retrieval.
+
+---
+
+## ADR-032 — Context is rotated pre-emptively during the avatar's speech, never compacted mid-turn
+
+**Status:** Accepted (2026-09-09). See spec §6b. Depends on ADR-031's turn log.
+
+**Context.** A lesson is a long conversation. The Claude CLI keeps the transcript itself (ADR-027,
+§4) and compacts it when the window fills — automatically, at a moment of its choosing, taking as
+long as it takes. In a chat client that is a progress spinner. In a voice conversation it is the
+tutor going silent for several seconds mid-lesson, with no explanation, and no way for the student
+to tell whether they should repeat themselves. It is the worst latency event this design can
+produce, and it arrives precisely when the conversation has been going well long enough to fill a
+window.
+
+We can see it coming. Every `TurnComplete` carries the provider's `usage`, and for this CLI that is
+`{input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens, ...}` —
+verified against a real turn, 2026-09-09. The first three sum to what the model actually read that
+turn, which tracks live context size for free, on a field we already parse.
+
+**Decision.** Track context growth per turn and **rotate the session before the provider decides to
+compact**, in a gap where nobody is waiting:
+
+1. Sum `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` on each
+   `TurnComplete`. Cost: an addition.
+2. Above `CONTEXT_ROTATE_AT` — a fraction of the model's usable window; **the window size and the
+   provider's own compaction trigger must be measured, not assumed (ROADMAP V0.12)** — arm a
+   rotation.
+3. Perform it in the **speaking gap**: the turn is done, the avatar has seconds of audio left.
+   Build a handoff brief from the turn log (ADR-031) — deterministic, no model call, nothing to
+   wait on — then spawn a second process with a fresh `--session-id` and a system prompt of the
+   usual sections plus that brief.
+4. **Swap at a turn boundary, never inside one.** If the new process is not ready when the student
+   speaks, keep the old one and try again in the next gap. Rotation is never the reason a turn is
+   slow.
+5. If rotation keeps failing, let the provider compact and **log it as a latency event**, so it
+   appears in the §10 instrumentation as what it is rather than as a mysterious slow turn.
+
+**Also budgeted: what the model re-reads every turn.** Tool results are the fastest way to fill a
+window — a search result set or an SRS snapshot pasted whole is thousands of tokens that will be
+re-read on every subsequent turn for the rest of the session. Tool output is summarised to its own
+budget before it enters context. That is cheaper than rotating more often.
+
+**Consequences.**
+
+- The student never experiences a compaction stall. At worst they experience a tutor who has
+  forgotten the exact wording of something from forty minutes ago — which is what a person does.
+- Two `claude` processes exist briefly. Both are spawned under ADR-016's rules, and the old one is
+  closed only after the new one has taken a turn.
+- Rotation is a real seam and it will show if done badly: the handoff brief is everything the new
+  session knows. It gets the same care and the same token budget as the rest of the prompt.
+- `--resume` (crash recovery, §4) and rotation must not fight. A crash during rotation resumes
+  whichever session is still authoritative — the old one, until the swap completes.
+
+**Rejected: raising the threshold and hoping.** The failure is not rare; it is guaranteed in a long
+lesson, and it gets more likely the better the lesson is going.
+
+**Rejected: rotating on a turn count or a clock.** Neither tracks what actually fills the window.
+One long tool result can do more than twenty turns of conversation.
+
+**Reversed if:** the provider gains a way to compact incrementally, or to be told when to do it.
+Then we tell it, in the same gap, and skip the second process.
+
+---
+
 ---
 
 ## Changing a decision

@@ -63,7 +63,22 @@ Browser (frontend)                    Python Orchestrator (backend)
         └─────────────┘                           ▼
                                       claude -p (persistent subprocess,
                                       stream-json in/out, MCP tools)
+              ▲                                   ▲
+              │ style id                          │ persona text
+        ┌─────┴───────────────────────────────────┴──────┐
+        │ prompts/<persona>.md                           │
+        │   <!-- voice: NN -->  ──► VOICEVOX style id    │
+        │   persona text        ──► --system-prompt-file │
+        └────────────────────────────────────────────────┘
+              one file per tutor; TUTOR_PERSONA selects it
 ```
+
+**A tutor is a persona and a voice together, from one file** (ADR-030). `prompts/<name>.md` holds
+the character *and* declares the VOICEVOX style it is written for; `TUTOR_PERSONA` picks the file
+and both follow. `VOICEVOX_SPEAKER=-1` (default) means "ask the persona"; a real id overrides it
+for auditioning. Adding a tutor is adding one file — no Python, no config. Shipped: `tanaka`
+(50, m), `hayashi` (28, m), `minami` (40s, f), `mori` (19, f — a conversation partner, not a
+teacher).
 
 Ports: orchestrator `:8000`, VOICEVOX `:50021`, frontend dev server `:5173` (or served statically by FastAPI).
 
@@ -258,6 +273,85 @@ TEACHING BEHAVIOR
 
 **DON'T** hardcode this prompt in Python. **DO** load from file so the user iterates on it without touching code.
 
+## 6b. MEMORY AND CONTEXT (ADR-031, ADR-032)
+
+**The rule everything here follows: nothing that is not speech goes on the critical path.** The
+path from the student stopping speaking to the first audio coming back is VAD → STT → brain → TTS
+and nothing else. Memory reads, memory writes, summarising and session rotation all happen either
+at session start, at session end, or in the **speaking gap** — the seconds after a turn completes
+while the avatar is still playing synthesised audio and the orchestrator is idle. All of it is
+best-effort and cancellable: if the student speaks, the conversation wins and the background work
+is abandoned.
+
+### Three tiers of memory
+
+| tier | where | read | written | budget |
+|---|---|---|---|---|
+| turn log | `logs/sessions/<date>-<session>.jsonl` | never by the tutor | appended in the speaking gap | — |
+| student notes | `<state>/memory/student.md` | session start → prompt | session end | `MEMORY_MAX_TOKENS` |
+| last-session brief | `<state>/memory/last-session.md` | session start → prompt | session end | shares the above |
+
+- **Read once, at session start.** Both files are rendered into the system prompt beside the soul
+  (§6) and the SRS profile (§5), through the same budgeting that truncates at a line boundary and
+  reports what it cut. After that, the model has everything it will get.
+- **There is no memory tool and there will not be one.** If it was not loaded at start, the tutor
+  does not know it. A tutor who says 「あれ、なんだっけ」 beats one that stalls.
+- **Write in the gap.** The turn record is appended when `TurnComplete` fires, never while a turn
+  is in flight.
+- **Summarise at session end**, as a separate short-lived `Brain` call whose input is the turn log
+  — deterministic and re-runnable. If the app dies first, the next launch rebuilds from the log.
+- **`student.md` is markdown the user edits.** A wrong memory recalled confidently is worse than no
+  memory, and the correction mechanism is a text editor. It holds grammar points missed more than
+  once, vocabulary the student produced *unprompted*, topics that got them talking, and facts about
+  their life. **Not** transcripts, and **not** anything already in the SRS profile — WaniKani and
+  Bunpro are the authority on what is being studied (ADR-024) and duplicating it lets the two
+  disagree.
+- **Memory files live outside the repo**, in the per-user state directory, gitignored, never
+  committed, never sent to the browser. They hold the student's life (§11).
+
+### Turn log schema
+
+One JSON object per line, appended, never rewritten. This is also the user's future Anki mine, so
+the schema is a stable contract — add fields, never repurpose them.
+
+```
+{"ts", "session", "turn",
+ "student": {"text", "audio_ms", "stt_ms"},
+ "tutor":   {"text", "sentences": [{"text", "emotion", "synth_ms"}]},
+ "tools":   [{"name", "ok", "ms"}],
+ "latency": {"ttft_ms", "first_audio_ms", "voice_to_voice_ms"},
+ "usage":   {...as the provider reported it...}}
+```
+
+Corrections are **not** marked live: the tutor emits emotion tags and nothing else, so the voice
+path stays exactly as §7 and ADR-020 specify. Mistakes are mined from the log by the end-of-session
+summariser, off the critical path.
+
+### Context rotation
+
+A long lesson fills the model's window, and the provider then compacts on its own schedule. In a
+voice conversation that is the tutor going silent for several seconds with no explanation — the
+worst latency event this design can produce, arriving exactly when the lesson has been going well
+long enough to fill a window.
+
+- **Measure it, don't wait for it.** Every `TurnComplete` carries `usage`; for this CLI,
+  `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` is what the model read
+  that turn and tracks live context size for free.
+- Above `CONTEXT_ROTATE_AT` — a fraction of the usable window; **the window and the provider's own
+  compaction trigger are measured in ROADMAP V0.12, never assumed** — arm a rotation.
+- **Rotate in the speaking gap:** build a handoff brief from the turn log (deterministic, no model
+  call), spawn a second process under the §4 rules with a fresh `--session-id`, prompt = the usual
+  sections plus the brief.
+- **Swap at a turn boundary, never inside one.** Not ready when the student speaks? Keep the old
+  process and try the next gap. Rotation is never the reason a turn is slow.
+- If rotation keeps failing, let the provider compact and **log it as a latency event** so §10
+  instrumentation shows it for what it is.
+- `--resume` (§4) resumes whichever session is authoritative — the old one, until the swap lands.
+
+**Tool output is summarised before it enters context.** A search result set or an SRS snapshot
+pasted whole is thousands of tokens re-read on every subsequent turn for the rest of the session.
+Capping it is cheaper than rotating more often.
+
 ## 7. TTS + LIP-SYNC (VOICEVOX → Oculus visemes)
 
 - `POST /audio_query?text=<sentence>&speaker=<id>` → JSON with `accent_phrases[].moras[]` (each mora: `consonant`, `consonant_length`, `vowel`, `vowel_length`) plus `pause_mora`, `prePhonemeLength`, `postPhonemeLength`, `speedScale`.
@@ -268,7 +362,21 @@ TEACHING BEHAVIOR
   - N (ん)→`nn`, cl (っ)→`sil`, pau/pause_mora→`sil`
   - consonant prefix (shorter, before vowel): k,g→`kk`; s,z,sh,j,ts→`SS`; t,d→`DD`; ch→`CH`; n→`nn`; m,b,p→`PP`; f,h→`FF`; r→`RR`; w,y→skip (let vowel dominate)
   - Devoiced vowels (VOICEVOX marks uppercase vowel e.g. `U`): use the shape but the frontend caps its weight at ~0.4.
-- Speaker/voice id, `speedScale` (default 0.9 for learners), and `intonationScale` configurable in `.env`.
+- **The speaker id comes from the persona, not from config** (ADR-030). `prompts/<name>.md`
+  declares `<!-- voice: NN -->`; the declaration is stripped before the file reaches the model.
+  `VOICEVOX_SPEAKER=-1` (default) means "ask the persona"; a real id overrides, for auditioning.
+  `speedScale` (default 0.9 for learners) and `intonationScale` stay in config.
+- **A voice is shortlisted by measurement and chosen by ear** (ADR-030). Before any voice may be
+  declared in a persona file, sweep the whole `GET /speakers` catalogue on one fixed sentence and
+  record: **F0 jitter** (mean frame-to-frame |dF0| / mean F0, autocorrelation at a 5 ms hop,
+  reported in cents so registers compare), **spectral flux** (mean L2 change of the normalised
+  magnitude spectrum — the "rough between phonemes" axis), **shimmer**, and **synthesis ms per
+  sentence** (charged against §10). The numbers produce a shortlist; a human picks from it.
+  Do **not** auto-select the metric winner: `tanaka` deliberately runs on the least steady voice
+  in the catalogue because on a fifty-year-old that unsteadiness reads as age. Method and the full
+  sweep are in ROADMAP V0.3.
+- **Synthesis cost is a persona property**, ~615-1010 ms/sentence across the voices auditioned.
+  Measure the §10 voice→voice p90 against the *configured* persona, never against one number.
 - **Voice tone follows the emotion tag.** VOICEVOX speakers expose multiple *styles* (each style is its own `speaker` id — e.g. a character's ノーマル / あまあま / ツンツン variants) and `audio_query` accepts `pitchScale` / `intonationScale` / `speedScale` overrides. Emotion → voice is a config table, one row per emotion, per chosen speaker:
   ```
   neutral:   style=<base style id>,  speed=0.90, pitch=0.00, intonation=1.00
@@ -277,7 +385,8 @@ TEACHING BEHAVIOR
   surprised: style=<base>,           speed=1.00, pitch=+0.04, intonation=1.30
   serious:   style=<calm style>,     speed=0.85, pitch=-0.03, intonation=0.85
   ```
-  Enumerate the installed speaker's real style ids from `GET /speakers` at startup (**V0.3** pins the endpoint shape); if a mapped style id does not exist, log a warning and use the base style with the scalar overrides only. Numbers above are starting points — tune by ear in M3. The emotion applies to the sentence carrying the tag and every following sentence until the next tag or the end of the turn.
+  Enumerate the installed speaker's real style ids from `GET /speakers` at startup (**V0.3** pins the endpoint shape); if a mapped style id does not exist, log a warning and use the base style with the scalar overrides only.
+  For a speaker with **only one style** (麒ヶ島宗麟, 栗田まろん, 冥鳴ひまり …) every emotion lands on the same voice, so the scalars are widened to keep the emotions apart — but **pitch only** (`SINGLE_STYLE_PITCH_SPREAD` 1.8), never intonation (`SINGLE_STYLE_INTONATION_SPREAD` 1.0). Widening `intonationScale` stretches the model's own F0 wobble along with the contour: measured 2.15% -> 2.41% jitter at 1.8x, audible as an unsteady voice between phonemes. `pitchScale` is a constant offset in log-F0 and carries the emotion at no stability cost. Numbers above are starting points — tune by ear in M3. The emotion applies to the sentence carrying the tag and every following sentence until the next tag or the end of the turn.
 - **DO** synthesize sentence-by-sentence as chunks arrive from Claude; **DON'T** wait for the full reply.
 - **DON'T** send text to TalkingHead's `speakText` — its text lip-sync has no Japanese module. ALWAYS use `speakAudio` with the audio + viseme timeline.
 
@@ -369,7 +478,7 @@ Rules:
 
 **M3 — Face.** Full frontend with TalkingHead, viseme-synced speech, subtitles, emotions (face + voice, set at sentence playback start), listening reactions, idle life, status bar, settings drawer, barge-in end-to-end. Acceptance: 10-turn conversation on headphones where lip-sync looks tight and barge-in cuts speech < 300 ms; **10-turn conversation on laptop speakers with zero self-interruptions**; each of the four emotion tags visibly and audibly distinct in a scripted 4-sentence turn; p90 voice→voice ≤ 3.0 s over 20 turns; VRAM ≤ 10 GB steady state.
 
-**M4 — Sensei brain.** Tutor prompt tuning with the real profile, Bunpro MCP (found or written per §5 — read tools only, on the same GET-only client), §5b status indicators wired to real state, `control: resync` from the UI. The fetchers and profile renderer already exist from M1; M4 is about the tutor *using* them well and the user *seeing* that it does. Acceptance: with a real WaniKani token, the tutor demonstrably uses ≥ 3 recent unlocks in a 5-minute conversation (visible in logs); Bunpro absent → clean degradation with the chip reading `disabled`; Bunpro MCP deliberately broken (bad credential) → chip reads `failed`, conversation unaffected; WaniKani offline with a warm cache → chip reads `stale`, profile still present.
+**M4 — Sensei brain.** Memory and context (§6b, ADR-031/032) — the turn log, the start-of-session read, the end-of-session summariser, and *last* the pre-emptive session rotation, which is the only piece here that can break a working conversation and so ships after several real lessons on the rest. `CONTEXT_ROTATE_AT` unset means never rotate, and that stays a supported configuration. Then: tutor prompt tuning with the real profile, Bunpro MCP (found or written per §5 — read tools only, on the same GET-only client), §5b status indicators wired to real state, `control: resync` from the UI. The fetchers and profile renderer already exist from M1; M4 is about the tutor *using* them well and the user *seeing* that it does. Acceptance: with a real WaniKani token, the tutor demonstrably uses ≥ 3 recent unlocks in a 5-minute conversation (visible in logs); Bunpro absent → clean degradation with the chip reading `disabled`; Bunpro MCP deliberately broken (bad credential) → chip reads `failed`, conversation unaffected; WaniKani offline with a warm cache → chip reads `stale`, profile still present.
 
 **M5 — Polish.** Full settings page (§11: every key, grouped, masked secrets, Test buttons, first-run flow — `.env` becomes optional), session summary on goodbye, `--profile` overlay, README with setup for a fresh machine (Linux **and** Windows/WSL2 per §15), docker-compose for VOICEVOX on loopback, `make run`, `make check-secrets`, redaction test green, read-only GET-only test green. Acceptance: a fresh machine goes from clone to first conversation **without creating a `.env`**, entering tokens only through the settings page.
 

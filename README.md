@@ -437,6 +437,47 @@ default, sentences ≤ 25 characters, 1–3 per turn, no markdown, no lists, no 
 notation, no parenthetical asides, no emoji. Numbers are written as they would be *spoken*, and
 rare or above-level kanji is written in kana so TTS reads it correctly.
 
+### Who is teaching you
+
+Four tutors ship in [`prompts/`](prompts/). Each file is one person *and* the voice they are
+written for — pick one with `TUTOR_PERSONA` and both follow:
+
+| `TUTOR_PERSONA` | who | voice |
+|---|---|---|
+| `tanaka` (default) | たなか先生, 50, ex-engineer. Quiet, dry, explains by example, waits for you to finish. | 麒ヶ島宗麟 |
+| `hayashi` | はやし先生, 28. Fast, cheerful, teaches what people actually say now. | 栗田まろん |
+| `minami` | みなみ先生, 40s, linguistics. Warm, literary, loves word origins. | No.7 |
+| `mori` | ゆい, 19 — **not a teacher.** A student at a 語学交換 circle who corrects only when she genuinely doesn't follow you. For practice where being corrected every sentence is the problem. | 冥鳴ひまり |
+
+Adding your own is adding one file: write the character, put `<!-- voice: NN -->` at the top, and
+set `TUTOR_PERSONA` to its name. The declaration is stripped before the file reaches the model.
+`VOICEVOX_SPEAKER=-1` (the default) means "ask the persona"; set a real style id to override it
+while auditioning.
+
+Voices were not picked by browsing names — the whole `GET /speakers` catalogue was measured for
+pitch stability (F0 jitter in cents), spectral roughness and synthesis cost, and a human chose from
+the shortlist. たなか deliberately runs on the *least* steady voice in the catalogue: on a
+fifty-year-old the unsteadiness reads as age. See [ADR-030](ADR.md) and the ROADMAP V0.3 findings
+if you are tempted to "fix" it.
+
+### What it remembers
+
+Sensei remembers you between lessons, and none of it costs you a pause mid-conversation
+([ADR-031](ADR.md), [ADR-032](ADR.md)):
+
+- **Read once, at session start.** Notes about you and a brief on last session are loaded into the
+  prompt alongside your SRS profile. There is no memory lookup during a turn — if it wasn't loaded
+  at the start, Sensei doesn't know it. A tutor who says 「あれ、なんだっけ」 beats one that goes
+  silent for half a second.
+- **Written in the gaps.** Turn records are appended while the avatar is still speaking. The
+  summary that becomes next lesson's memory is written at session end.
+- **`memory/student.md` is yours to edit.** It lives outside the repo, is never committed, and is
+  plain markdown — a wrong memory recalled confidently is worse than none, and the fix is a text
+  editor.
+- **Long lessons don't stall.** When the conversation approaches the model's context limit, the
+  session is rotated during the avatar's speaking time rather than letting the CLI compact
+  mid-sentence. You should never notice it happen.
+
 ---
 
 ## Repo layout

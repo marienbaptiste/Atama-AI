@@ -20,20 +20,38 @@ def test_hard_output_rules_come_after_the_persona():
     assert text.index("WHO YOU ARE") < text.index("HARD OUTPUT RULES")
 
 
+#: The shipped catalogue: persona -> the VOICEVOX style it was written for (ADR-030).
+CATALOGUE = {"tanaka": 53, "hayashi": 67, "minami": 29, "mori": 14}
+
+
 def test_each_persona_declares_the_voice_it_belongs_with(tmp_path):
     """Character and voice are one choice: a male persona in a female voice is jarring, and
     keeping them in two settings means they drift apart."""
-    assert prompt.declared_voice("tanaka") == 100     # 黒沢冴白
-    assert prompt.declared_voice("minami") == 29      # No.7
+    for name, style in CATALOGUE.items():
+        assert prompt.declared_voice(name) == style, name
     assert prompt.declared_voice(tmp_path / "nothing.md") is None
 
 
-def test_the_two_personas_are_different_people():
-    tanaka, minami = prompt.load_soul(name="tanaka"), prompt.load_soul(name="minami")
-    assert "たなか先生" in tanaka and "みなみ先生" in minami
-    assert tanaka != minami
-    # Not one character gender-swapped: different homes, different histories.
-    assert "新潟" in tanaka and "京都" in minami
+def test_no_two_personas_share_a_voice():
+    """Two tutors in the same voice are the same tutor wearing a different name."""
+    assert len(set(CATALOGUE.values())) == len(CATALOGUE)
+
+
+def test_the_personas_are_different_people():
+    souls = {n: prompt.load_soul(name=n) for n in CATALOGUE}
+    assert len(set(souls.values())) == len(souls)
+    assert "たなか先生" in souls["tanaka"] and "はやし先生" in souls["hayashi"]
+    assert "みなみ先生" in souls["minami"] and "ゆい" in souls["mori"]
+    # Not one character re-skinned: different homes, different histories.
+    assert "新潟" in souls["tanaka"] and "福岡" in souls["hayashi"] and "京都" in souls["minami"]
+
+
+def test_the_conversation_partner_is_not_a_teacher():
+    """`mori` earns her place by role, not by age — she is what you pick when being corrected
+    every sentence is the problem. If she drifts into a 先生 she is redundant (ADR-030)."""
+    mori = prompt.load_soul(name="mori")
+    assert "「先生」ではありません" in mori
+    assert "先生" not in mori.replace("「先生」ではありません", "")
 
 
 def test_a_persona_name_resolves_into_prompts_and_a_path_is_taken_as_given(tmp_path):
