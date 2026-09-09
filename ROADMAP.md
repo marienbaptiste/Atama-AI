@@ -284,6 +284,19 @@ M3's gate, not M1's; the numbers are recorded here so the M3 work starts from da
   `state (2, batch, 128)`, `sr () int64`; outputs speech probability and the next state. Frames are
   **exactly 512 samples at 16 kHz** — the model is stateful and a different frame size degrades its
   judgement rather than erroring. Silence scored 0.0006, light noise 0.0016.
+- **Silero v5 must be fed 576 samples, not 512.** It prepends a 64-sample *context* — the tail of
+  the previous frame — to every window. The ONNX graph accepts a dynamic width, so passing 512
+  raises nothing: it simply returns ~0.002 for everything, including loud, clear speech. The
+  symptom is a level meter that moves beautifully while nothing is ever detected, which reads as
+  a microphone problem and is not one. Measured on one synthesised Japanese sentence:
+  512-wide -> max probability 0.003, nothing detected; 576-wide -> 1.000, 62 of 81 frames.
+  Regression-tested two ways: a spy asserts the model receives 576 and that the context really is
+  the previous frame's tail, and a committed 16 kHz speech fixture must yield a full
+  speech_start/speech_end at both full volume and at 0.05x (a quiet headset's real level).
+- **A forming utterance must tolerate dips.** Requiring `min_speech_ms` of *uninterrupted*
+  above-threshold frames means "300 ms with no dip at all", which real speech never satisfies —
+  plosives and syllable gaps dip constantly. Reset only after a sustained gap
+  (`onset_tolerance_ms`, 200 ms).
 - **The barge-in factor could not be a multiplier** (ADR-018 addendum): 0.5 x 2.0 = 1.0 is
   unreachable for a probability, which would have disabled barge-in with no error anywhere.
 

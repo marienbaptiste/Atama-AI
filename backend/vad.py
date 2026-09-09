@@ -10,7 +10,14 @@ the same detector serves both "is the student talking to me" and "is the student
 Model signature verified 2026-09-09 (silero_vad.onnx, v5):
     inputs   input (batch, samples) float32 · state (2, batch, 128) float32 · sr () int64
     outputs  output (batch, 1) speech probability · stateN  (feed back as `state`)
-    frames   512 samples at 16 kHz = 32 ms. Silence scored 0.0006; light noise 0.0016.
+    frames   512 new samples at 16 kHz = 32 ms
+
+**The model must be fed 576 samples, not 512**: v5 prepends a 64-sample CONTEXT — the tail of
+the previous frame — to each window. The ONNX graph accepts a dynamic width, so passing 512
+does not error; it silently returns ~0.002 for everything, including loud, clear speech. That
+made a working microphone look like a broken one for an afternoon. Measured on the same
+synthesised Japanese sentence: 512-wide gives max probability 0.003 and detects nothing;
+576-wide gives 1.000 and flags 62 of 81 frames.
 """
 from __future__ import annotations
 
@@ -24,6 +31,9 @@ import numpy as np
 FRAME_SAMPLES = 512
 SAMPLE_RATE = 16000
 FRAME_MS = FRAME_SAMPLES * 1000 // SAMPLE_RATE      # 32
+#: Silero v5 prepends the tail of the previous frame. 64 at 16 kHz (32 at 8 kHz). Non-negotiable:
+#: without it the model returns ~0 for everything and never errors.
+CONTEXT_SAMPLES = 64
 SPEECH_THRESHOLD = 0.5
 #: Keep this much audio from before speech was detected, so the first phoneme is not clipped.
 PREROLL_MS = 300
@@ -79,6 +89,7 @@ class VoiceActivityDetector:
 
     _session: object | None = field(default=None, init=False, repr=False)
     _state: np.ndarray = field(default=None, init=False, repr=False)  # type: ignore[assignment]
+    _context: np.ndarray = field(default=None, init=False, repr=False)  # type: ignore[assignment]
     _clock_ms: float = field(default=0.0, init=False)
     _speech_ms: float = field(default=0.0, init=False)
     _silence_ms_run: float = field(default=0.0, init=False)
@@ -113,6 +124,7 @@ class VoiceActivityDetector:
     # ------------------------------------------------------------------ public
     def reset(self) -> None:
         self._state = np.zeros((2, 1, 128), dtype=np.float32)
+        self._context = np.zeros(CONTEXT_SAMPLES, dtype=np.float32)
         self._speech_ms = 0.0
         self._silence_ms_run = 0.0
         self._in_speech = False
@@ -149,11 +161,19 @@ class VoiceActivityDetector:
         return self.bargein_min_speech_ms if self.mode is Mode.SPEAKING else self.min_speech_ms
 
     def probability(self, frame: np.ndarray) -> float:
-        """Speech probability for one 32 ms frame, advancing the model's internal state."""
-        chunk = np.asarray(frame, dtype=np.float32).reshape(1, -1)
+        """Speech probability for one 32 ms frame, advancing the model's internal state.
+
+        The window handed to the model is `CONTEXT_SAMPLES` of the previous frame followed by
+        this one — see the module docstring for what happens when it is not.
+        """
+        frame = np.asarray(frame, dtype=np.float32).ravel()
+        window = np.concatenate([self._context, frame])
         out, self._state = self._session.run(  # type: ignore[union-attr]
-            None, {"input": chunk, "state": self._state, "sr": np.array(SAMPLE_RATE, dtype=np.int64)}
+            None, {"input": window.reshape(1, -1), "state": self._state,
+                   "sr": np.array(SAMPLE_RATE, dtype=np.int64)}
         )
+        self._context = frame[-CONTEXT_SAMPLES:] if frame.size >= CONTEXT_SAMPLES else \
+            np.zeros(CONTEXT_SAMPLES, dtype=np.float32)
         self.last_probability = float(out[0][0])
         return self.last_probability
 

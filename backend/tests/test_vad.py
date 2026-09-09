@@ -35,6 +35,19 @@ def detector(**kw) -> FakeVad:
     return FakeVad(model_path=None, **kw)  # type: ignore[arg-type]
 
 
+class BareVad(VoiceActivityDetector):
+    """Real `probability()`, no ONNX load — for testing what is fed to the model."""
+
+    def __post_init__(self) -> None:
+        self.mode = Mode.LISTENING
+        self.reset()
+        self._mode_started_ms = 0.0
+
+
+def bare() -> BareVad:
+    return BareVad(model_path=None)  # type: ignore[arg-type]
+
+
 def feed(v: FakeVad, prob: float, ms: int):
     """Push `ms` worth of frames at a given speech probability; collect the events."""
     events = []
@@ -164,3 +177,70 @@ def test_a_sustained_gap_still_abandons_it():
     feed(v, 0.0, 300)                      # a real gap, past the tolerance
     assert v._speech_ms == 0.0
     assert feed(v, 0.9, 200) == []         # the counter restarted, so 200 ms is not enough
+
+
+# ------------------------------------------------- Silero's context window (v5)
+def test_the_model_is_fed_the_context_window_not_a_bare_frame():
+    """v5 prepends 64 samples of the previous frame. The ONNX graph takes a dynamic width, so
+    feeding 512 does NOT error — it just returns ~0.002 for everything, including loud speech.
+    That looked exactly like a broken microphone (2026-09-09)."""
+    seen = {}
+
+    class SpySession:
+        def run(self, _outputs, feeds):
+            seen["width"] = feeds["input"].shape[-1]
+            seen["state"] = feeds["state"].shape
+            seen["sr"] = int(feeds["sr"])
+            return np.array([[0.9]], dtype=np.float32), np.zeros((2, 1, 128), dtype=np.float32)
+
+    v = bare()
+    v._session = SpySession()
+    v.probability(np.full(FRAME, 0.2, dtype=np.float32))
+    assert seen["width"] == FRAME + vad_mod.CONTEXT_SAMPLES == 576
+    assert seen["state"] == (2, 1, 128) and seen["sr"] == 16000
+
+
+def test_the_context_carries_the_tail_of_the_previous_frame():
+    windows = []
+
+    class SpySession:
+        def run(self, _outputs, feeds):
+            windows.append(feeds["input"][0].copy())
+            return np.array([[0.0]], dtype=np.float32), np.zeros((2, 1, 128), dtype=np.float32)
+
+    v = bare()
+    v._session = SpySession()
+    first = np.linspace(0, 1, FRAME, dtype=np.float32)
+    second = np.full(FRAME, -0.5, dtype=np.float32)
+    v.probability(first)
+    v.probability(second)
+    assert np.allclose(windows[0][:vad_mod.CONTEXT_SAMPLES], 0.0)          # first frame: silence
+    assert np.allclose(windows[1][:vad_mod.CONTEXT_SAMPLES], first[-vad_mod.CONTEXT_SAMPLES:])
+    assert np.allclose(windows[1][vad_mod.CONTEXT_SAMPLES:], second)
+
+
+REAL_SPEECH = vad_mod.Path(__file__).parent / "fixtures" / "audio" / "japanese_speech_16k.wav"
+
+
+@pytest.mark.skipif(not (REAL_SPEECH.exists() and vad_mod.Path(".cache/models/silero_vad.onnx").exists()),
+                    reason="speech fixture or VAD model unavailable")
+@pytest.mark.parametrize("scale,label", [(1.0, "full volume"), (0.05, "a quiet microphone")])
+def test_real_japanese_speech_is_detected(scale, label):
+    """The end-to-end guard: real speech in, a complete utterance out. Both at full volume and
+    at the level a quiet headset actually delivers (peak ~0.02)."""
+    from backend import audio as audio_mod
+
+    speech, rate = audio_mod.decode_wav(REAL_SPEECH.read_bytes())
+    assert rate == 16000
+    padded = np.concatenate([np.zeros(16000, np.float32),
+                             np.clip(speech * scale, -1, 1).astype(np.float32),
+                             np.zeros(16000, np.float32)])
+    v = VoiceActivityDetector(model_path=vad_mod.Path(".cache/models/silero_vad.onnx"))
+    events = []
+    for i in range(0, len(padded) - FRAME, FRAME):
+        events += v.push(padded[i:i + FRAME])
+    got = kinds(events)
+    assert EventKind.SPEECH_START in got, f"{label}: no speech detected"
+    assert EventKind.SPEECH_END in got, f"{label}: utterance never ended"
+    end = [e for e in events if e.kind is EventKind.SPEECH_END][0]
+    assert end.audio is not None and end.audio.size > 16000     # the utterance came back with it
