@@ -1,0 +1,73 @@
+{
+ "object": "collection",
+ "url": "https://api.wanikani.com/v2/level_progressions",
+ "pages": {
+  "per_page": 500,
+  "next_url": null,
+  "previous_url": null
+ },
+ "total_count": 4,
+ "data_updated_at": "2026-09-04T19:13:56.175250Z",
+ "data": [
+  {
+   "id": 4331775,
+   "object": "level_progression",
+   "url": "https://api.wanikani.com/v2/level_progressions/4331775",
+   "data_updated_at": "2026-08-21T08:01:10.768626Z",
+   "data": {
+    "created_at": "2026-08-15T22:12:56.065738Z",
+    "level": 1,
+    "unlocked_at": "2026-08-15T22:12:56.065263Z",
+    "started_at": "2026-08-15T22:16:20.186360Z",
+    "passed_at": "2026-08-21T08:01:10.749816Z",
+    "completed_at": null,
+    "abandoned_at": null
+   }
+  },
+  {
+   "id": 4339339,
+   "object": "level_progression",
+   "url": "https://api.wanikani.com/v2/level_progressions/4339339",
+   "data_updated_at": "2026-08-27T16:11:30.147474Z",
+   "data": {
+    "created_at": "2026-08-21T08:01:10.872545Z",
+    "level": 2,
+    "unlocked_at": "2026-08-21T08:01:10.867047Z",
+    "started_at": "2026-08-21T13:41:03.566112Z",
+    "passed_at": "2026-08-27T16:11:30.142352Z",
+    "completed_at": null,
+    "abandoned_at": null
+   }
+  },
+  {
+   "id": 4348026,
+   "object": "level_progression",
+   "url": "https://api.wanikani.com/v2/level_progressions/4348026",
+   "data_updated_at": "2026-09-04T18:58:12.286639Z",
+   "data": {
+    "created_at": "2026-08-27T16:11:30.177119Z",
+    "level": 3,
+    "unlocked_at": "2026-08-27T16:11:30.173444Z",
+    "started_at": "2026-08-27T17:53:28.038559Z",
+    "passed_at": "2026-09-04T18:58:12.281255Z",
+    "completed_at": null,
+    "abandoned_at": null
+   }
+  },
+  {
+   "id": 4359535,
+   "object": "level_progression",
+   "url": "https://api.wanikani.com/v2/level_progressions/4359535",
+   "data_updated_at": "2026-09-04T19:13:56.175250Z",
+   "data": {
+    "created_at": "2026-09-04T18:58:12.316451Z",
+    "level": 4,
+    "unlocked_at": "2026-09-04T18:58:12.313929Z",
+    "started_at": "2026-09-04T19:13:56.167476Z",
+    "passed_at": null,
+    "completed_at": null,
+    "abandoned_at": null
+   }
+  }
+ ]
+}

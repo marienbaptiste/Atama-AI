@@ -1,0 +1,117 @@
+{
+ "type": "ghost",
+ "reviews": {
+  "data": [
+   {
+    "id": "14198611",
+    "type": "ghost_review",
+    "attributes": {
+     "id": 14198611,
+     "study_question_id": 2555,
+     "reviewable_type": "GrammarPoint",
+     "reviewable_id": 365,
+     "streak": 1,
+     "default_input_type": "Cloze",
+     "is_slain": false,
+     "next_review": "2026-09-09T12:00:00.000Z",
+     "user_synonyms": ""
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "2555",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "365",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   }
+  ],
+  "included": [
+   {
+    "id": "365",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 365,
+     "slug": "そういう",
+     "furigana": "そういう",
+     "title": "そういう",
+     "meaning": "Like that, Kind of",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   },
+   {
+    "id": "2555",
+    "type": "study_question",
+    "attributes": {
+     "id": 2555,
+     "content": "____仕事（しごと）<span class=\"gp-popout\" data-gp-id=\"21\">を</span>し<span class=\"gp-popout\" data-gp-id=\"86\">なくちゃいけない</span>。",
+     "answer": "こういう",
+     "alternate_grammar": [],
+     "kanji_answer": "こういう",
+     "kanji_alt_grammar": [],
+     "tense": "Near the speaker",
+     "male_audio_url": "https://dk3kgylsgq3k1.cloudfront.net/audio/N4/Lesson3/365/male_audio/230225_1332_01.mp3",
+     "female_audio_url": "https://dk3kgylsgq3k1.cloudfront.net/audio/grammar/n4/こういう仕事をしなくちゃいけない。.mp3",
+     "word_prompt": "",
+     "question_type": "cloze",
+     "sentence_order": 4,
+     "validation_status": "validated",
+     "level": "",
+     "has_tts_audio": false,
+     "alternate_answers": {
+      "こんな": {
+       "en": "Let's try a different grammar structure here.",
+       "es": "",
+       "fr": "Essayons une autre structure grammaticale ici.",
+       "id": "Mari coba struktur tata bahasa yang berbeda di sini."
+      },
+      "このような": {
+       "en": "Could you try a grammar point that is more casual here?",
+       "es": "",
+       "fr": "Pourriez-vous essayer un point de grammaire plus familier ici ?",
+       "id": "Mungkin kamu bisa coba poin tata bahasa yang lebih kasual di sini?"
+      }
+     },
+     "wrong_answers": {
+      "この": {
+       "en": "This means 'this'. We are looking for a grammar point with the meaning of 'like this'.",
+       "es": "",
+       "fr": "Cela signifie « ceci ». Nous cherchons un point de grammaire exprimant « comme ceci »."
+      },
+      "そういう": {
+       "en": "This means 'like that'. We are looking for a grammar point with the meaning of 'like this'.",
+       "es": "",
+       "fr": "Cela signifie « comme ça ». Nous cherchons un point de grammaire ayant le sens de « comme ceci »."
+      },
+      "そんな": {
+       "en": "This means 'like that'. We are looking for a grammar point with the meaning of 'like this'.",
+       "es": "",
+       "fr": "Cela signifie « comme ça ». Nous cherchons un point de grammaire ayant le sens de « comme ceci »."
+      }
+     },
+     "sentenceable_type": "GrammarPoint",
+     "sentenceable_id": 365,
+     "translation": "I have to do <strong>this kind of</strong> job.",
+     "extra_info": "",
+     "has_been_translated": true
+    },
+    "relationships": {
+     "sentenceable": {
+      "data": {
+       "id": "365",
+       "type": "grammar_point"
+      }
+     }
+    }
+   }
+  ]
+ }
+}

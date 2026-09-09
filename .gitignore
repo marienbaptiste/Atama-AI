@@ -1,0 +1,50 @@
+# ---- secrets (never commit) ----
+.env
+.env.*
+!.env.example
+# the settings-page store (mode 0600); holds tokens
+settings.json
+# generated from mcp.json.template + settings at startup; contains credentials
+mcp.json
+*.token
+*.pem
+
+# ---- personal data ----
+# session transcripts + profile-<date>.json (personal SRS data)
+logs/
+# WaniKani / Bunpro disk cache
+.cache/
+# tutor prompt with the student profile injected
+prompts/*_rendered.*
+backend/tests/fixtures/private/
+
+# ---- large binaries ----
+frontend/public/*.glb
+*.glb
+*.vrm
+models/
+*.bin
+*.safetensors
+*.ckpt
+*.pt
+
+# ---- python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# ---- node / vite ----
+node_modules/
+frontend/dist/
+.vite/
+
+# ---- editors / OS ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

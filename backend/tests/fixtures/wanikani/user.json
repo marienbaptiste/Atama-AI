@@ -1,0 +1,28 @@
+{
+ "object": "user",
+ "url": "https://api.wanikani.com/v2/user",
+ "data_updated_at": "2026-09-09T01:38:29.814692Z",
+ "data": {
+  "id": "student",
+  "username": "student",
+  "level": 4,
+  "started_at": "student",
+  "subscription": {
+   "active": true,
+   "type": "lifetime",
+   "max_level_granted": 60,
+   "period_ends_at": null
+  },
+  "current_vacation_started_at": null,
+  "preferences": {
+   "lessons_autoplay_audio": false,
+   "lessons_batch_size": 5,
+   "reviews_autoplay_audio": false,
+   "reviews_display_srs_indicator": true,
+   "extra_study_autoplay_audio": false,
+   "reviews_presentation_order": "shuffled",
+   "lessons_presentation_order": "ascending_level_then_subject",
+   "default_voice_actor_id": 1
+  }
+ }
+}

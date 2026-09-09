@@ -1,0 +1,86 @@
+{
+ "grammar": {
+  "5": {
+   "beginner": 0,
+   "adept": 1,
+   "seasoned": 1,
+   "expert": 0,
+   "master": 0,
+   "total_count": 132
+  },
+  "4": {
+   "beginner": 12,
+   "adept": 38,
+   "seasoned": 10,
+   "expert": 0,
+   "master": 0,
+   "total_count": 185
+  },
+  "3": {
+   "beginner": 0,
+   "adept": 0,
+   "seasoned": 0,
+   "expert": 0,
+   "master": 0,
+   "total_count": 220
+  },
+  "2": {
+   "beginner": 0,
+   "adept": 0,
+   "seasoned": 0,
+   "expert": 0,
+   "master": 0,
+   "total_count": 221
+  },
+  "1": {
+   "beginner": 0,
+   "adept": 0,
+   "seasoned": 0,
+   "expert": 0,
+   "master": 0,
+   "total_count": 187
+  }
+ },
+ "vocab": {
+  "5": {
+   "beginner": 0,
+   "adept": 0,
+   "seasoned": 0,
+   "expert": 0,
+   "master": 0,
+   "total_count": 1100
+  },
+  "4": {
+   "beginner": 43,
+   "adept": 176,
+   "seasoned": 61,
+   "expert": 0,
+   "master": 0,
+   "total_count": 1095
+  },
+  "3": {
+   "beginner": 0,
+   "adept": 0,
+   "seasoned": 0,
+   "expert": 0,
+   "master": 0,
+   "total_count": 1998
+  },
+  "2": {
+   "beginner": 0,
+   "adept": 0,
+   "seasoned": 0,
+   "expert": 0,
+   "master": 0,
+   "total_count": 1998
+  },
+  "1": {
+   "beginner": 0,
+   "adept": 0,
+   "seasoned": 0,
+   "expert": 0,
+   "master": 0,
+   "total_count": 2974
+  }
+ }
+}

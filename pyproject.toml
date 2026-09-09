@@ -1,0 +1,22 @@
+[project]
+name = "atama-ai"
+version = "0.0.1"
+description = "Real-time voice Japanese tutor with a 3D avatar (spec: ATAMA-AI_SPEC.md)"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28",
+    "pydantic>=2",
+    "mcp>=1.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+# Voice pipeline deps (M2+) are added when those milestones start:
+# fastapi, uvicorn, faster-whisper, silero-vad (torch), numpy.
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+addopts = "-q"
+
+[tool.setuptools]
+packages = ["backend"]

@@ -1,0 +1,368 @@
+{
+ "type": "regular",
+ "reviews": {
+  "data": [
+   {
+    "id": "65285131",
+    "type": "review",
+    "attributes": {
+     "id": 65285131,
+     "streak": 4,
+     "next_review": "2026-09-09T19:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-08-31T09:00:00.000Z",
+     "reviewable_id": 384,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-08-31T09:31:49.236Z",
+     "updated_at": "2026-09-08T20:36:30.214Z",
+     "accuracy": 83,
+     "times_studied": 6,
+     "ghost_count": 0
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "1370",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "384",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   },
+   {
+    "id": "65554811",
+    "type": "review",
+    "attributes": {
+     "id": 65554811,
+     "streak": 4,
+     "next_review": "2026-09-10T09:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-09-05T18:00:00.000Z",
+     "reviewable_id": 121,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-09-03T09:44:33.992Z",
+     "updated_at": "2026-09-08T10:13:08.821Z",
+     "accuracy": 100,
+     "times_studied": 4,
+     "ghost_count": 0
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "195",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "121",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   },
+   {
+    "id": "65554813",
+    "type": "review",
+    "attributes": {
+     "id": 65554813,
+     "streak": 4,
+     "next_review": "2026-09-09T20:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-09-05T18:00:00.000Z",
+     "reviewable_id": 375,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-09-03T09:44:34.033Z",
+     "updated_at": "2026-09-07T21:15:14.014Z",
+     "accuracy": 100,
+     "times_studied": 4,
+     "ghost_count": 0
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "1341",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "375",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   },
+   {
+    "id": "65554814",
+    "type": "review",
+    "attributes": {
+     "id": 65554814,
+     "streak": 4,
+     "next_review": "2026-09-10T09:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-09-05T18:00:00.000Z",
+     "reviewable_id": 120,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-09-03T09:44:34.049Z",
+     "updated_at": "2026-09-08T10:03:55.793Z",
+     "accuracy": 100,
+     "times_studied": 4,
+     "ghost_count": 0
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "2713",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "120",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   },
+   {
+    "id": "65803903",
+    "type": "review",
+    "attributes": {
+     "id": 65803903,
+     "streak": 4,
+     "next_review": "2026-09-10T13:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-09-06T20:00:00.000Z",
+     "reviewable_id": 374,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-09-06T20:45:46.606Z",
+     "updated_at": "2026-09-08T14:26:40.347Z",
+     "accuracy": 100,
+     "times_studied": 4,
+     "ghost_count": 0
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "2696",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "374",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   },
+   {
+    "id": "65803905",
+    "type": "review",
+    "attributes": {
+     "id": 65803905,
+     "streak": 4,
+     "next_review": "2026-09-10T13:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-09-06T20:00:00.000Z",
+     "reviewable_id": 123,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-09-06T20:45:46.632Z",
+     "updated_at": "2026-09-08T14:22:05.440Z",
+     "accuracy": 100,
+     "times_studied": 4,
+     "ghost_count": 0
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "2741",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "123",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   }
+  ],
+  "included": [
+   {
+    "id": "384",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 384,
+     "slug": "なるべく",
+     "furigana": "なるべく",
+     "title": "なるべく",
+     "meaning": "As ~ as possible, Wherever practicable",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   },
+   {
+    "id": "121",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 121,
+     "slug": "よう-おう",
+     "furigana": "う・よう (Volitional)",
+     "title": "Verb[よう]",
+     "meaning": "Let's, I shall (Casual volitional)",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   },
+   {
+    "id": "375",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 375,
+     "slug": "ぜんぜん",
+     "furigana": "全然（ぜんぜん）",
+     "title": "ぜんぜん",
+     "meaning": "(Not) at all",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   },
+   {
+    "id": "120",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 120,
+     "slug": "かな",
+     "furigana": "かな",
+     "title": "かな",
+     "meaning": "I wonder",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   },
+   {
+    "id": "374",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 374,
+     "slug": "あまり-ない",
+     "furigana": "余（あま）り～ない",
+     "title": "あまり～ない",
+     "meaning": "Not very, Not much, Not really, Hardly",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   },
+   {
+    "id": "123",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 123,
+     "slug": "なら",
+     "furigana": "なら",
+     "title": "なら",
+     "meaning": "Were it, If, If it's the case, As for (Conditional)",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   }
+  ]
+ },
+ "pagy": {
+  "scaffold_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=adept&page=__pagy_page__",
+  "first_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=adept&page=1",
+  "prev_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=adept&page=",
+  "page_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=adept&page=1",
+  "next_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=adept&page=",
+  "last_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=adept&page=1",
+  "count": 39,
+  "page": 1,
+  "items": 200,
+  "vars": {
+   "page": 1,
+   "items": 200,
+   "outset": 0,
+   "size": [
+    1,
+    4,
+    4,
+    1
+   ],
+   "page_param": "page",
+   "params": {},
+   "fragment": "",
+   "link_extra": "",
+   "i18n_key": "pagy.item_name",
+   "cycle": false,
+   "headers": {
+    "page": "Current-Page",
+    "items": "Page-Items",
+    "count": "Total-Count",
+    "pages": "Total-Pages"
+   },
+   "metadata": [
+    "scaffold_url",
+    "first_url",
+    "prev_url",
+    "page_url",
+    "next_url",
+    "last_url"
+   ],
+   "count": 39
+  },
+  "pages": 1,
+  "last": 1,
+  "in": 39,
+  "from": 1,
+  "to": 39,
+  "prev": null,
+  "next": null,
+  "series": [
+   "1"
+  ]
+ }
+}

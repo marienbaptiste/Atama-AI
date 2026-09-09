@@ -1,0 +1,127 @@
+"""Bunpro MCP server: exactly three read tools, zero network, reads the launch snapshot, reports its age."""
+from __future__ import annotations
+
+import asyncio
+import datetime as dt
+import json
+from pathlib import Path
+
+from backend.srs import bunpro_mcp as m
+from backend.srs.cache import cache_store
+
+FX = Path(__file__).parent / "fixtures" / "bunpro"
+
+
+def fx(name):
+    return json.loads((FX / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def snapshot(tmp_path, minutes_ago=5):
+    raw = {n: fx(n) for n in ("user", "due", "jlpt_progress", "ghost_grammar", "srs_level_beginner_grammar", "forecast_daily")}
+    ts = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=minutes_ago)).isoformat(timespec="seconds")
+    p = tmp_path / "bunpro.json"
+    cache_store(p, {"fetched_at": ts, "service": "bunpro", "raw": raw})
+    m._snapshot_path = p
+    return p
+
+
+def call(name, args=None):
+    return asyncio.run(m.server.call_tool(name, args or {}))
+
+
+def _payload(result):
+    """mcp 2.x call_tool returns (content, structured) or a CallToolResult; normalise to the dict."""
+    if isinstance(result, tuple):
+        return result[1] if isinstance(result[1], dict) else json.loads(result[0][0].text)
+    sc = getattr(result, "structuredContent", None)
+    if sc:
+        return sc.get("result", sc)
+    return json.loads(result.content[0].text)
+
+
+def test_tool_surface_is_exactly_three_read_tools():
+    names = sorted(t.name for t in asyncio.run(m.server.list_tools()))
+    assert names == sorted(m.READ_TOOLS) == ["get_ghost_reviews", "get_grammar_progress", "get_review_queue"]
+    m._assert_surface()
+
+
+def test_module_has_no_network_client():
+    import inspect
+    src = inspect.getsource(m)
+    assert "SrsClient" not in src and "httpx" not in src and "BUNPRO_API_TOKEN" not in src
+
+
+def test_review_queue_from_snapshot(tmp_path):
+    snapshot(tmp_path, minutes_ago=7)
+    out = _payload(call("get_review_queue"))
+    assert out["due_grammar"] == 0 and out["grammar_tomorrow"] == 15 and out["grammar_later"] == 15
+    assert 6 <= out["age_minutes"] <= 8 and out["synced_at"]
+
+
+def test_ghost_reviews_from_snapshot(tmp_path):
+    snapshot(tmp_path)
+    out = _payload(call("get_ghost_reviews"))
+    assert out["count"] == 1 and out["ghosts"][0]["grammar"] == "そういう" and out["ghosts"][0]["jlpt"] == "N4"
+
+
+def test_grammar_progress_from_snapshot(tmp_path):
+    snapshot(tmp_path)
+    out = _payload(call("get_grammar_progress"))
+    assert out["studying"] == "N4" and out["jlpt"]["N4"]["total"] == 185 and len(out["beginner_stage"]) >= 1
+
+
+def test_missing_snapshot_is_a_clear_error(tmp_path):
+    m._snapshot_path = tmp_path / "nope.json"
+    out = _payload(call("get_review_queue"))
+    assert "error" in out and "Refresh" in out["hint"]
+
+
+def test_missing_env_is_a_clear_error(monkeypatch):
+    m._snapshot_path = None
+    monkeypatch.delenv("ATAMA_SNAPSHOT", raising=False)
+    out = _payload(call("get_ghost_reviews"))
+    assert "ATAMA_SNAPSHOT" in out["error"]
+
+
+def test_ready_marker_written_by_initialized_handler(tmp_path):
+    m._ready_path = tmp_path / "bunpro_mcp.ready"
+    assert not m._ready_path.exists()
+    asyncio.run(m._on_initialized(None, None))
+    data = json.loads(m._ready_path.read_text(encoding="utf-8"))
+    assert data["pid"] > 0 and data["connected_at"]
+    m.clear_marker()
+    assert not m._ready_path.exists()
+    m._ready_path = None
+
+
+def test_stdio_handshake_writes_marker_and_lists_tools(tmp_path):
+    """Real subprocess + real MCP initialize over stdio (no network). The marker must appear
+    only once the client has initialized — this is the signal the orchestrator waits on."""
+    import os
+    import sys
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+
+    snap = snapshot(tmp_path)
+    marker = tmp_path / "ready"
+    repo = str(Path(__file__).resolve().parents[2])
+    env = {**os.environ, "ATAMA_SNAPSHOT": str(snap), "ATAMA_MCP_READY": str(marker), "PYTHONPATH": repo}
+    params = StdioServerParameters(command=sys.executable, args=["-m", "backend.srs.bunpro_mcp"], env=env, cwd=repo)
+
+    async def run():
+        async with stdio_client(params) as (r, w):
+            async with ClientSession(r, w) as s:
+                await s.initialize()
+                for _ in range(100):  # the notification handler runs right after initialize; allow scheduling
+                    if marker.exists():
+                        break
+                    await asyncio.sleep(0.02)
+                assert marker.exists(), "ready marker not written after initialize"
+                tools = await s.list_tools()
+                res = await s.call_tool("get_ghost_reviews", {})
+                return sorted(t.name for t in tools.tools), res.content[0].text
+
+    names, text = asyncio.run(run())
+    assert names == sorted(m.READ_TOOLS)
+    assert "そういう" in text
+    assert not marker.exists(), "marker must be removed when the server exits"

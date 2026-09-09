@@ -1,0 +1,889 @@
+{
+ "object": "collection",
+ "url": "https://api.wanikani.com/v2/subjects?ids=2733%2C3501%2C2656%2C2655%2C2732%2C2731%2C2693%2C5632%2C5631%2C2669%2C2668%2C2730%2C2729%2C3413%2C2666%2C2665%2C2664%2C2662%2C2585%2C2606%2C2605%2C2604%2C2610%2C9147%2C8961%2C8660%2C7729%2C7565%2C7521%2C3404",
+ "pages": {
+  "per_page": 1000,
+  "next_url": null,
+  "previous_url": null
+ },
+ "total_count": 30,
+ "data_updated_at": "2026-08-11T22:33:28.299241Z",
+ "data": [
+  {
+   "id": 2655,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/2655",
+   "data_updated_at": "2026-07-22T15:55:43.997461Z",
+   "data": {
+    "created_at": "2012-03-03T00:03:42.000000Z",
+    "level": 4,
+    "slug": "名人",
+    "hidden_at": null,
+    "characters": "名人",
+    "meanings": [
+     {
+      "meaning": "Expert",
+      "primary": true,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Master",
+      "primary": false,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [],
+    "readings": [
+     {
+      "reading": "めいじん",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun"
+    ],
+    "component_subject_ids": [
+     544,
+     444
+    ],
+    "lesson_position": 94,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 2656,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/2656",
+   "data_updated_at": "2026-07-22T15:55:44.012834Z",
+   "data": {
+    "created_at": "2012-03-03T00:03:50.000000Z",
+    "level": 4,
+    "slug": "名字",
+    "hidden_at": null,
+    "characters": "名字",
+    "meanings": [
+     {
+      "meaning": "Surname",
+      "primary": true,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Last Name",
+      "primary": false,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Family Name",
+      "primary": false,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [
+     {
+      "meaning": "First Name",
+      "type": "blacklist"
+     }
+    ],
+    "readings": [
+     {
+      "reading": "みょうじ",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun",
+     "の adjective"
+    ],
+    "component_subject_ids": [
+     544,
+     545
+    ],
+    "lesson_position": 95,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 2666,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/2666",
+   "data_updated_at": "2026-07-22T15:55:44.101843Z",
+   "data": {
+    "created_at": "2012-03-03T00:05:49.000000Z",
+    "level": 4,
+    "slug": "少年",
+    "hidden_at": null,
+    "characters": "少年",
+    "meanings": [
+     {
+      "meaning": "Boy",
+      "primary": true,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Young Boy",
+      "primary": false,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Youth",
+      "primary": false,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [
+     {
+      "meaning": "Juvenile",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Little Boy",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Young Man",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Boy Child",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Young People",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Young Person",
+      "type": "whitelist"
+     }
+    ],
+    "readings": [
+     {
+      "reading": "しょうねん",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun"
+    ],
+    "component_subject_ids": [
+     506,
+     546
+    ],
+    "lesson_position": 102,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 2668,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/2668",
+   "data_updated_at": "2026-07-22T15:55:44.134781Z",
+   "data": {
+    "created_at": "2012-03-03T00:06:08.000000Z",
+    "level": 4,
+    "slug": "早い",
+    "hidden_at": null,
+    "characters": "早い",
+    "meanings": [
+     {
+      "meaning": "Early",
+      "primary": true,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Fast",
+      "primary": false,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Quick",
+      "primary": false,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [],
+    "readings": [
+     {
+      "reading": "はやい",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "い adjective"
+    ],
+    "component_subject_ids": [
+     547
+    ],
+    "lesson_position": 105,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 2669,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/2669",
+   "data_updated_at": "2026-08-11T22:33:28.299241Z",
+   "data": {
+    "created_at": "2012-03-03T00:06:46.000000Z",
+    "level": 4,
+    "slug": "早々",
+    "hidden_at": null,
+    "characters": "早々",
+    "meanings": [
+     {
+      "meaning": "As Soon As",
+      "primary": true,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Quickly",
+      "primary": false,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Early",
+      "primary": false,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Immediately After",
+      "primary": false,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [
+     {
+      "meaning": "Just After",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Promptly",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "As Soon As Possible",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "ASAP",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Hurriedly",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Earlier",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Sooner",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Speedily",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Ahead Of Schedule",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Right After",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Immediately",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Earlier Than Usual",
+      "type": "whitelist"
+     }
+    ],
+    "readings": [
+     {
+      "reading": "そうそう",
+      "primary": true,
+      "accepted_answer": true
+     },
+     {
+      "reading": "はやばや",
+      "primary": false,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun",
+     "suffix"
+    ],
+    "component_subject_ids": [
+     547,
+     856
+    ],
+    "lesson_position": 126,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 2693,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/2693",
+   "data_updated_at": "2026-07-22T15:55:44.407488Z",
+   "data": {
+    "created_at": "2012-03-03T00:13:42.000000Z",
+    "level": 4,
+    "slug": "町",
+    "hidden_at": null,
+    "characters": "町",
+    "meanings": [
+     {
+      "meaning": "Town",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [],
+    "readings": [
+     {
+      "reading": "まち",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun"
+    ],
+    "component_subject_ids": [
+     556
+    ],
+    "lesson_position": 125,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 2729,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/2729",
+   "data_updated_at": "2026-07-22T15:55:44.988971Z",
+   "data": {
+    "created_at": "2012-03-03T00:23:19.000000Z",
+    "level": 4,
+    "slug": "打つ",
+    "hidden_at": null,
+    "characters": "打つ",
+    "meanings": [
+     {
+      "meaning": "To Hit Something",
+      "primary": true,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "To Strike Something",
+      "primary": false,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "To Type",
+      "primary": false,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [
+     {
+      "meaning": "To Strike",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Hit",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Pound",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Type Something",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Pound Something",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Punch",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Slap",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Smack",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Pat",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Tap",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Clap",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Knock",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Beat",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Bang",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Bump",
+      "type": "whitelist"
+     }
+    ],
+    "readings": [
+     {
+      "reading": "うつ",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "transitive verb",
+     "godan verb"
+    ],
+    "component_subject_ids": [
+     536
+    ],
+    "lesson_position": 158,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 2730,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/2730",
+   "data_updated_at": "2026-07-22T15:55:45.000586Z",
+   "data": {
+    "created_at": "2012-03-03T00:23:33.000000Z",
+    "level": 4,
+    "slug": "一打",
+    "hidden_at": null,
+    "characters": "一打",
+    "meanings": [
+     {
+      "meaning": "One Hit",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [
+     {
+      "meaning": "Strike",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Blow",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Hit",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "One Blow",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Stroke",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Shot",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "One Shot",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "1 Hit",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "1 Shot",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "1 Blow",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "1 Stroke",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "1 Strike",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Single Hit",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Single Stroke",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Single Strike",
+      "type": "whitelist"
+     }
+    ],
+    "readings": [
+     {
+      "reading": "いちだ",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun"
+    ],
+    "component_subject_ids": [
+     440,
+     536
+    ],
+    "lesson_position": 159,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 2731,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/2731",
+   "data_updated_at": "2026-07-22T15:55:45.009907Z",
+   "data": {
+    "created_at": "2012-03-03T00:23:41.000000Z",
+    "level": 4,
+    "slug": "氷",
+    "hidden_at": null,
+    "characters": "氷",
+    "meanings": [
+     {
+      "meaning": "Ice",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [
+     {
+      "meaning": "Rice",
+      "type": "blacklist"
+     }
+    ],
+    "readings": [
+     {
+      "reading": "こおり",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun"
+    ],
+    "component_subject_ids": [
+     537
+    ],
+    "lesson_position": 160,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 2732,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/2732",
+   "data_updated_at": "2026-07-22T15:55:45.018802Z",
+   "data": {
+    "created_at": "2012-03-03T00:23:53.000000Z",
+    "level": 4,
+    "slug": "かき氷",
+    "hidden_at": null,
+    "characters": "かき氷",
+    "meanings": [
+     {
+      "meaning": "Shaved Ice",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [],
+    "readings": [
+     {
+      "reading": "かきごおり",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun"
+    ],
+    "component_subject_ids": [
+     537
+    ],
+    "lesson_position": 161,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 2733,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/2733",
+   "data_updated_at": "2026-07-22T15:55:45.035303Z",
+   "data": {
+    "created_at": "2012-03-03T00:24:00.000000Z",
+    "level": 4,
+    "slug": "申す",
+    "hidden_at": null,
+    "characters": "申す",
+    "meanings": [
+     {
+      "meaning": "To Say Humbly",
+      "primary": true,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "To Say",
+      "primary": false,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [
+     {
+      "meaning": "To Humbly Say",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Humbly Say Something",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Say Something Humbly",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Say Something",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "To Eat",
+      "type": "blacklist"
+     }
+    ],
+    "readings": [
+     {
+      "reading": "もうす",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "transitive verb",
+     "godan verb"
+    ],
+    "component_subject_ids": [
+     538
+    ],
+    "lesson_position": 162,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 3413,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/3413",
+   "data_updated_at": "2026-07-22T15:55:45.131278Z",
+   "data": {
+    "created_at": "2012-06-27T18:43:49.387833Z",
+    "level": 4,
+    "slug": "年",
+    "hidden_at": null,
+    "characters": "年",
+    "meanings": [
+     {
+      "meaning": "Year",
+      "primary": true,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Age",
+      "primary": false,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [],
+    "readings": [
+     {
+      "reading": "とし",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun"
+    ],
+    "component_subject_ids": [
+     546
+    ],
+    "lesson_position": 169,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 3501,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/3501",
+   "data_updated_at": "2026-07-22T15:55:45.141372Z",
+   "data": {
+    "created_at": "2012-08-18T23:36:39.104822Z",
+    "level": 4,
+    "slug": "名",
+    "hidden_at": null,
+    "characters": "名",
+    "meanings": [
+     {
+      "meaning": "Name",
+      "primary": true,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Reputation",
+      "primary": false,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [],
+    "readings": [
+     {
+      "reading": "な",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun"
+    ],
+    "component_subject_ids": [
+     544
+    ],
+    "lesson_position": 170,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 5631,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/5631",
+   "data_updated_at": "2026-07-22T15:55:45.151274Z",
+   "data": {
+    "created_at": "2013-03-18T17:29:09.031236Z",
+    "level": 4,
+    "slug": "宝",
+    "hidden_at": null,
+    "characters": "宝",
+    "meanings": [
+     {
+      "meaning": "Treasure",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [],
+    "readings": [
+     {
+      "reading": "たから",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun"
+    ],
+    "component_subject_ids": [
+     1520
+    ],
+    "lesson_position": 171,
+    "spaced_repetition_system_id": 1
+   }
+  },
+  {
+   "id": 5632,
+   "object": "vocabulary",
+   "url": "https://api.wanikani.com/v2/subjects/5632",
+   "data_updated_at": "2026-07-22T15:55:45.162508Z",
+   "data": {
+    "created_at": "2013-03-18T17:29:22.632077Z",
+    "level": 4,
+    "slug": "宝石",
+    "hidden_at": null,
+    "characters": "宝石",
+    "meanings": [
+     {
+      "meaning": "Jewel",
+      "primary": true,
+      "accepted_answer": true
+     },
+     {
+      "meaning": "Gem",
+      "primary": false,
+      "accepted_answer": true
+     }
+    ],
+    "auxiliary_meanings": [
+     {
+      "meaning": "Gemstone",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Jewelry",
+      "type": "whitelist"
+     },
+     {
+      "meaning": "Precious Stone",
+      "type": "whitelist"
+     }
+    ],
+    "readings": [
+     {
+      "reading": "ほうせき",
+      "primary": true,
+      "accepted_answer": true
+     }
+    ],
+    "parts_of_speech": [
+     "noun",
+     "の adjective"
+    ],
+    "component_subject_ids": [
+     1520,
+     493
+    ],
+    "lesson_position": 172,
+    "spaced_repetition_system_id": 1
+   }
+  }
+ ]
+}

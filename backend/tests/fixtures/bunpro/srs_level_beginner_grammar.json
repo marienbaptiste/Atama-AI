@@ -1,0 +1,368 @@
+{
+ "type": "regular",
+ "reviews": {
+  "data": [
+   {
+    "id": "65553082",
+    "type": "review",
+    "attributes": {
+     "id": 65553082,
+     "streak": 3,
+     "next_review": "2026-09-09T07:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-09-03T09:00:00.000Z",
+     "reviewable_id": 365,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-09-03T09:31:19.439Z",
+     "updated_at": "2026-09-08T20:37:00.020Z",
+     "accuracy": 80,
+     "times_studied": 5,
+     "ghost_count": 1
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "2556",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "365",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   },
+   {
+    "id": "65554812",
+    "type": "review",
+    "attributes": {
+     "id": 65554812,
+     "streak": 3,
+     "next_review": "2026-09-09T09:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-09-05T18:00:00.000Z",
+     "reviewable_id": 149,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-09-03T09:44:34.010Z",
+     "updated_at": "2026-09-08T10:05:55.288Z",
+     "accuracy": 50,
+     "times_studied": 10,
+     "ghost_count": 0
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "3043",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "149",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   },
+   {
+    "id": "65803904",
+    "type": "review",
+    "attributes": {
+     "id": 65803904,
+     "streak": 3,
+     "next_review": "2026-09-09T19:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-09-06T20:00:00.000Z",
+     "reviewable_id": 154,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-09-06T20:45:46.618Z",
+     "updated_at": "2026-09-08T20:34:07.335Z",
+     "accuracy": 80,
+     "times_studied": 5,
+     "ghost_count": 0
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "3116",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "154",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   },
+   {
+    "id": "65803906",
+    "type": "review",
+    "attributes": {
+     "id": 65803906,
+     "streak": 3,
+     "next_review": "2026-09-09T09:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-09-06T20:00:00.000Z",
+     "reviewable_id": 112,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-09-06T20:45:46.645Z",
+     "updated_at": "2026-09-08T10:12:45.806Z",
+     "accuracy": 71,
+     "times_studied": 7,
+     "ghost_count": 0
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "2613",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "112",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   },
+   {
+    "id": "65883182",
+    "type": "review",
+    "attributes": {
+     "id": 65883182,
+     "streak": 3,
+     "next_review": "2026-09-09T08:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-09-07T20:00:00.000Z",
+     "reviewable_id": 117,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-09-07T20:29:30.314Z",
+     "updated_at": "2026-09-08T09:14:55.810Z",
+     "accuracy": 100,
+     "times_studied": 3,
+     "ghost_count": 0
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "2657",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "117",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   },
+   {
+    "id": "65883183",
+    "type": "review",
+    "attributes": {
+     "id": 65883183,
+     "streak": 3,
+     "next_review": "2026-09-09T09:00:00.000Z",
+     "complete": true,
+     "is_fsrs": false,
+     "is_recurring_mastered": false,
+     "review_misses": 0,
+     "started_studying_at": "2026-09-07T20:00:00.000Z",
+     "reviewable_id": 1112,
+     "reviewable_type": "GrammarPoint",
+     "default_input_type": "Cloze",
+     "user_synonyms": "",
+     "created_at": "2026-09-07T20:29:30.329Z",
+     "updated_at": "2026-09-08T10:03:37.130Z",
+     "accuracy": 100,
+     "times_studied": 3,
+     "ghost_count": 0
+    },
+    "relationships": {
+     "study_question": {
+      "data": {
+       "id": "212402",
+       "type": "study_question"
+      }
+     },
+     "reviewable": {
+      "data": {
+       "id": "1112",
+       "type": "reviewable_base_attribute_mixed"
+      }
+     }
+    }
+   }
+  ],
+  "included": [
+   {
+    "id": "365",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 365,
+     "slug": "そういう",
+     "furigana": "そういう",
+     "title": "そういう",
+     "meaning": "Like that, Kind of",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   },
+   {
+    "id": "149",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 149,
+     "slug": "ようだ",
+     "furigana": "様（よう）だ",
+     "title": "ようだ",
+     "meaning": "It seems that, It appears that, It looks like",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   },
+   {
+    "id": "154",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 154,
+     "slug": "ば",
+     "furigana": "ば",
+     "title": "ば",
+     "meaning": "If… then, (Conditional)",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   },
+   {
+    "id": "112",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 112,
+     "slug": "がる",
+     "furigana": "がる",
+     "title": "がる",
+     "meaning": "To feel, To think, To act as if, To want, To desire",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   },
+   {
+    "id": "117",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 117,
+     "slug": "がする",
+     "furigana": "がする",
+     "title": "がする",
+     "meaning": "To give off, Smell, Sound, Taste, Sensation",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   },
+   {
+    "id": "1112",
+    "type": "reviewable_base_attribute_mixed",
+    "attributes": {
+     "id": 1112,
+     "slug": "する-wear",
+     "furigana": "する (Have/Wear)",
+     "title": "する (Have/Wear)",
+     "meaning": "Have (a feature), Wear (an accessory)",
+     "level": "JLPT4",
+     "type_pascal": "GrammarPoint",
+     "type_snake": "grammar_point"
+    }
+   }
+  ]
+ },
+ "pagy": {
+  "scaffold_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=beginner&page=__pagy_page__",
+  "first_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=beginner&page=1",
+  "prev_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=beginner&page=",
+  "page_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=beginner&page=1",
+  "next_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=beginner&page=",
+  "last_url": "/api/frontend/user_stats/srs_level_details?dangerously_authenticate_using_api_token=true&reviewable_type=Grammar&level=beginner&page=1",
+  "count": 12,
+  "page": 1,
+  "items": 200,
+  "vars": {
+   "page": 1,
+   "items": 200,
+   "outset": 0,
+   "size": [
+    1,
+    4,
+    4,
+    1
+   ],
+   "page_param": "page",
+   "params": {},
+   "fragment": "",
+   "link_extra": "",
+   "i18n_key": "pagy.item_name",
+   "cycle": false,
+   "headers": {
+    "page": "Current-Page",
+    "items": "Page-Items",
+    "count": "Total-Count",
+    "pages": "Total-Pages"
+   },
+   "metadata": [
+    "scaffold_url",
+    "first_url",
+    "prev_url",
+    "page_url",
+    "next_url",
+    "last_url"
+   ],
+   "count": 12
+  },
+  "pages": 1,
+  "last": 1,
+  "in": 12,
+  "from": 1,
+  "to": 12,
+  "prev": null,
+  "next": null,
+  "series": [
+   "1"
+  ]
+ }
+}

@@ -1,0 +1,108 @@
+{
+ "data": [
+  {
+   "id": "3148093",
+   "type": "deck_setting",
+   "attributes": {
+    "id": 3148093,
+    "user_id": 0,
+    "deck_id": 8,
+    "batch_size": 4,
+    "default_srs_level": 0,
+    "sorting_order": "default",
+    "default_input_type_grammar": "Cloze",
+    "default_input_type_vocab": "Cloze",
+    "complete_grammar_count": 60,
+    "complete_vocab_count": 0,
+    "last_learned_at": "2026-09-08T00:00:00.000Z",
+    "daily_goal": 4,
+    "daily_goal_count_grammar": 0,
+    "daily_goal_count_vocab": 0,
+    "is_bookmarked": false,
+    "actively_studying": true
+   },
+   "relationships": {
+    "deck": {
+     "data": {
+      "id": "8",
+      "type": "deck"
+     }
+    }
+   }
+  },
+  {
+   "id": "3148094",
+   "type": "deck_setting",
+   "attributes": {
+    "id": 3148094,
+    "user_id": 0,
+    "deck_id": 19,
+    "batch_size": 20,
+    "default_srs_level": 0,
+    "sorting_order": "default",
+    "default_input_type_grammar": "Cloze",
+    "default_input_type_vocab": "Cloze",
+    "complete_grammar_count": 0,
+    "complete_vocab_count": 280,
+    "last_learned_at": "2026-09-08T00:00:00.000Z",
+    "daily_goal": 20,
+    "daily_goal_count_grammar": 0,
+    "daily_goal_count_vocab": 0,
+    "is_bookmarked": false,
+    "actively_studying": true
+   },
+   "relationships": {
+    "deck": {
+     "data": {
+      "id": "19",
+      "type": "deck"
+     }
+    }
+   }
+  }
+ ],
+ "included": [
+  {
+   "id": "8",
+   "type": "deck",
+   "attributes": {
+    "id": 8,
+    "user_id": null,
+    "slug": "bunpro-n4-grammar",
+    "deck_code": "m7omkx",
+    "vocab_count": 0,
+    "grammar_count": 185,
+    "is_bunpro_deck": true,
+    "is_public": false,
+    "used_by_user_count": 48347,
+    "clone_status": null,
+    "deck_type": "grammar",
+    "is_shared": false,
+    "approval_status": "unapproved",
+    "title": "Bunpro N4 [Grammar]"
+   },
+   "relationships": {}
+  },
+  {
+   "id": "19",
+   "type": "deck",
+   "attributes": {
+    "id": 19,
+    "user_id": null,
+    "slug": "bunpro-n4-vocab",
+    "deck_code": "lh0vxb",
+    "vocab_count": 1095,
+    "grammar_count": 0,
+    "is_bunpro_deck": true,
+    "is_public": false,
+    "used_by_user_count": 26801,
+    "clone_status": null,
+    "deck_type": "vocab",
+    "is_shared": false,
+    "approval_status": "unapproved",
+    "title": "Bunpro N4 [Vocab]"
+   },
+   "relationships": {}
+  }
+ ]
+}
