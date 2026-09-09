@@ -59,7 +59,7 @@ async def run(args: argparse.Namespace) -> int:
         print(f"{DIM}SRS sync {time.monotonic() - t0:.1f}s{RESET}")
 
     profile_text = profile_api.render(student)
-    rendered = prompt.build(profile_text)
+    rendered = prompt.build(profile_text, persona=cfg.TUTOR_PERSONA)
     profile_api.debug_snapshot(student, profile_text, cfg.path("LOG_DIR"), dt.date.today().isoformat())
     sections = " · ".join(f"{k} {v}" for k, v in rendered.sections.items())
     print(f"{DIM}prompt {rendered.tokens} tokens ({sections})"

@@ -52,6 +52,10 @@ class VoicevoxClient:
     speaker: int = 29
     speed: float = 0.9
     intonation: float = 1.0
+    pitch: float = 0.0
+    pre_phoneme: float = 0.0
+    post_phoneme: float = 0.08
+    pause_scale: float = 1.0
     timeout_s: float = 30.0
     table: dict[str, emotions_mod.VoiceParams] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -61,8 +65,17 @@ class VoicevoxClient:
     # ------------------------------------------------------------------ setup
     @classmethod
     def from_config(cls, cfg, *, transport: httpx.BaseTransport | None = None) -> "VoicevoxClient":
-        self = cls(base_url=str(cfg.VOICEVOX_URL).rstrip("/"), speaker=int(cfg.VOICEVOX_SPEAKER),
-                   speed=float(cfg.VOICEVOX_SPEED_SCALE), intonation=float(cfg.VOICEVOX_INTONATION_SCALE))
+        # -1 means "whatever the persona was written for": character and voice are one choice,
+        # and a male persona in a female voice is jarring (ADR-026).
+        speaker = int(cfg.VOICEVOX_SPEAKER)
+        if speaker < 0:
+            from backend import prompt as prompt_mod
+            speaker = prompt_mod.declared_voice(cfg.TUTOR_PERSONA) or 29
+        self = cls(base_url=str(cfg.VOICEVOX_URL).rstrip("/"), speaker=speaker,
+                   speed=float(cfg.VOICEVOX_SPEED_SCALE), intonation=float(cfg.VOICEVOX_INTONATION_SCALE),
+                   pitch=float(cfg.VOICEVOX_PITCH_SCALE),
+                   pre_phoneme=float(cfg.VOICEVOX_PRE_PHONEME), post_phoneme=float(cfg.VOICEVOX_POST_PHONEME),
+                   pause_scale=float(cfg.VOICEVOX_PAUSE_SCALE))
         self._client = httpx.Client(base_url=self.base_url, timeout=self.timeout_s,
                                     follow_redirects=False, transport=transport)
         self.table, self.warnings = emotions_mod.resolve(cfg, self.speakers())
@@ -112,7 +125,8 @@ class VoicevoxClient:
         try:
             q = self.http.post("/audio_query", params={"speaker": params.style_id, "text": text})
             q.raise_for_status()
-            query = params.apply(q.json(), self.speed, self.intonation)
+            query = params.apply(q.json(), self.speed, self.intonation,
+                                 self.pre_phoneme, self.post_phoneme, self.pause_scale, self.pitch)
             wav = self.http.post("/synthesis", params={"speaker": params.style_id}, json=query)
             wav.raise_for_status()
         except httpx.HTTPError as exc:

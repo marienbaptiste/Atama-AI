@@ -16,7 +16,10 @@ GREETING = json.loads((FX / "greeting.json").read_text(encoding="utf-8"))
 
 
 def cfg(tmp_path, **env):
-    return config.load(tmp_path / "settings.json", env={"CACHE_DIR": str(tmp_path), **env})
+    # VOICEVOX_SPEAKER defaults to -1 ("use the persona's voice"); tests that are about a
+    # particular speaker say so, rather than inheriting whichever persona is configured.
+    return config.load(tmp_path / "settings.json",
+                       env={"CACHE_DIR": str(tmp_path), "VOICEVOX_SPEAKER": "29", **env})
 
 
 # ------------------------------------------------------------------ emotions
@@ -132,3 +135,45 @@ def test_empty_text_is_refused(tmp_path):
     c, _ = client(tmp_path)
     with pytest.raises(tts_voicevox.VoicevoxError, match="empty"):
         c.say("   ")
+
+
+def test_a_single_style_speaker_gets_a_wider_scalar_spread(tmp_path):
+    """麒ヶ島宗麟 (53) has only ノーマル. With no style to switch to, the emotions ride entirely on
+    pitch and intonation, so those have to work harder or every emotion sounds identical."""
+    table, _ = emotions.resolve(cfg(tmp_path, VOICEVOX_SPEAKER="53"), SPEAKERS)
+    assert {p.style_id for p in table.values()} == {53}
+    assert table["surprised"].intonation > 1.4      # widened from 1.30
+    assert table["serious"].intonation < 0.80       # widened from 0.85
+    assert abs(table["serious"].pitch) > 0.05       # widened from -0.03
+    assert table[NEUTRAL].pitch == 0.0 and table[NEUTRAL].intonation == 1.0   # neutral is the anchor
+
+
+def test_a_multi_style_speaker_is_left_alone(tmp_path):
+    """No.7 expresses emotion by switching style, so the scalars stay as tuned."""
+    table, _ = emotions.resolve(cfg(tmp_path, VOICEVOX_SPEAKER="29"), SPEAKERS)
+    assert len({p.style_id for p in table.values()}) > 1
+    assert table["surprised"].intonation == pytest.approx(1.30)
+
+
+def test_an_explicit_override_is_never_widened(tmp_path):
+    table, _ = emotions.resolve(
+        cfg(tmp_path, VOICEVOX_SPEAKER="53", EMOTION_SURPRISED="speed=1.2,pitch=0.01,intonation=1.05"), SPEAKERS)
+    p = table["surprised"]
+    assert (p.speed, p.pitch, p.intonation) == (1.2, 0.01, 1.05)   # exactly what the user asked for
+
+
+def test_baseline_pitch_shifts_every_emotion_together():
+    """Lowering the register must move the whole voice, not just neutral, or he stops being
+    one person."""
+    params = emotions.VoiceParams(style_id=53, pitch=0.04)
+    out = params.apply({}, 1.0, 1.0, base_pitch=-0.10)
+    assert out["pitchScale"] == pytest.approx(-0.06)
+
+
+def test_sentence_padding_is_applied(tmp_path):
+    """VOICEVOX pads 0.1 s at each end; synthesising sentence by sentence turns that into 0.2 s
+    of dead air between every sentence (measured)."""
+    c, calls = client(tmp_path)
+    c.say("こんにちは。")
+    body = json.loads([r for r in calls if r.url.path == "/synthesis"][-1].content)
+    assert body["prePhonemeLength"] == 0.0 and body["postPhonemeLength"] == pytest.approx(0.08)

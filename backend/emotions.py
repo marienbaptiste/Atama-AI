@@ -30,16 +30,31 @@ class VoiceParams:
     intonation: float = 1.0
     style_name: str = ""
 
-    def apply(self, query: dict[str, Any], base_speed: float, base_intonation: float) -> dict[str, Any]:
+    def apply(self, query: dict[str, Any], base_speed: float, base_intonation: float,
+              pre_phoneme: float | None = None, post_phoneme: float | None = None,
+              pause_scale: float | None = None, base_pitch: float = 0.0) -> dict[str, Any]:
         """Return a copy of the query with this emotion's parameters applied.
 
         `speed`/`intonation` are multipliers on the student's configured baseline, so lowering
         the global speed for a learner slows every emotion with it.
+
+        The phoneme paddings matter more than they look: VOICEVOX defaults to 0.1 s of silence
+        at each end, and because we synthesise sentence by sentence (ADR-008) that becomes 0.2 s
+        of dead air BETWEEN every sentence — measured, and the main source of the chopped,
+        synthetic feel. The player streams continuously, so no lead-in is needed at all.
         """
         out = dict(query)
         out["speedScale"] = round(base_speed * self.speed, 4)
-        out["pitchScale"] = round(self.pitch, 4)
+        # Emotion pitch is an OFFSET from the baseline, so lowering the register shifts every
+        # emotion with it and the voice stays one person.
+        out["pitchScale"] = round(base_pitch + self.pitch, 4)
         out["intonationScale"] = round(base_intonation * self.intonation, 4)
+        if pre_phoneme is not None:
+            out["prePhonemeLength"] = round(pre_phoneme, 4)
+        if post_phoneme is not None:
+            out["postPhonemeLength"] = round(post_phoneme, 4)
+        if pause_scale is not None and "pauseLengthScale" in out:
+            out["pauseLengthScale"] = round(pause_scale, 4)
         return out
 
 
@@ -80,9 +95,18 @@ def _number(raw: dict[str, str], key: str, fallback: float) -> float:
         return fallback
 
 
+#: When a speaker offers no distinct styles, every emotion lands on the same voice and only the
+#: scalars separate them — so the scalars have to work harder. Widening the pitch and intonation
+#: deltas keeps the emotions audible instead of collapsing into one flat delivery.
+SINGLE_STYLE_SPREAD = 1.8
+
+
 def resolve(cfg, speakers: Iterable[dict[str, Any]] | None = None) -> tuple[dict[str, VoiceParams], list[str]]:
     """Build the emotion -> VoiceParams table. Returns (table, warnings)."""
     base_id = int(cfg.VOICEVOX_SPEAKER)
+    if base_id < 0:
+        from backend import prompt as prompt_mod
+        base_id = prompt_mod.declared_voice(getattr(cfg, "TUTOR_PERSONA", None)) or 29
     available = styles_for_speaker(speakers or (), base_id)
     by_id = {v: k for k, v in available.items()}
     warnings: list[str] = []
@@ -110,5 +134,20 @@ def resolve(cfg, speakers: Iterable[dict[str, Any]] | None = None) -> tuple[dict
                     style_id, style_name = available[candidate], candidate
                     break
         table[emotion] = VoiceParams(style_id, speed, pitch, intonation, style_name)
+
+    # A speaker with one style (麒ヶ島宗麟, 春日部つむぎ, ...) cannot express emotion by switching
+    # voice, so give the scalars more room. An explicit EMOTION_* override is left exactly as the
+    # user wrote it.
+    if len({p.style_id for p in table.values()}) == 1:
+        for emotion, params in table.items():
+            if emotion == NEUTRAL or _parse_override(getattr(cfg, f"EMOTION_{emotion.upper()}", "")):
+                continue
+            table[emotion] = VoiceParams(
+                params.style_id,
+                params.speed,
+                round(params.pitch * SINGLE_STYLE_SPREAD, 4),
+                round(1.0 + (params.intonation - 1.0) * SINGLE_STYLE_SPREAD, 4),
+                params.style_name,
+            )
 
     return table, warnings

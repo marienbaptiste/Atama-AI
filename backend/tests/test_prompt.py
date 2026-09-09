@@ -20,6 +20,32 @@ def test_hard_output_rules_come_after_the_persona():
     assert text.index("WHO YOU ARE") < text.index("HARD OUTPUT RULES")
 
 
+def test_each_persona_declares_the_voice_it_belongs_with(tmp_path):
+    """Character and voice are one choice: a male persona in a female voice is jarring, and
+    keeping them in two settings means they drift apart."""
+    assert prompt.declared_voice("tanaka") == 53      # 麒ヶ島宗麟
+    assert prompt.declared_voice("minami") == 29      # No.7
+    assert prompt.declared_voice(tmp_path / "nothing.md") is None
+
+
+def test_the_two_personas_are_different_people():
+    tanaka, minami = prompt.load_soul(name="tanaka"), prompt.load_soul(name="minami")
+    assert "たなか先生" in tanaka and "みなみ先生" in minami
+    assert tanaka != minami
+    # Not one character gender-swapped: different homes, different histories.
+    assert "新潟" in tanaka and "京都" in minami
+
+
+def test_a_persona_name_resolves_into_prompts_and_a_path_is_taken_as_given(tmp_path):
+    assert prompt.persona_path("minami") == prompt.PROMPTS_DIR / "minami.md"
+    custom = tmp_path / "mine.md"
+    assert prompt.persona_path(str(custom)) == custom
+
+
+def test_an_unknown_persona_falls_back_to_a_neutral_tutor():
+    assert prompt.load_soul(name="nobody-by-this-name") == prompt.NEUTRAL_SOUL
+
+
 def test_soul_file_comments_are_not_sent_to_the_model(tmp_path):
     f = tmp_path / "soul.md"
     f.write_text("<!-- instructions for the human -->\n先生です。", encoding="utf-8")
@@ -28,6 +54,12 @@ def test_soul_file_comments_are_not_sent_to_the_model(tmp_path):
 
 def test_missing_soul_falls_back_to_a_neutral_tutor(tmp_path):
     assert prompt.load_soul(tmp_path / "absent.md") == prompt.NEUTRAL_SOUL
+
+
+def test_the_voice_declaration_never_reaches_the_model():
+    """`<!-- voice: 53 -->` is configuration, not character."""
+    assert "voice:" not in prompt.load_soul(name="tanaka")
+    assert "53" not in prompt.load_soul(name="tanaka")
 
 
 def test_oversized_sections_are_truncated_at_a_line_boundary_and_reported():

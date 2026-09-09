@@ -11,6 +11,7 @@ silently (§10, ADR-011). Over-budget sections are truncated at a line boundary 
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -19,7 +20,11 @@ from backend.srs.profile import estimate_tokens
 
 PROMPTS_DIR = config.REPO_ROOT / "prompts"
 TEMPLATE_FILE = PROMPTS_DIR / "tutor.md"
-SOUL_FILE = PROMPTS_DIR / "soul.md"
+DEFAULT_PERSONA = "tanaka"
+#: A persona may declare the voice it belongs with: `<!-- voice: 53 -->` on its own line.
+#: Character and voice are one choice — switching tutor should not mean remembering to change a
+#: speaker id as well, and a mismatch (a male persona in a female voice) is jarring.
+_VOICE_DECLARATION = re.compile(r"<!--\s*voice:\s*(\d+)\s*-->")
 
 SOUL_MAX_TOKENS = 400
 PROFILE_MAX_TOKENS = 600
@@ -78,20 +83,37 @@ def _fit(text: str, budget: int, label: str, truncated: list[str]) -> str:
     return "\n".join(kept).rstrip()
 
 
-def load_soul(path: Path | None = None) -> str:
+def persona_path(name: str | None = None) -> Path:
+    """`"minami"` -> prompts/minami.md. An absolute or relative path is taken as given."""
+    name = str(name or DEFAULT_PERSONA).strip() or DEFAULT_PERSONA
+    candidate = Path(name)
+    if candidate.suffix or candidate.is_absolute() or len(candidate.parts) > 1:
+        return candidate if candidate.is_absolute() else (config.REPO_ROOT / candidate)
+    return PROMPTS_DIR / f"{name}.md"
+
+
+def declared_voice(name_or_path: str | Path | None = None) -> int | None:
+    """The VOICEVOX style id this persona is written for, if it names one."""
+    path = name_or_path if isinstance(name_or_path, Path) else persona_path(name_or_path)
+    match = _VOICE_DECLARATION.search(_read(path))
+    return int(match.group(1)) if match else None
+
+
+def load_soul(path: Path | None = None, name: str | None = None) -> str:
     """Sensei's persona, or a neutral default when the file is absent (ADR-026)."""
-    text = _strip_comments(_read(path or SOUL_FILE)).strip()
+    text = _strip_comments(_read(path or persona_path(name))).strip()
     return text or NEUTRAL_SOUL
 
 
-def build(student_profile: str, *, soul: str | None = None, template: str | None = None) -> RenderedPrompt:
+def build(student_profile: str, *, soul: str | None = None, template: str | None = None,
+          persona: str | None = None) -> RenderedPrompt:
     """Assemble the system prompt. Placeholders that the template omits are simply not used."""
     tpl = template if template is not None else _read(TEMPLATE_FILE)
     if not tpl.strip():
         raise RuntimeError(f"missing or empty prompt template at {TEMPLATE_FILE} (ADR-012: it lives in a file)")
 
     truncated: list[str] = []
-    soul_text = _fit((soul if soul is not None else load_soul()).strip(), SOUL_MAX_TOKENS, "soul", truncated)
+    soul_text = _fit((soul if soul is not None else load_soul(name=persona)).strip(), SOUL_MAX_TOKENS, "soul", truncated)
     profile_text = _fit(student_profile.strip(), PROFILE_MAX_TOKENS, "student_profile", truncated)
 
     text = tpl.replace("{{soul}}", soul_text).replace("{{student_profile}}", profile_text)
