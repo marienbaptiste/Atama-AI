@@ -111,6 +111,32 @@ async def run(args: argparse.Namespace) -> int:
             registry.report("voicevox", "down", f"no engine at {cfg.VOICEVOX_URL}")
             print(f"{BOLD}VOICEVOX is not running{RESET} — `docker compose up -d voicevox`. Continuing in text only.")
 
+    # Everything the conversation needs is loaded HERE, before the tutor says a word. Whisper
+    # used to load after the opening turn, which left the student watching him finish and then
+    # sitting in silence while the mic came alive (reported 2026-09-09). Racing the load against
+    # his sentences would hide the cost but keep "am I being heard yet?" ambiguous, so we pay it
+    # up front: when the status table appears, every subsystem is genuinely ready.
+    stt = None
+    if args.listen and voice is not None:
+        print(f"{DIM}loading {cfg.WHISPER_MODEL} ({cfg.WHISPER_COMPUTE_TYPE})… "
+              f"this is the slow part of startup{RESET}")
+        try:
+            stt = await _load_stt(cfg)
+            print(f"{DIM}whisper ready: load {stt.load_ms / 1000:.1f}s, "
+                  f"warm-up {stt.warmup_ms / 1000:.1f}s{RESET}")
+        except Exception as exc:  # noqa: BLE001 - a load failure must be legible, not a traceback
+            registry.report("stt", "error", cfg.WHISPER_MODEL, f"{type(exc).__name__}: {exc}")
+            print(f"{BOLD}cannot load Whisper:{RESET} {exc}", file=sys.stderr)
+            if voice is not None:
+                await voice.aclose()
+            await brain.aclose()
+            return 2
+        if not await _check_microphone(cfg):
+            if voice is not None:
+                await voice.aclose()
+            await brain.aclose()
+            return 2
+
     print(registry.table())
     print(f"{DIM}type Japanese and press enter · /status /prompt /profile /quit{RESET}\n")
 
@@ -121,7 +147,7 @@ async def run(args: argparse.Namespace) -> int:
 
     if args.listen:
         try:
-            await _listen(cfg, brain, voice)
+            await _listen(cfg, brain, voice, stt)
         finally:
             if voice is not None:
                 await voice.aclose()
@@ -155,13 +181,53 @@ async def run(args: argparse.Namespace) -> int:
     return 0
 
 
-async def _listen(cfg, brain, voice) -> None:
-    """Full voice loop: speak to her, she answers aloud (spec §2)."""
+async def _load_stt(cfg):
+    """Load and warm Whisper. Kicked off before the opening turn so its cost hides behind the
+    tutor's first sentences instead of landing as unexplained silence after them."""
     from backend.stt import SpeechToText
+    stt = SpeechToText.from_config(cfg)
+    registry.report("stt", "loading", cfg.WHISPER_MODEL)
+    await asyncio.to_thread(stt.load)
+    registry.report("stt", "warm",
+                    f"{cfg.WHISPER_MODEL} · load {stt.load_ms / 1000:.1f}s · warm {stt.warmup_ms / 1000:.1f}s")
+    return stt
+
+
+async def _check_microphone(cfg) -> bool:
+    """Prove the mic delivers audio BEFORE the conversation starts. Returns False to abort.
+
+    A mic that opens but delivers digital silence is the most likely failure here, and it looks
+    exactly like "the app is broken" if we say nothing (found while testing, 2026-09-09).
+    """
+    from backend import audio as audio_mod
+    try:
+        level = await asyncio.to_thread(audio_mod.input_level, cfg.AUDIO_INPUT_DEVICE, 1.0)
+    except audio_mod.AudioUnavailable as exc:
+        print(f"{BOLD}no microphone:{RESET} {exc}", file=sys.stderr)
+        return False
+    device = cfg.AUDIO_INPUT_DEVICE or "system default"
+    if level < audio_mod.SILENT_RMS:
+        print(f"\n{BOLD}The microphone ({device}) looks muted{RESET} — rms {level:.6f} over one second, "
+              f"which is digital silence rather than a quiet room. It opened, so the device exists.\n"
+              f"  1. the physical mute on the headset (on many, flipping the boom up mutes it)\n"
+              f"  2. Settings > Privacy & security > Microphone > 'Let desktop apps access your microphone'\n"
+              f"  3. Settings > System > Sound > Input > device level is not 0\n"
+              f"  4. `python -m backend.audio` — a device listed only under WDM-KS is not selectable\n"
+              f"Starting anyway — the meter will show whether you are being heard.\n")
+    else:
+        print(f"{DIM}microphone ready: {device} · rms {level:.4f}{RESET}")
+    return True
+
+
+async def _listen(cfg, brain, voice, stt) -> None:
+    """Full voice loop: speak to him, he answers aloud (spec §2).
+
+    Everything is already loaded by the time this runs — see the init block in `run()`.
+    """
     from backend.vad import VoiceActivityDetector
     from backend.voice_loop import VoiceLoop
 
-    if voice is None:
+    if voice is None or stt is None:
         # --listen implies --speak, so getting here means the mouth failed to open, not that the
         # user forgot a flag. Say which, or they go hunting through argv for a problem that is in
         # Docker.
@@ -169,35 +235,6 @@ async def _listen(cfg, brain, voice) -> None:
               f"{cfg.VOICEVOX_URL}. Start it with `docker compose up -d voicevox` and try again.",
               file=sys.stderr)
         return
-
-    print(f"{DIM}loading {cfg.WHISPER_MODEL} ({cfg.WHISPER_COMPUTE_TYPE})…{RESET}")
-    stt = SpeechToText.from_config(cfg)
-    registry.report("stt", "loading", cfg.WHISPER_MODEL)
-    try:
-        await asyncio.to_thread(stt.load)
-    except Exception as exc:  # noqa: BLE001 - any load failure must be legible, not a traceback
-        registry.report("stt", "error", cfg.WHISPER_MODEL, f"{type(exc).__name__}: {exc}")
-        print(f"{BOLD}cannot load Whisper:{RESET} {exc}", file=sys.stderr)
-        return
-    registry.report("stt", "warm", f"{cfg.WHISPER_MODEL} · load {stt.load_ms / 1000:.1f}s · warm {stt.warmup_ms / 1000:.1f}s")
-    print(f"{DIM}whisper ready: load {stt.load_ms / 1000:.1f}s, warm-up {stt.warmup_ms / 1000:.1f}s{RESET}")
-
-    # A mic that opens but delivers digital silence is the most likely failure here, and it looks
-    # exactly like "the app is broken" if we say nothing (found while testing, 2026-09-09).
-    from backend import audio as audio_mod
-    try:
-        level = await asyncio.to_thread(audio_mod.input_level, cfg.AUDIO_INPUT_DEVICE, 1.0)
-    except audio_mod.AudioUnavailable as exc:
-        print(f"{BOLD}no microphone:{RESET} {exc}", file=sys.stderr)
-        return
-    if level < audio_mod.SILENT_RMS:
-        device = cfg.AUDIO_INPUT_DEVICE or "system default"
-        print(f"\n{BOLD}The microphone ({device}) looks muted{RESET} — rms {level:.6f} over one second, "
-              f"which is digital silence rather than a quiet room. It opened, so the device exists.\n"
-              f"  1. the physical mute on the headset (on many, flipping the boom up mutes it)\n"
-              f"  2. Settings > Privacy & security > Microphone > 'Let desktop apps access your microphone'\n"
-              f"  3. Settings > System > Sound > Input > device level is not 0\n"
-              f"Starting anyway — the meter below will show whether you are being heard.\n")
 
     vad = VoiceActivityDetector.from_config(cfg)
 
