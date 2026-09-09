@@ -1,0 +1,116 @@
+{
+ "accent_phrases": [
+  {
+   "moras": [
+    {
+     "text": "パ",
+     "consonant": "p",
+     "consonant_length": 0.060975149273872375,
+     "vowel": "a",
+     "vowel_length": 0.09235592186450958,
+     "pitch": 5.536054611206055
+    },
+    {
+     "text": "ピ",
+     "consonant": "p",
+     "consonant_length": 0.07355014979839325,
+     "vowel": "i",
+     "vowel_length": 0.07411744445562363,
+     "pitch": 5.807275295257568
+    },
+    {
+     "text": "プ",
+     "consonant": "p",
+     "consonant_length": 0.057186029851436615,
+     "vowel": "u",
+     "vowel_length": 0.05340038985013962,
+     "pitch": 5.964489459991455
+    },
+    {
+     "text": "ペ",
+     "consonant": "p",
+     "consonant_length": 0.05654844641685486,
+     "vowel": "e",
+     "vowel_length": 0.08836491405963898,
+     "pitch": 5.910027503967285
+    },
+    {
+     "text": "ポ",
+     "consonant": "p",
+     "consonant_length": 0.06893344223499298,
+     "vowel": "o",
+     "vowel_length": 0.14311182498931885,
+     "pitch": 5.539668083190918
+    }
+   ],
+   "accent": 3,
+   "pause_mora": {
+    "text": "、",
+    "consonant": null,
+    "consonant_length": null,
+    "vowel": "pau",
+    "vowel_length": 0.4407561421394348,
+    "pitch": 0.0
+   },
+   "is_interrogative": false
+  },
+  {
+   "moras": [
+    {
+     "text": "バ",
+     "consonant": "b",
+     "consonant_length": 0.04788441210985184,
+     "vowel": "a",
+     "vowel_length": 0.07987641543149948,
+     "pitch": 5.6014204025268555
+    },
+    {
+     "text": "ビ",
+     "consonant": "b",
+     "consonant_length": 0.05455739051103592,
+     "vowel": "i",
+     "vowel_length": 0.0692802295088768,
+     "pitch": 5.737420082092285
+    },
+    {
+     "text": "ブ",
+     "consonant": "b",
+     "consonant_length": 0.05349699407815933,
+     "vowel": "u",
+     "vowel_length": 0.06339844316244125,
+     "pitch": 5.894516944885254
+    },
+    {
+     "text": "ベ",
+     "consonant": "b",
+     "consonant_length": 0.05352368205785751,
+     "vowel": "e",
+     "vowel_length": 0.07457899302244186,
+     "pitch": 5.857689380645752
+    },
+    {
+     "text": "ボ",
+     "consonant": "b",
+     "consonant_length": 0.045442335307598114,
+     "vowel": "o",
+     "vowel_length": 0.1538090705871582,
+     "pitch": 5.604607105255127
+    }
+   ],
+   "accent": 3,
+   "pause_mora": null,
+   "is_interrogative": false
+  }
+ ],
+ "speedScale": 1.0,
+ "pitchScale": 0.0,
+ "intonationScale": 1.0,
+ "volumeScale": 1.0,
+ "prePhonemeLength": 0.1,
+ "postPhonemeLength": 0.1,
+ "pauseLength": null,
+ "pauseLengthScale": 1.0,
+ "outputSamplingRate": 24000,
+ "outputStereo": false,
+ "kana": "パピプ'ペポ、バビブ'ベボ"
+}

@@ -36,7 +36,7 @@ Throwaway scripts, deleted or moved into `backend/tests/fixtures/` when done. Ea
 |----------|--------------------|--------|--------|
 | **V0.1** | `claude --help`: exact flag spellings for headless stream-json; is there a way to remove *all* built-in tools; how to isolate from user config. | `backend/constants.py` — the exact argv that works, dated. | **Done 2026-09-09** — see findings log below. |
 | **V0.2** | Run one real `claude -p` stream-json session. Capture every event type on stdout for a 3-turn conversation **with the Bunpro MCP server configured**, so the per-entry shape of `init.mcp_servers[]` and the `tool_use`/`tool_result` blocks are pinned. | `backend/tests/fixtures/claude_stream_*.jsonl` — replay fixtures for parser and status tests. | **Done 2026-09-09** (single-turn with a real MCP tool call; raw stream in `.cache/claude_probe.jsonl`, to be sanitised into a fixture at M1(e)). Shapes in the findings log. |
-| **V0.3** | Hit VOICEVOX `/docs` locally. Confirm `audio_query` response shape (`accent_phrases[].moras[]`, `pause_mora`, `prePhonemeLength`, `postPhonemeLength`, `speedScale`), the `pitchScale`/`intonationScale` request fields, and the `GET /speakers` shape (speaker → styles → style id) used by the emotion table. | 3 real `audio_query` JSON fixtures, one `/speakers` fixture, a pinned schema note. | Open |
+| **V0.3** | Hit VOICEVOX `/docs` locally. Confirm `audio_query` response shape, the `pitchScale`/`intonationScale` request fields, and the `GET /speakers` shape used by the emotion table. | 4 real `audio_query` fixtures, a `/speakers` fixture, a pinned schema note. | **Done 2026-09-09** — VOICEVOX 0.25.2, fixtures in `backend/tests/fixtures/voicevox/`. See findings log. |
 | **V0.4** | TalkingHead README: `speakAudio` signature; whether `vtimes`/`vdurations` are **ms or s**; the real mood name set; whether gestures exist and their names; the facility for overriding ARKit blendshapes directly (needed for `surprised`/`serious`/`thinking`). | Pinned constants + comment. A wrong timing unit is silent drift; a wrong mood name is a silent no-op. | Open |
 | **V0.5** | WaniKani `/v2/user` and `/v2/assignments`: real response shape, pagination, rate-limit headers. | Sanitised fixtures (no personal data beyond what the golden tests need). | **Done 2026-09-09** — 6 endpoints captured live, fixtures in `backend/tests/fixtures/wanikani/`. See findings log. |
 | **V0.6** | Baseline VRAM: load faster-whisper `large-v3` @ `int8_float16` alone, read `nvidia-smi`. On WSL2, confirm `nvidia-smi` works *inside* WSL2 first. | A number. If > ~4.5 GB, ADR-004's fallback triggers now, not at M5. | Open |
@@ -245,6 +245,27 @@ keeps bare names.
 sentence 1.8–2.4 s, ttft 1.6–2.2 s, MCP tool call 10 ms. The Claude stage budget is 1.60 s
 (§10) — currently over, with the levers (`--effort`, model, prompt size) untouched. Latency is
 M3's gate, not M1's; the numbers are recorded here so the M3 work starts from data.
+
+**2026-09-09 — VOICEVOX 0.25.2 (V0.3), live:**
+
+- `audio_query` keys: `accent_phrases, prePhonemeLength, postPhonemeLength, speedScale, pitchScale,
+  intonationScale, pauseLength, pauseLengthScale, volumeScale, outputSamplingRate, outputStereo, kana`.
+  `accent_phrase` = `{accent, is_interrogative, moras, pause_mora}`;
+  `mora` = `{text, consonant|null, consonant_length|null, vowel, vowel_length, pitch}`.
+- Phoneme alphabet: `a/i/u/e/o` voiced, **`A/I/U/E/O` devoiced** (uppercase), `N` for ん, `cl` for っ,
+  `pau` on `pause_mora`. Note `N` is uppercase but is a phoneme, not a devoiced vowel — a mapper that
+  simply lower-cases would turn ん into a vowel.
+- Defaults: `prePhonemeLength` 0.1 s, `postPhonemeLength` 0.1 s, `speedScale` 1.0, 24 kHz mono WAV.
+- **`prePhonemeLength` IS divided by `speedScale`.** Confirmed by computing the timeline and comparing
+  with the real synthesised WAV across 4 samples x 2 speeds: agreement within 46 ms worst case, most
+  under 30 ms (VOICEVOX rounds to sample boundaries, so exact equality would be asserting its rounding).
+- `GET /speakers` -> `[{name, speaker_uuid, styles: [{id, name, type}], supported_features, version}]`,
+  43 speakers. **Styles are resolved by NAME**, not id, so an engine upgrade renumbering ids is safe.
+  Chosen default: **No.7** — ノーマル=29, アナウンス=30 (crisp/formal), 読み聞かせ=31 (warm read-aloud):
+  a good spread for a teacher.
+- Synthesis of one short sentence takes **470-740 ms** on CPU. The §10 budget for "VOICEVOX first chunk
+  + WS delivery" is 400 ms, so this is over already, before any WebSocket. Levers for M3: shorter first
+  sentences, and starting synthesis on the first sentence while the rest still streams (already done).
 
 **Gate V0:** every external interface this project touches has a pinned, dated finding in the
 repo. No code calls an unverified interface.

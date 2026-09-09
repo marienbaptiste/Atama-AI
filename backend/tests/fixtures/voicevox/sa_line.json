@@ -1,0 +1,100 @@
+{
+ "accent_phrases": [
+  {
+   "moras": [
+    {
+     "text": "サ",
+     "consonant": "s",
+     "consonant_length": 0.06391017884016037,
+     "vowel": "a",
+     "vowel_length": 0.07873640954494476,
+     "pitch": 5.540631294250488
+    },
+    {
+     "text": "シ",
+     "consonant": "sh",
+     "consonant_length": 0.06177010387182236,
+     "vowel": "i",
+     "vowel_length": 0.07645394653081894,
+     "pitch": 5.830541133880615
+    },
+    {
+     "text": "ス",
+     "consonant": "s",
+     "consonant_length": 0.06339351087808609,
+     "vowel": "u",
+     "vowel_length": 0.07120714336633682,
+     "pitch": 5.967406749725342
+    },
+    {
+     "text": "セ",
+     "consonant": "s",
+     "consonant_length": 0.07238318771123886,
+     "vowel": "e",
+     "vowel_length": 0.06986646354198456,
+     "pitch": 5.910637855529785
+    },
+    {
+     "text": "ソ",
+     "consonant": "s",
+     "consonant_length": 0.0796942263841629,
+     "vowel": "o",
+     "vowel_length": 0.13511423766613007,
+     "pitch": 5.562763214111328
+    }
+   ],
+   "accent": 3,
+   "pause_mora": {
+    "text": "、",
+    "consonant": null,
+    "consonant_length": null,
+    "vowel": "pau",
+    "vowel_length": 0.33119630813598633,
+    "pitch": 0.0
+   },
+   "is_interrogative": false
+  },
+  {
+   "moras": [
+    {
+     "text": "シャ",
+     "consonant": "sh",
+     "consonant_length": 0.09495404362678528,
+     "vowel": "a",
+     "vowel_length": 0.0765414759516716,
+     "pitch": 5.708255290985107
+    },
+    {
+     "text": "シュ",
+     "consonant": "sh",
+     "consonant_length": 0.07362297922372818,
+     "vowel": "u",
+     "vowel_length": 0.060133740305900574,
+     "pitch": 5.96212911605835
+    },
+    {
+     "text": "ショ",
+     "consonant": "sh",
+     "consonant_length": 0.0955623909831047,
+     "vowel": "o",
+     "vowel_length": 0.1583920270204544,
+     "pitch": 5.850376129150391
+    }
+   ],
+   "accent": 3,
+   "pause_mora": null,
+   "is_interrogative": false
+  }
+ ],
+ "speedScale": 1.0,
+ "pitchScale": 0.0,
+ "intonationScale": 1.0,
+ "volumeScale": 1.0,
+ "prePhonemeLength": 0.1,
+ "postPhonemeLength": 0.1,
+ "pauseLength": null,
+ "pauseLengthScale": 1.0,
+ "outputSamplingRate": 24000,
+ "outputStereo": false,
+ "kana": "サシス'セソ、シャシュショ'"
+}

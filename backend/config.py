@@ -41,7 +41,7 @@ SCHEMA: tuple[Setting, ...] = (
     # Model
     Setting("BRAIN_PROVIDER", "claude-cli", str, "model", "Which brain implementation to use (ADR-027). Implemented: claude-cli"),
     Setting("CLAUDE_MODEL", "sonnet", str, "model", "Model alias for the tutor subprocess"),
-    Setting("CLAUDE_EFFORT", "medium", str, "model", "CLI effort level (low|medium|high|xhigh|max). Measured 2026-09-09 (median first-token / opening turn): low 2.75s/8.6s, medium 2.14s/5.8s, high 3.75s/19.2s. Silence is the failure mode in a voice tutor"),
+    Setting("CLAUDE_EFFORT", "high", str, "model", "CLI effort level (low|medium|high|xhigh|max). Measured 2026-09-09, median first-token BETWEEN turns / opening turn: low 2.75s/8.6s, medium 2.14s/5.8s, high 3.75s/19.2s. High is the user's choice: the long turn is session setup, before the student speaks; 3-4s between exchanges is acceptable"),
     Setting("CLAUDE_FALLBACK_MODEL", "haiku", str, "model", "Fallback when the model is overloaded / rate limited"),
     Setting("CLAUDE_REPLACE_SYSTEM_PROMPT", True, bool, "model", "true: --system-prompt (Sensei only). false: --append-system-prompt, which leaves Claude Code's coding-agent prompt in front and breaks the persona"),
     Setting("CLAUDE_TURN_TIMEOUT_S", 60, int, "model", "Per-turn timeout before SIGINT + apology"),
@@ -52,13 +52,13 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("VOICEVOX_URL", "http://127.0.0.1:50021", str, "advanced", "VOICEVOX engine (local Docker)"),
     Setting("SEARXNG_URL", "http://127.0.0.1:8888", str, "advanced", "Self-hosted SearxNG for the tutor's search tool (ADR-028). Not implemented yet — ROADMAP V0.11"),
     # Voice
-    Setting("VOICEVOX_SPEAKER", 1, int, "voice", "Base style id (real ids from GET /speakers)"),
+    Setting("VOICEVOX_SPEAKER", 29, int, "voice", "Base VOICEVOX style id. 29 = No.7 ノーマル (verified 0.25.2); that character also has アナウンス=30 and 読み聞かせ=31, which the emotion table uses"),
     Setting("VOICEVOX_SPEED_SCALE", 0.9, float, "voice", "Default speech speed for learners"),
     Setting("VOICEVOX_INTONATION_SCALE", 1.0, float, "voice", "Default intonation"),
-    Setting("EMOTION_HAPPY", "style=,speed=0.95,pitch=0.02,intonation=1.15", str, "voice", "Emotion -> voice params"),
-    Setting("EMOTION_THINKING", "style=,speed=0.85,pitch=-0.01,intonation=0.90", str, "voice", "Emotion -> voice params"),
-    Setting("EMOTION_SURPRISED", "style=,speed=1.00,pitch=0.04,intonation=1.30", str, "voice", "Emotion -> voice params"),
-    Setting("EMOTION_SERIOUS", "style=,speed=0.85,pitch=-0.03,intonation=0.85", str, "voice", "Emotion -> voice params"),
+    Setting("EMOTION_HAPPY", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
+    Setting("EMOTION_THINKING", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
+    Setting("EMOTION_SURPRISED", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
+    Setting("EMOTION_SERIOUS", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
     # Speech detection
     Setting("WHISPER_MODEL", "large-v3", str, "speech", "faster-whisper model (fallback: medium)"),
     Setting("WHISPER_COMPUTE_TYPE", "int8_float16", str, "speech", "CTranslate2 compute type"),
@@ -73,6 +73,8 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("VRAM_WARN_GB", 10, int, "advanced", "Warn above this GPU memory use"),
     # Display
     Setting("SUBTITLES", "jp", str, "display", "jp | off"),
+    Setting("AUDIO_INPUT_DEVICE", "", str, "audio", "Microphone. Empty = system default. Name or index; list them with `python -m backend.audio`"),
+    Setting("AUDIO_OUTPUT_DEVICE", "", str, "audio", "Speakers/headphones. Empty = system default. Name or index; list them with `python -m backend.audio`"),
     Setting("STATUS_HEARTBEAT_S", 30, int, "display", "service_status heartbeat"),
     # Files
     Setting("SETTINGS_FILE", "settings.json", str, "advanced", "Config store (git-ignored, 0600)"),

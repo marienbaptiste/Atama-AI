@@ -1,0 +1,895 @@
+[
+ {
+  "name": "四国めたん",
+  "speaker_uuid": "7ffcb7ce-00ec-4bdc-82cd-45a8889e43ff",
+  "styles": [
+   {
+    "id": 2,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 0,
+    "name": "あまあま",
+    "type": "talk"
+   },
+   {
+    "id": 6,
+    "name": "ツンツン",
+    "type": "talk"
+   },
+   {
+    "id": 4,
+    "name": "セクシー",
+    "type": "talk"
+   },
+   {
+    "id": 36,
+    "name": "ささやき",
+    "type": "talk"
+   },
+   {
+    "id": 37,
+    "name": "ヒソヒソ",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "ずんだもん",
+  "speaker_uuid": "388f246b-8c41-4ac1-8e2d-5d79f3ff56d9",
+  "styles": [
+   {
+    "id": 3,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 1,
+    "name": "あまあま",
+    "type": "talk"
+   },
+   {
+    "id": 7,
+    "name": "ツンツン",
+    "type": "talk"
+   },
+   {
+    "id": 5,
+    "name": "セクシー",
+    "type": "talk"
+   },
+   {
+    "id": 22,
+    "name": "ささやき",
+    "type": "talk"
+   },
+   {
+    "id": 38,
+    "name": "ヒソヒソ",
+    "type": "talk"
+   },
+   {
+    "id": 75,
+    "name": "ヘロヘロ",
+    "type": "talk"
+   },
+   {
+    "id": 76,
+    "name": "なみだめ",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "春日部つむぎ",
+  "speaker_uuid": "35b2c544-660e-401e-b503-0e14c635303a",
+  "styles": [
+   {
+    "id": 8,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "雨晴はう",
+  "speaker_uuid": "3474ee95-c274-47f9-aa1a-8322163d96f1",
+  "styles": [
+   {
+    "id": 10,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "波音リツ",
+  "speaker_uuid": "b1a81618-b27b-40d2-b0ea-27a9ad408c4b",
+  "styles": [
+   {
+    "id": 9,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 65,
+    "name": "クイーン",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "玄野武宏",
+  "speaker_uuid": "c30dc15a-0992-4f8d-8bb8-ad3b314e6a6f",
+  "styles": [
+   {
+    "id": 11,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 39,
+    "name": "喜び",
+    "type": "talk"
+   },
+   {
+    "id": 40,
+    "name": "ツンギレ",
+    "type": "talk"
+   },
+   {
+    "id": 41,
+    "name": "悲しみ",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "白上虎太郎",
+  "speaker_uuid": "e5020595-5c5d-4e87-b849-270a518d0dcf",
+  "styles": [
+   {
+    "id": 12,
+    "name": "ふつう",
+    "type": "talk"
+   },
+   {
+    "id": 32,
+    "name": "わーい",
+    "type": "talk"
+   },
+   {
+    "id": 33,
+    "name": "びくびく",
+    "type": "talk"
+   },
+   {
+    "id": 34,
+    "name": "おこ",
+    "type": "talk"
+   },
+   {
+    "id": 35,
+    "name": "びえーん",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "青山龍星",
+  "speaker_uuid": "4f51116a-d9ee-4516-925d-21f183e2afad",
+  "styles": [
+   {
+    "id": 13,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 81,
+    "name": "熱血",
+    "type": "talk"
+   },
+   {
+    "id": 82,
+    "name": "不機嫌",
+    "type": "talk"
+   },
+   {
+    "id": 83,
+    "name": "喜び",
+    "type": "talk"
+   },
+   {
+    "id": 84,
+    "name": "しっとり",
+    "type": "talk"
+   },
+   {
+    "id": 85,
+    "name": "かなしみ",
+    "type": "talk"
+   },
+   {
+    "id": 86,
+    "name": "囁き",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "冥鳴ひまり",
+  "speaker_uuid": "8eaad775-3119-417e-8cf4-2a10bfd592c8",
+  "styles": [
+   {
+    "id": 14,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "九州そら",
+  "speaker_uuid": "481fb609-6446-4870-9f46-90c4dd623403",
+  "styles": [
+   {
+    "id": 16,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 15,
+    "name": "あまあま",
+    "type": "talk"
+   },
+   {
+    "id": 18,
+    "name": "ツンツン",
+    "type": "talk"
+   },
+   {
+    "id": 17,
+    "name": "セクシー",
+    "type": "talk"
+   },
+   {
+    "id": 19,
+    "name": "ささやき",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "もち子さん",
+  "speaker_uuid": "9f3ee141-26ad-437e-97bd-d22298d02ad2",
+  "styles": [
+   {
+    "id": 20,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 66,
+    "name": "セクシー／あん子",
+    "type": "talk"
+   },
+   {
+    "id": 77,
+    "name": "泣き",
+    "type": "talk"
+   },
+   {
+    "id": 78,
+    "name": "怒り",
+    "type": "talk"
+   },
+   {
+    "id": 79,
+    "name": "喜び",
+    "type": "talk"
+   },
+   {
+    "id": 80,
+    "name": "のんびり",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "剣崎雌雄",
+  "speaker_uuid": "1a17ca16-7ee5-4ea5-b191-2f02ace24d21",
+  "styles": [
+   {
+    "id": 21,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "WhiteCUL",
+  "speaker_uuid": "67d5d8da-acd7-4207-bb10-b5542d3a663b",
+  "styles": [
+   {
+    "id": 23,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 24,
+    "name": "たのしい",
+    "type": "talk"
+   },
+   {
+    "id": 25,
+    "name": "かなしい",
+    "type": "talk"
+   },
+   {
+    "id": 26,
+    "name": "びえーん",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "後鬼",
+  "speaker_uuid": "0f56c2f2-644c-49c9-8989-94e11f7129d0",
+  "styles": [
+   {
+    "id": 27,
+    "name": "人間ver.",
+    "type": "talk"
+   },
+   {
+    "id": 28,
+    "name": "ぬいぐるみver.",
+    "type": "talk"
+   },
+   {
+    "id": 87,
+    "name": "人間（怒り）ver.",
+    "type": "talk"
+   },
+   {
+    "id": 88,
+    "name": "鬼ver.",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "No.7",
+  "speaker_uuid": "044830d2-f23b-44d6-ac0d-b5d733caa900",
+  "styles": [
+   {
+    "id": 29,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 30,
+    "name": "アナウンス",
+    "type": "talk"
+   },
+   {
+    "id": 31,
+    "name": "読み聞かせ",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "ちび式じい",
+  "speaker_uuid": "468b8e94-9da4-4f7a-8715-a22a48844f9e",
+  "styles": [
+   {
+    "id": 42,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "櫻歌ミコ",
+  "speaker_uuid": "0693554c-338e-4790-8982-b9c6d476dc69",
+  "styles": [
+   {
+    "id": 43,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 44,
+    "name": "第二形態",
+    "type": "talk"
+   },
+   {
+    "id": 45,
+    "name": "ロリ",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "小夜/SAYO",
+  "speaker_uuid": "a8cc6d22-aad0-4ab8-bf1e-2f843924164a",
+  "styles": [
+   {
+    "id": 46,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "ナースロボ＿タイプＴ",
+  "speaker_uuid": "882a636f-3bac-431a-966d-c5e6bba9f949",
+  "styles": [
+   {
+    "id": 47,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 48,
+    "name": "楽々",
+    "type": "talk"
+   },
+   {
+    "id": 49,
+    "name": "恐怖",
+    "type": "talk"
+   },
+   {
+    "id": 50,
+    "name": "内緒話",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "†聖騎士 紅桜†",
+  "speaker_uuid": "471e39d2-fb11-4c8c-8d89-4b322d2498e0",
+  "styles": [
+   {
+    "id": 51,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "雀松朱司",
+  "speaker_uuid": "0acebdee-a4a5-4e12-a695-e19609728e30",
+  "styles": [
+   {
+    "id": 52,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "麒ヶ島宗麟",
+  "speaker_uuid": "7d1e7ba7-f957-40e5-a3fc-da49f769ab65",
+  "styles": [
+   {
+    "id": 53,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "春歌ナナ",
+  "speaker_uuid": "ba5d2428-f7e0-4c20-ac41-9dd56e9178b4",
+  "styles": [
+   {
+    "id": 54,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "猫使アル",
+  "speaker_uuid": "00a5c10c-d3bd-459f-83fd-43180b521a44",
+  "styles": [
+   {
+    "id": 55,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 56,
+    "name": "おちつき",
+    "type": "talk"
+   },
+   {
+    "id": 57,
+    "name": "うきうき",
+    "type": "talk"
+   },
+   {
+    "id": 110,
+    "name": "つよつよ",
+    "type": "talk"
+   },
+   {
+    "id": 111,
+    "name": "へろへろ",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "猫使ビィ",
+  "speaker_uuid": "c20a2254-0349-4470-9fc8-e5c0f8cf3404",
+  "styles": [
+   {
+    "id": 58,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 59,
+    "name": "おちつき",
+    "type": "talk"
+   },
+   {
+    "id": 60,
+    "name": "人見知り",
+    "type": "talk"
+   },
+   {
+    "id": 112,
+    "name": "つよつよ",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "中国うさぎ",
+  "speaker_uuid": "1f18ffc3-47ea-4ce0-9829-0576d03a7ec8",
+  "styles": [
+   {
+    "id": 61,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 62,
+    "name": "おどろき",
+    "type": "talk"
+   },
+   {
+    "id": 63,
+    "name": "こわがり",
+    "type": "talk"
+   },
+   {
+    "id": 64,
+    "name": "へろへろ",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "栗田まろん",
+  "speaker_uuid": "04dbd989-32d0-40b4-9e71-17c920f2a8a9",
+  "styles": [
+   {
+    "id": 67,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "あいえるたん",
+  "speaker_uuid": "dda44ade-5f9c-4a3a-9d2c-2a976c7476d9",
+  "styles": [
+   {
+    "id": 68,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "満別花丸",
+  "speaker_uuid": "287aa49f-e56b-4530-a469-855776c84a8d",
+  "styles": [
+   {
+    "id": 69,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 70,
+    "name": "元気",
+    "type": "talk"
+   },
+   {
+    "id": 71,
+    "name": "ささやき",
+    "type": "talk"
+   },
+   {
+    "id": 72,
+    "name": "ぶりっ子",
+    "type": "talk"
+   },
+   {
+    "id": 73,
+    "name": "ボーイ",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "琴詠ニア",
+  "speaker_uuid": "97a4af4b-086e-4efd-b125-7ae2da85e697",
+  "styles": [
+   {
+    "id": 74,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "Voidoll",
+  "speaker_uuid": "0ebe2c7d-96f3-4f0e-a2e3-ae13fe27c403",
+  "styles": [
+   {
+    "id": 89,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "ぞん子",
+  "speaker_uuid": "0156da66-4300-474a-a398-49eb2e8dd853",
+  "styles": [
+   {
+    "id": 90,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 91,
+    "name": "低血圧",
+    "type": "talk"
+   },
+   {
+    "id": 92,
+    "name": "覚醒",
+    "type": "talk"
+   },
+   {
+    "id": 93,
+    "name": "実況風",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "中部つるぎ",
+  "speaker_uuid": "4614a7de-9829-465d-9791-97eb8a5f9b86",
+  "styles": [
+   {
+    "id": 94,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 95,
+    "name": "怒り",
+    "type": "talk"
+   },
+   {
+    "id": 96,
+    "name": "ヒソヒソ",
+    "type": "talk"
+   },
+   {
+    "id": 97,
+    "name": "おどおど",
+    "type": "talk"
+   },
+   {
+    "id": 98,
+    "name": "絶望と敗北",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "離途",
+  "speaker_uuid": "3b91e034-e028-4acb-a08d-fbdcd207ea63",
+  "styles": [
+   {
+    "id": 99,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 101,
+    "name": "シリアス",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "黒沢冴白",
+  "speaker_uuid": "0b466290-f9b6-4718-8d37-6c0c81e824ac",
+  "styles": [
+   {
+    "id": 100,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "ユーレイちゃん",
+  "speaker_uuid": "462cd6b4-c088-42b0-b357-3816e24f112e",
+  "styles": [
+   {
+    "id": 102,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 103,
+    "name": "甘々",
+    "type": "talk"
+   },
+   {
+    "id": 104,
+    "name": "哀しみ",
+    "type": "talk"
+   },
+   {
+    "id": 105,
+    "name": "ささやき",
+    "type": "talk"
+   },
+   {
+    "id": 106,
+    "name": "ツクモちゃん",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "東北ずん子",
+  "speaker_uuid": "80802b2d-8c75-4429-978b-515105017010",
+  "styles": [
+   {
+    "id": 107,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "東北きりたん",
+  "speaker_uuid": "1bd6b32b-d650-4072-bbe5-1d0ef4aaa28b",
+  "styles": [
+   {
+    "id": 108,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "東北イタコ",
+  "speaker_uuid": "ab4c31a3-8769-422a-b412-708f5ae637e8",
+  "styles": [
+   {
+    "id": 109,
+    "name": "ノーマル",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "あんこもん",
+  "speaker_uuid": "3be49e15-34bb-48a0-9e2f-9b80c96e9905",
+  "styles": [
+   {
+    "id": 113,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 114,
+    "name": "つよつよ",
+    "type": "talk"
+   },
+   {
+    "id": 115,
+    "name": "よわよわ",
+    "type": "talk"
+   },
+   {
+    "id": 116,
+    "name": "けだるげ",
+    "type": "talk"
+   },
+   {
+    "id": 117,
+    "name": "ささやき",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "夜語トバリ",
+  "speaker_uuid": "d3be2066-205b-47f6-8818-1d93a9ca9cef",
+  "styles": [
+   {
+    "id": 118,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 119,
+    "name": "明るい",
+    "type": "talk"
+   },
+   {
+    "id": 120,
+    "name": "哀しみ",
+    "type": "talk"
+   },
+   {
+    "id": 121,
+    "name": "呆れ",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "暁記ミタマ",
+  "speaker_uuid": "aca7de06-9ff9-49a3-9f08-9d3bc19689e5",
+  "styles": [
+   {
+    "id": 122,
+    "name": "ノーマル",
+    "type": "talk"
+   },
+   {
+    "id": 123,
+    "name": "怒り",
+    "type": "talk"
+   },
+   {
+    "id": 124,
+    "name": "哀しみ",
+    "type": "talk"
+   },
+   {
+    "id": 125,
+    "name": "ささやき",
+    "type": "talk"
+   }
+  ]
+ },
+ {
+  "name": "里石ユカ",
+  "speaker_uuid": "cc7baa71-6c74-4399-803b-b60576176a08",
+  "styles": [
+   {
+    "id": 126,
+    "name": "つぼみ",
+    "type": "talk"
+   }
+  ]
+ }
+]

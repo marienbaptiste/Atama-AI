@@ -3,7 +3,6 @@
 #
 #   docker compose up -d
 #
-# VOICEVOX joins this file at M2, when its image and API are verified (ROADMAP V0.3).
 
 services:
   searxng:
@@ -27,6 +26,20 @@ services:
       - CHOWN
       - SETGID
       - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
+
+  voicevox:
+    # Japanese TTS. CPU build on purpose (ADR-005): the GPU belongs to Whisper, and CPU
+    # synthesis already fits the 0.40 s first-chunk budget for the short sentences Sensei speaks.
+    image: voicevox/voicevox_engine:cpu-latest
+    container_name: atama-voicevox
+    ports:
+      - "127.0.0.1:50021:50021"
+    restart: unless-stopped
     logging:
       driver: json-file
       options:

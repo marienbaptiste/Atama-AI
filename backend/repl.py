@@ -5,6 +5,7 @@ the milestone's demoable artefact and the place where the first-chunk latency of
 visible: the first sentence should print well before the turn finishes.
 
     python -m backend.repl            # launch: sync SRS, render prompt, start the brain
+    python -m backend.repl --speak    # ...and speak every sentence aloud through VOICEVOX
     python -m backend.repl --refresh  # force a fresh SRS sync (spec §5 manual Refresh)
     python -m backend.repl --no-srs   # skip SRS entirely (offline / no tokens)
 
@@ -22,7 +23,9 @@ from backend import brain as brain_api
 from backend import config, prompt
 from backend.chunker import SentenceChunker
 from backend.brain import BrainError, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome, TurnComplete
+from backend.speaker import SpeechQueue
 from backend.srs import profile as profile_api
+from backend.tts_voicevox import VoicevoxClient
 from backend.status import registry
 from backend.tools import mcp_config
 
@@ -76,13 +79,27 @@ async def run(args: argparse.Namespace) -> int:
     except RuntimeError as exc:
         print(f"\n{BOLD}cannot start the brain:{RESET} {exc}\n", file=sys.stderr)
         return 2
+    # --- mouth (spec §7): synthesis of sentence N+1 overlaps playback of N -------
+    voice = None
+    if args.speak:
+        tts = VoicevoxClient.from_config(cfg)
+        if tts.is_up():
+            registry.report("voicevox", "ok", f"engine {tts.version} · speaker {tts.speaker}")
+            for warning in tts.warnings:
+                print(f"{DIM}voice: {warning}{RESET}")
+            voice = SpeechQueue(tts, device=cfg.AUDIO_OUTPUT_DEVICE)
+            await voice.start()
+        else:
+            registry.report("voicevox", "down", f"no engine at {cfg.VOICEVOX_URL}")
+            print(f"{BOLD}VOICEVOX is not running{RESET} — `docker compose up -d voicevox`. Continuing in text only.")
+
     print(registry.table())
     print(f"{DIM}type Japanese and press enter · /status /prompt /profile /quit{RESET}\n")
 
     # Sensei speaks first (spec §5c): she finds a subject and opens on it, rather than waiting
     # for the student to produce one. This is the turn that pays for the search.
     if not args.no_open:
-        await _one_turn(brain, OPENING_NUDGE)
+        await _one_turn(brain, OPENING_NUDGE, voice)
 
     try:
         while True:
@@ -103,13 +120,15 @@ async def run(args: argparse.Namespace) -> int:
             if line == "/profile":
                 print(profile_text)
                 continue
-            await _one_turn(brain, line)
+            await _one_turn(brain, line, voice)
     finally:
+        if voice is not None:
+            await voice.aclose()
         await brain.aclose()
     return 0
 
 
-async def _one_turn(brain, text: str) -> None:
+async def _one_turn(brain, text: str, voice=None) -> None:
     """Send one turn; print each sentence the moment it closes, with its latency."""
     chunker = SentenceChunker()
     started = time.monotonic()
@@ -117,17 +136,19 @@ async def _one_turn(brain, text: str) -> None:
     n = 0
     thinking_chars = 0
 
-    def show(chunks) -> None:
+    async def show(chunks) -> None:
         nonlocal first_chunk_at, n
         for chunk in chunks:
             now = time.monotonic() - started
             first_chunk_at = first_chunk_at if first_chunk_at is not None else now
             n += 1
             print(f"  {DIM}{now:5.2f}s{RESET} {_emotion_tag(chunk.emotion)}{chunk.text}")
+            if voice is not None:
+                await voice.say(chunk)
 
     async for event in brain.turn(text):
         if isinstance(event, TextDelta):
-            show(chunker.push(event.text))
+            await show(chunker.push(event.text))
         elif isinstance(event, Thinking):
             thinking_chars += len(event.text)
         elif isinstance(event, ToolCall):
@@ -139,7 +160,9 @@ async def _one_turn(brain, text: str) -> None:
         elif isinstance(event, BrainError):
             print(f"  {BOLD}· error:{RESET} {event.message}")
         elif isinstance(event, TurnComplete):
-            show(chunker.close())
+            await show(chunker.close())
+            if voice is not None:
+                await voice.drain()
             total = time.monotonic() - started
             bits = [f"first chunk {first_chunk_at:.2f}s" if first_chunk_at is not None else "no speech",
                     f"turn {total:.2f}s", f"{n} chunk{'s' if n != 1 else ''}"]
@@ -159,6 +182,7 @@ def main() -> int:
     ap.add_argument("--refresh", action="store_true", help="force a fresh SRS sync")
     ap.add_argument("--no-srs", action="store_true", help="skip WaniKani/Bunpro entirely")
     ap.add_argument("--no-open", action="store_true", help="do not let Sensei speak first")
+    ap.add_argument("--speak", action="store_true", help="speak each sentence aloud via VOICEVOX")
     try:
         return asyncio.run(run(ap.parse_args()))
     except KeyboardInterrupt:

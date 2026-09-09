@@ -382,6 +382,10 @@ atama-ai/
 │  ├─ claude_session.py # subprocess mgmt, stream-json, resume, env allowlist
 │  ├─ chunker.py        # sentence chunking + emotion tags
 │  ├─ stt.py  vad.py  tts_voicevox.py  visemes.py
+│  ├─ audio.py          # device picker, playback, mic capture (PortAudio)
+│  ├─ speaker.py        # speech queue: synthesise N+1 while N plays
+│  ├─ chunker.py  prompt.py  repl.py  mcp_ready.py  search_mcp.py
+│  ├─ brain/            # Brain interface (ADR-027) + claude_cli provider
 │  ├─ emotions.py       # emotion → VOICEVOX style/params table (§7)
 │  ├─ status.py         # §5b service status registry → service_status messages
 │  ├─ tools/readonly_gate.py  # §0 Golden Rule static gate — runs on every test/run/doctor/commit
