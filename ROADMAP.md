@@ -46,9 +46,53 @@ Throwaway scripts, deleted or moved into `backend/tests/fixtures/` when done. Ea
 
 | **V0.12** | **Context: how big is the window, and what does the provider do when it fills?** Drive one long real session, logging `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` per turn until the CLI compacts on its own. Answer: the usable window in tokens; how compaction announces itself on the stream (an event? silence?); **how long it stalls**; and whether the session id survives it. | Pinned constants: usable window, a safe `CONTEXT_ROTATE_AT` fraction under it, and the measured stall — the number that justifies ADR-032. Plus a fixture of whatever the stream emits. | Open — **blocks the rotation half of M4c.** The memory half (ADR-031) does not depend on it and ships first. |
 
-| **V0.13** | **Is a Japanese-specialised STT model better on the student'''s own voice?** `kotoba-tech/kotoba-whisper-v2.0-faster` is **verified to exist** (2026-09-09): `library_name: ctranslate2`, with `model.bin`/`config.json`/`tokenizer.json`/`vocabulary.json`, so `WhisperModel("kotoba-tech/kotoba-whisper-v2.0-faster")` loads it directly — no conversion. Its card claims better CER/WER than `large-v3` in-domain (ReazonSpeech), only **"competitive"** out-of-domain, and 6.3x faster from the distil architecture (756M params, 2 decoder layers vs 1550M). A learner'''s accented Japanese is firmly out-of-domain, so the published numbers do not settle it. Record real utterances through the real mic+VAD path and read the transcripts side by side: `python -m backend.tools.stt_compare --record 6`. | A decision in a new ADR superseding ADR-004'''s model choice, or an explicit "stayed on large-v3 because". Plus pinned VRAM and median latency for whichever wins, and the clips kept in `logs/stt/` as the only STT regression corpus this project can have. | Open — harness built (`backend/tools/stt_compare.py`), waiting on recorded audio. |
+| **V0.13** | **Is a Japanese-specialised STT model better on the student's own voice?** `kotoba-tech/kotoba-whisper-v2.0-faster` is **verified to exist** (2026-09-09): `library_name: ctranslate2`, with `model.bin`/`config.json`/`tokenizer.json`/`vocabulary.json`, so `WhisperModel("kotoba-tech/kotoba-whisper-v2.0-faster")` loads it directly — no conversion. Its card claims better CER/WER than `large-v3` in-domain (ReazonSpeech), only **"competitive"** out-of-domain, and 6.3x faster from the distil architecture (756M params, 2 decoder layers vs 1550M). A learner's accented Japanese is firmly out-of-domain, so the published numbers do not settle it. Record real utterances through the real mic+VAD path and read the transcripts side by side: `python -m backend.tools.stt_compare --record 6`. | A decision in a new ADR superseding ADR-004's model choice, or an explicit "stayed on large-v3 because". Plus pinned VRAM and median latency for whichever wins, and the clips kept in `logs/stt/` as the only STT regression corpus this project can have. | **Done 2026-09-09 — negative result.** `large-v3` stays; kotoba-whisper is a 756M distil model and there is no larger one. See findings log. |
 
 ### V0 findings log
+
+**2026-09-09 — STT model comparison (V0.13), on the user's own voice:**
+
+- **Result: `large-v3` stays.** Judged by ear on six recorded utterances through the real mic+VAD
+  path: "large v3 is much better". Not close.
+- **Why, almost certainly: it was not a fair fight on size.** `kotoba-whisper-v2.0` is a *distil*
+  model — **756 405 760 params with 2 decoder layers**, against `large-v3`'s **1 543 490 560**. The
+  card's "6.3x faster" and its "competitive out-of-domain" hedge are the same fact seen from two
+  sides, and a learner's accented Japanese is the out-of-domain case. The published in-domain
+  CER/WER win on ReazonSpeech (Japanese TV) did not transfer.
+- **There is no larger kotoba model, and there will not be one.** Verified 2026-09-09 via the HF
+  API: `kotoba-whisper-v2.0`, `v2.1`, `v2.2` and `bilingual-v1.0` are **all 756 405 760 params** —
+  byte-identical model size. v2.1 and v2.2 add punctuation and speaker diarization as
+  *post-processing* around the same distilled weights, not a bigger network. Distillation is the
+  entire premise of the project, so "the latest kotoba at about the same size as large-v3" does not
+  exist. `litagin/anime-whisper` is also 756M (and anime-domain, wrong register for a tutor).
+- **Full-size Japanese ASR is a thin field.** Of the top 100 Japanese ASR models by downloads, only
+  four are large-v3 class (>1.2B): `openai/whisper-large-v3` (1.54B), `Qwen/Qwen3-ASR-1.7B`
+  (2.35B), `mistralai/Voxtral-Mini-4B-Realtime-2602` (4.43B), `microsoft/VibeVoice-ASR` (8.67B).
+  **None is CTranslate2-compatible** — they are LLM-based ASR needing torch + transformers, which
+  is an ADR-004 architecture change, not a model swap. Voxtral and VibeVoice are also out on the
+  §10b VRAM budget before anything else loads.
+- **Open, if STT is revisited:** `Qwen3-ASR-1.7B` claims 52-language support including Japanese and
+  SOTA among open-source ASR. Worth a spike of its own *only* with eyes open about the cost: a
+  heavy new dependency, ~4-5 GB against the 10 GB cap, and — the real unknown — per-utterance
+  latency, since our workload is many short utterances and an autoregressive decoder with
+  `max_new_tokens` is a different latency profile from Whisper's. Do not start it without measuring
+  that first.
+
+**The cheaper levers on `large-v3`, not yet tried, in order:**
+
+1. **Stop quantising.** We run `int8_float16`; V0.6 measured the model at **2 169 MiB against a
+   10 GB budget**. `float16` spends headroom we are not using, and unlike everything above it
+   cannot make accuracy worse.
+2. **Prime the decoder with the student's own vocabulary.** `condition_on_previous_text=False` is
+   deliberate (spec §9 — it stops hallucination loops), but it means every utterance is transcribed
+   cold. The WaniKani unlocks and Bunpro grammar in the profile are exactly the words this student
+   is most likely to say. faster-whisper's `initial_prompt`/`hotwords` are the mechanism —
+   **verify the parameter against the installed version before pinning** (ADR-015).
+3. **`beam_size`** is 5. Raising it trades latency for accuracy; measure both.
+
+The six clips are in `logs/stt/` (gitignored). They are the regression corpus: any future change
+to STT gets replayed against them with `--replay` before it is believed.
+
 
 Pinned facts, dated, to be copied into `backend/constants.py` at M0. Re-verify on every CLI or
 engine upgrade.
