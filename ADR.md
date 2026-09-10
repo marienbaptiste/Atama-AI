@@ -1230,5 +1230,11 @@ mostly from server-side time-to-first-token variance (one turn with no thinking 
 11.4 s). Whether the gate is raised, made non-blocking, or accepted as failing is the user's
 call when M4 is reached.
 
+**Stage budgets, same day (user):** asked about the two stages that also miss their own budgets
+at these settings — STT p90 0.58 s against 0.35 s, first synthesised audio p90 0.59 s against
+0.40 s — the user answered "that stage is fine". Both are accepted at their measured values:
+M2b and M2c are judged on their non-latency checks (no hallucinations on silence; N synthesises
+while N+1 generates; five emotions audibly distinct), and their timing is reported, not gating.
+
 **Reversed if:** 4–5 s pauses turn out to break real lessons, or a model or provider keeps the
 quality at a lower thinking cost — then measure with the harness and decide again.

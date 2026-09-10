@@ -677,7 +677,9 @@ events.
   chip.
 - **Integrate** — VAD → STT → Claude session.
 - **Gate M2b** — Warm STT p90 ≤ 0.35 s on the target GPU; zero hallucinated transcripts across a
-  2-minute silent recording.
+  2-minute silent recording. **Amended 2026-09-10 (user, ADR-033):** the timing is accepted at its
+  measured p90 of 0.58 s (large-v3, beam 5 — not traded for speed) and reported, not gating; the
+  gate is the zero-hallucination check.
 
 ### 5. TTS client — `backend/tts_voicevox.py` + `backend/emotions.py` — **M2**
 
@@ -697,6 +699,8 @@ events.
   generation.
 - **Gate M2c** — First-chunk audio ≤ 0.40 s p90; sentence *N* synthesises while sentence *N+1*
   is still being generated (visible in the timing log); five emotions audibly distinct.
+  **Amended 2026-09-10 (user, ADR-033):** first-chunk timing accepted at its measured p90 of
+  0.59 s and reported, not gating; the gate is the overlap and the five distinct emotions.
 
 ### 6. Viseme mapper — `backend/visemes.py` — **M2**
 

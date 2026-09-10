@@ -1245,6 +1245,10 @@ function showService(msg) {
       log('<span class="err">' + esc(msg.detail) + "</span>");
     return;
   }
+  if (msg.service === "gpu") {                     // spec §10b: only worth a word when over the cap
+    if (msg.state === "over") log('<span class="err">GPU memory over the cap</span> — ' + esc(msg.detail));
+    return;
+  }
   if (msg.service === "tutor") {                   // a live tutor change in progress
     $("live").textContent = msg.detail;
     if (msg.state === "failed") log('<span class="err">' + esc(msg.detail) + "</span>");

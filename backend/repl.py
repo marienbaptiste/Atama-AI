@@ -24,6 +24,7 @@ import time
 from backend import brain as brain_api
 from backend import config, prompt
 from backend import memory as memory_api
+from backend import vram as vram_mod
 from backend.chunker import SentenceChunker
 from backend.brain import BrainError, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome, TurnComplete
 from backend.speaker import SpeechQueue
@@ -255,9 +256,15 @@ async def _load_stt(cfg):
     from backend.stt import SpeechToText
     stt = SpeechToText.from_config(cfg)
     registry.report("stt", "loading", cfg.WHISPER_MODEL)
+    # The model's own VRAM share (ROADMAP 11): the difference across its load, because Windows'
+    # driver reports every per-process figure as [N/A] (backend/vram.py, verified 2026-09-10).
+    before = await asyncio.to_thread(vram_mod.read)
     await asyncio.to_thread(stt.load)
+    after = await asyncio.to_thread(vram_mod.read)
+    share = (f" · VRAM {(after.used_mib - before.used_mib) / 1024:.1f} GB"
+             if before is not None and after is not None else "")
     registry.report("stt", "warm",
-                    f"{cfg.WHISPER_MODEL} · load {stt.load_ms / 1000:.1f}s · warm {stt.warmup_ms / 1000:.1f}s")
+                    f"{cfg.WHISPER_MODEL} · load {stt.load_ms / 1000:.1f}s · warm {stt.warmup_ms / 1000:.1f}s{share}")
     return stt
 
 
@@ -344,6 +351,8 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
     # A live meter on the prompt line: the difference between "it is not hearing me" and
     # "it heard me and decided that was not speech" should never be a guess.
     meter_state = {"last": 0.0, "peak": 0.0, "sent": 0.0}
+    #: The latest GPU memory sample (spec §10b), for the turn log. Filled by the heartbeat below.
+    gpu: dict = {"mib": None}
     #: The meter needs the loop to show push-to-talk state, and the loop is built below.
     loop_ref: dict = {"loop": None}
 
@@ -431,6 +440,26 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
     watch = DeviceWatch(devices_changed)
     await watch.start()
 
+    async def watch_vram() -> None:
+        # Spec §10b / ROADMAP 11: sampled on the status heartbeat, off the conversation path
+        # (nvidia-smi runs in a thread), with a warning above the cap — said once per crossing.
+        warned = False
+        while True:
+            reading = await asyncio.to_thread(vram_mod.read)
+            if reading is not None:
+                gpu["mib"] = reading.used_mib
+                too_much = vram_mod.over(reading, float(cfg.VRAM_WARN_GB))
+                if too_much and not warned:
+                    print(chr(13) + BOLD + f"[gpu] {reading.used_gb:.1f} GB in use - over the "
+                          f"{cfg.VRAM_WARN_GB} GB cap (spec §10b)" + RESET, flush=True)
+                warned = too_much
+                if hub is not None:
+                    await hub.status("gpu", "over" if too_much else "ok",
+                                     f"{reading.used_gb:.1f} of {reading.total_gb:.0f} GB")
+            await asyncio.sleep(float(cfg.STATUS_HEARTBEAT_S))
+
+    vram_task = asyncio.get_running_loop().create_task(watch_vram())
+
     async def change_tutor(name: str) -> None:
         # A different person is about to speak: stop the current one, bring up the new persona
         # and voice, then let them introduce themselves. Used to wait for the next launch, so the
@@ -481,7 +510,8 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
                                      "barged_in": t.barged_in,
                                      # rolling over the session so far (spec §10)
                                      "session_p50_ms": round(t.session_p50_ms) if t.session_p50_ms else None,
-                                     "session_p90_ms": round(t.session_p90_ms) if t.session_p90_ms else None})
+                                     "session_p90_ms": round(t.session_p90_ms) if t.session_p90_ms else None,
+                                     "vram_mib": gpu["mib"]})           # spec §10b, latest sample
 
         loop.on_turn = remember
 
@@ -588,6 +618,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
     finally:
         loop.stop()
         await watch.close()
+        vram_task.cancel()
         if loop.timings:
             v2v = sorted(t.voice_to_voice_ms() for t in loop.timings if t.voice_to_voice_ms())
             if v2v:
