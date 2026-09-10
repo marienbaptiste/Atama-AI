@@ -64,8 +64,8 @@
     <div class="row" id="emojis"></div>
 
     <h2>framing</h2>
-    <label>zoom <input type="range" id="zoom" min="-3" max="4" step="0.1" value="0.4"><span id="zoomv">0.4</span></label>
-    <label>height <input type="range" id="high" min="-0.6" max="0.6" step="0.02" value="0.02"><span id="highv">0.02</span></label>
+    <label>zoom <input type="range" id="zoom" min="-3" max="4" step="0.1" value="-0.4"><span id="zoomv">-0.4</span></label>
+    <label>height <input type="range" id="high" min="-0.6" max="1.2" step="0.02" value="0.38"><span id="highv">0.38</span></label>
     <label>offset <input type="range" id="offx" min="-1" max="1" step="0.02" value="-0.18"><span id="offxv">-0.18</span></label>
 
     <h2>stillness</h2>
@@ -251,7 +251,32 @@ function meetEye(ms = 600) { try { head.lookAtCamera(ms); } catch (e) {} }
  *  the camera, which lifts her within the frame. Both are on sliders because this is a judgement
  *  by eye, not a number anyone can derive.
  */
+//: Framing is a judgement by eye, and it was costing a round trip every time. Remember it.
+const FRAMING_KEY = "atama.framing";
+function saveFraming() {
+  try {
+    localStorage.setItem(FRAMING_KEY, JSON.stringify(
+      { zoom: $("zoom").value, high: $("high").value, offx: $("offx").value }));
+  } catch (e) { /* private window: not worth failing over */ }
+}
+function loadFraming() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(FRAMING_KEY) || "null"); } catch (e) { return; }
+  if (!saved) return;
+  for (const id of ["zoom", "high", "offx"]) {
+    if (saved[id] !== undefined) {
+      $(id).value = saved[id];
+      $(id + "v").textContent = saved[id];
+    }
+  }
+}
+
 function reframe() {
+  // setView derives `upper` as y = (1 - cameraY) * tan(fov/2) * z + 2 * avatarHeight / 3, and
+  // that y is the point held at the CENTRE of the frame. A high look-at point therefore puts her
+  // head in the middle with dead space above it, which reads as her sitting too low. Raising
+  // cameraY lowers the look-at point and lifts her in frame — the opposite of what the name
+  // suggests, which is why this needed eyes rather than reasoning (2026-09-10).
   const cameraDistance = parseFloat($("zoom").value);
   const cameraY = parseFloat($("high").value);
   // The control panel sits over the left of the viewport, so centring her in the CANVAS puts
@@ -387,9 +412,10 @@ buttons("emojis", EMOJIS, e => {
 });
 
 $("dur").oninput = () => { $("durv").textContent = $("dur").value + "s"; };
-$("zoom").oninput = () => { $("zoomv").textContent = $("zoom").value; reframe(); };
-$("high").oninput = () => { $("highv").textContent = $("high").value; reframe(); };
-$("offx").oninput = () => { $("offxv").textContent = $("offx").value; reframe(); };
+for (const id of ["zoom", "high", "offx"]) {
+  $(id).oninput = () => { $(id + "v").textContent = $(id).value; reframe(); saveFraming(); };
+}
+loadFraming();
 
 $("freeze").onclick = () => {
   frozen = !frozen;
