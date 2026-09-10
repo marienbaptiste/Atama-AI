@@ -1011,7 +1011,7 @@ need to share one voice — in which case the declaration moves back out to conf
 
 ## ADR-031 — Memory is read once at session start and written in the gaps; never retrieved mid-turn
 
-**Status:** Accepted (2026-09-09). Extends ADR-024's principle to a second kind of expensive work.
+**Status:** Accepted (2026-09-09); **amended 2026-09-10** — a recent-topics tier, and summarising moves to the next launch (see *Amendment* below). Extends ADR-024's principle to a second kind of expensive work.
 See spec §6b.
 
 **Context.** Spec §6 and ADR-028 already tell Sensei to open "from what she knows about them or
@@ -1079,6 +1079,25 @@ it would let the two disagree.
 **Rejected: a vector store / RAG.** ADR-013 (no database), plus the latency argument above. The
 corpus is one student's lessons — small enough that the interesting parts fit in a prompt section,
 which makes retrieval machinery pure cost.
+
+**Amendment (2026-09-10, user directive: "a small database of the latest conversation topics, light
+on tokens, so we can catch up and not always have the same conversation").** Two changes, neither
+of which touches the rule that memory stays off the critical path:
+
+1. **A fourth tier, `<state>/memory/topics.jsonl`** — one line per summarised session holding at
+   most five short noun phrases. The last eight sessions are rendered as a single *recently
+   discussed — do not open on these* line. This is what the original three tiers could not do: the
+   brief says what happened *last* time, but nothing stopped the tutor opening on the same news
+   item three sessions running. It is still a file, not a database (ADR-013), and still read once.
+2. **Summarising moves to the next launch.** Point 3 above made the next launch the fallback for a
+   killed app; it is now the normal path. Exit must be instant, and a summariser on exit is fifteen
+   seconds of a Ctrl+C that appears to hang. Launch is init time the student already waits
+   through for Whisper. The summariser runs on `MEMORY_SUMMARY_MODEL` (default `haiku`) over a
+   capped text-only excerpt — once per session, never per turn — which keeps the token cost of
+   memory to that one short call plus a few hundred cached prompt tokens.
+
+Token budget: the memory section is capped at `MEMORY_MAX_TOKENS = 220` and `TOTAL_MAX_TOKENS`
+moves 2100 → 2350, enforced by a worst-case test with soul, profile and memory all maxed.
 
 **Rejected: letting the tutor write memory through a tool.** It spends a turn, it happens at a
 moment the model chooses rather than one we control, and it puts a write on the critical path —

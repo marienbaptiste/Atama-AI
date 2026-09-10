@@ -713,6 +713,32 @@ sanitised error in the chip, then the session log. The conversation continues wi
 
 ---
 
+## Memory
+
+She remembers you between lessons, without it costing anything while you talk. Everything is read
+once at launch and written between turns — never while you are waiting for her to answer
+(spec §6b, ADR-031).
+
+| file | what it holds |
+|------|---------------|
+| `logs/sessions/<date>-<session>.jsonl` | every turn, one JSON line each — also your Anki mine |
+| `~/.atama-ai/memory/last-session.md` | a sentence or two on how the last lesson went |
+| `~/.atama-ai/memory/topics.jsonl` | a few subjects per lesson, so she doesn't open on the same thing twice |
+| `~/.atama-ai/memory/student.md` | what she believes about you — **edit it freely** |
+
+The first two paths are on Windows; elsewhere the state directory is `~/.local/state/atama-ai`.
+None of it lives in the repository, so none of it can be committed.
+
+Past lessons are summarised **when you next launch**, by a small cheap model (`haiku` by default),
+which is why launch occasionally says `memory: catching up on 1 past session(s)`. Exiting stays
+instant. If the summary fails, that lesson is simply retried next time.
+
+**A wrong memory is worse than none.** If she has something wrong about you, open `student.md` and
+fix it — it is plain markdown, and that is the correction mechanism. Delete the `memory` folder to
+start over. Set `MEMORY_ENABLED=false` to turn it off entirely.
+
+---
+
 ## Credits and licensing
 
 The code here is yours to read and change. Three things it depends on are not, and one of them

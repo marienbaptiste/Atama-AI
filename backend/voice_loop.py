@@ -42,6 +42,9 @@ class TurnTiming:
     total_ms: float = 0.0
     transcript: str = ""
     chunks: int = 0
+    #: What she said back, sentence by sentence, for the turn log (spec §6b). Filled as each
+    #: sentence closes, so a barged-in turn still records what was actually spoken.
+    sentences: list = field(default_factory=list)
     #: The student talked over this turn, so it was cut short. Recorded, but never counted in the
     #: §10 p90 as a completed turn — it did not fail to be fast, it was interrupted.
     barged_in: bool = False
@@ -275,6 +278,8 @@ class VoiceLoop:
             for chunk in chunks:
                 elapsed = (time.monotonic() - heard_at) * 1000.0
                 timing.chunks += 1
+                timing.sentences.append({"text": chunk.text, "emotion": chunk.emotion or None,
+                                         "synth_ms": None})
                 if timing.first_chunk_ms == 0.0:
                     timing.first_chunk_ms = elapsed
                 if self.on_chunk is not None:

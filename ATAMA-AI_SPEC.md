@@ -283,13 +283,14 @@ while the avatar is still playing synthesised audio and the orchestrator is idle
 best-effort and cancellable: if the student speaks, the conversation wins and the background work
 is abandoned.
 
-### Three tiers of memory
+### Four tiers of memory
 
 | tier | where | read | written | budget |
 |---|---|---|---|---|
 | turn log | `logs/sessions/<date>-<session>.jsonl` | never by the tutor | appended in the speaking gap | — |
-| student notes | `<state>/memory/student.md` | session start → prompt | session end | `MEMORY_MAX_TOKENS` |
-| last-session brief | `<state>/memory/last-session.md` | session start → prompt | session end | shares the above |
+| student notes | `<state>/memory/student.md` | session start → prompt | summarised at next launch | `MEMORY_MAX_TOKENS` |
+| last-session brief | `<state>/memory/last-session.md` | session start → prompt | summarised at next launch | shares the above |
+| recent topics | `<state>/memory/topics.jsonl` | session start → prompt | summarised at next launch | shares the above |
 
 - **Read once, at session start.** Both files are rendered into the system prompt beside the soul
   (§6) and the SRS profile (§5), through the same budgeting that truncates at a line boundary and
@@ -298,8 +299,18 @@ is abandoned.
   does not know it. A tutor who says 「あれ、なんだっけ」 beats one that stalls.
 - **Write in the gap.** The turn record is appended when `TurnComplete` fires, never while a turn
   is in flight.
-- **Summarise at session end**, as a separate short-lived `Brain` call whose input is the turn log
-  — deterministic and re-runnable. If the app dies first, the next launch rebuilds from the log.
+- **Summarise at the next launch** (amended 2026-09-10), as a separate short-lived `Brain` on a
+  cheap model (`MEMORY_SUMMARY_MODEL`, default `haiku`) whose input is a text-only excerpt of the
+  turn log — deterministic and re-runnable. Originally this ran at session end with the next launch
+  as the fallback; the fallback is now the path. Exit has to be instant — a Ctrl+C that hangs for
+  fifteen seconds reads as a crash — whereas launch is init time the student already waits
+  through. A session is "summarised" when `topics.jsonl` holds a row for it, so there is no second
+  bookkeeping file to drift.
+- **Recent topics stop the lessons repeating themselves** (added 2026-09-10). Each summarised
+  session contributes at most five short noun phrases; the last eight sessions' worth are rendered
+  into the prompt as *recently discussed — do not open on these*, de-duplicated and newest first.
+  It is the cheapest possible anti-repetition: one line of prompt, no retrieval, and it directly
+  targets the failure a student notices first — three lessons in a row opening on the same news.
 - **`student.md` is markdown the user edits.** A wrong memory recalled confidently is worse than no
   memory, and the correction mechanism is a text editor. It holds grammar points missed more than
   once, vocabulary the student produced *unprompted*, topics that got them talking, and facts about

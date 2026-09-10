@@ -88,6 +88,8 @@ SCHEMA: tuple[Setting, ...] = (
     # Files
     Setting("SETTINGS_FILE", "settings.json", str, "advanced", "Config store (git-ignored, 0600)"),
     Setting("LOG_DIR", "logs", str, "advanced", "Session logs"),
+    Setting("MEMORY_ENABLED", True, bool, "model", "Cross-session memory (spec §6b): the tutor remembers last session, avoids recently discussed topics, and keeps notes about you in an editable file outside the repo"),
+    Setting("MEMORY_SUMMARY_MODEL", "haiku", str, "model", "Model that summarises each past session at the next launch. Cheap on purpose: it runs once per session over a short excerpt, never on the conversation path"),
     Setting("CACHE_DIR", ".cache", str, "advanced", "Generated/personal files"),
     Setting("SRS_CACHE_TTL_S", 3600, int, "advanced", "SRS disk cache TTL"),
     Setting("SRS_FETCH_BUDGET_S", 10, int, "advanced", "Session-start fetch budget, PER SERVICE (they fetch in parallel). Measured 2026-09-09: bunpro 5.1s, wanikani 4.3s, so 10s is roughly 2x headroom. On timeout the last snapshot is served as stale, never dropped"),

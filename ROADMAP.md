@@ -943,6 +943,19 @@ the avatar is still playing audio and the orchestrator is idle.
   voice→voice unchanged within noise between turns before and after a rotation; the turn log parses
   100% and matches the schema; a fresh launch demonstrably recalls the previous session.
 
+**Status 2026-09-10 — the memory half is built, pulled forward from M4 by user directive.**
+`backend/memory.py`: the turn log (§6b schema, append-only, recorded from `on_turn` after
+`TurnComplete`), the start-of-session read into a `{{memory}}` prompt section, the summariser (run
+at the next launch on `MEMORY_SUMMARY_MODEL`, driven through an injected `ask`), and a fourth tier
+the original design lacked — `topics.jsonl`, rendered as *recently discussed — do not open on
+these*. Hermetic tests in `test_memory.py` cover the schema, append-only writes, a half-written
+last line, empty-renders-to-nothing, topic recency and de-duplication, a malformed summary leaving
+the previous memory intact, a failing summariser costing recall rather than the lesson, and the
+worst-case prompt budget with memory maxed. **Not yet done:** the critical-path phase-recording
+test described above, and rotation (ADR-032), which stays last by design. **Not validated live
+yet:** close and reopen after a real lesson and confirm she opens from the brief without repeating
+the topic.
+
 **Known risk.** Rotation is the only feature in this milestone that can break a working
 conversation, and its failure mode is subtle — a tutor that quietly forgets. Ship the log, the
 start-of-session read and the summariser first; run them for several real lessons before enabling

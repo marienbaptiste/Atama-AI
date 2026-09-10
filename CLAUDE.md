@@ -38,6 +38,11 @@ when its gate is met, not when its code runs — do not call M2 done, and do not
 Run the tutor: `.venv/Scripts/python -m backend.repl` (`--refresh` to re-sync SRS, `--no-srs`
 offline, `--speak` for the tutor voice, `--listen` for the mic — `--listen` implies `--speak`).
 
+**Also built ahead of its milestone, by user directive:** the browser avatar with push-to-talk
+over a WebSocket (`backend/app.py`, `.un`), and the memory half of §6b (`backend/memory.py` —
+turn log, brief, recent topics, editable student notes, summarised at the next launch). Rotation
+(ADR-032) is not built. Neither closes an M3 or M4 gate.
+
 V0 spikes still open: **V0.4** (TalkingHead — `speakAudio` signature, ms vs s for
 `vtimes`/`vdurations`, the real mood names; blocks M3, and a wrong timing unit is silent drift)
 and **V0.12** (context window and compaction stall; blocks only the rotation half of M4c).

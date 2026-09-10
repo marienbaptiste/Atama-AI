@@ -23,6 +23,7 @@ import time
 
 from backend import brain as brain_api
 from backend import config, prompt
+from backend import memory as memory_api
 from backend.chunker import SentenceChunker
 from backend.brain import BrainError, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome, TurnComplete
 from backend.speaker import SpeechQueue
@@ -60,7 +61,22 @@ async def run(args: argparse.Namespace) -> int:
         print(f"{DIM}SRS sync {time.monotonic() - t0:.1f}s{RESET}")
 
     profile_text = profile_api.render(student)
-    rendered = prompt.build(profile_text, persona=cfg.TUTOR_PERSONA)
+
+    # --- memory (spec §6b, ADR-031): catch up on past sessions, then read once --------------
+    # Summarising happens HERE, at launch, for any session never summarised — not on exit, which
+    # has to be instant. It is the init time the student already waits through for Whisper.
+    mem, memory_text = None, ""
+    if cfg.MEMORY_ENABLED:
+        mem = memory_api.Memory.from_config(cfg)
+        pending = mem.pending_logs()
+        if pending:
+            print(f"{DIM}memory: catching up on {len(pending)} past session(s) "
+                  f"with {cfg.MEMORY_SUMMARY_MODEL}…{RESET}")
+            landed = await _summarise(cfg, mem)
+            print(f"{DIM}memory: {landed}/{len(pending)} summarised{RESET}")
+        memory_text = mem.render()
+
+    rendered = prompt.build(profile_text, persona=cfg.TUTOR_PERSONA, memory=memory_text)
     profile_api.debug_snapshot(student, profile_text, cfg.path("LOG_DIR"), dt.date.today().isoformat())
     sections = " · ".join(f"{k} {v}" for k, v in rendered.sections.items())
     print(f"{DIM}prompt {rendered.tokens} tokens ({sections})"
@@ -76,6 +92,8 @@ async def run(args: argparse.Namespace) -> int:
         system_prompt=rendered.text,
         allowed_tools=tools,
     )
+    if mem is not None:
+        mem.session_id = brain.session_id     # the turn log is named after the session it records
     try:
         await brain.start()
     except RuntimeError as exc:
@@ -158,11 +176,11 @@ async def run(args: argparse.Namespace) -> int:
     # Sensei speaks first (spec §5c): she finds a subject and opens on it, rather than waiting
     # for the student to produce one. This is the turn that pays for the search.
     if not args.no_open:
-        await _one_turn(brain, OPENING_NUDGE, voice)
+        await _one_turn(brain, OPENING_NUDGE, voice, mem=mem, opening=True)
 
     if args.listen:
         try:
-            await _listen(cfg, brain, voice, stt, hub)
+            await _listen(cfg, brain, voice, stt, hub, mem)
         finally:
             if voice is not None:
                 await voice.aclose()
@@ -191,7 +209,7 @@ async def run(args: argparse.Namespace) -> int:
             if line == "/profile":
                 print(profile_text)
                 continue
-            await _one_turn(brain, line, voice)
+            await _one_turn(brain, line, voice, mem=mem)
     finally:
         if voice is not None:
             await voice.aclose()
@@ -272,7 +290,7 @@ async def _check_microphone(cfg) -> bool:
     return True
 
 
-async def _listen(cfg, brain, voice, stt, hub=None) -> None:
+async def _listen(cfg, brain, voice, stt, hub=None, mem=None) -> None:
     """Full voice loop: speak to him, he answers aloud (spec §2).
 
     Everything is already loaded by the time this runs — see the init block in `run()`.
@@ -332,6 +350,21 @@ async def _listen(cfg, brain, voice, stt, hub=None) -> None:
                                 f"voice→voice {t.voice_to_voice_ms():.0f}ms · turn {t.total_ms:.0f}ms{RESET}\n"),
     )
     loop_ref["loop"] = loop
+
+    if mem is not None:
+        # Record in the speaking gap: on_turn fires from _turn's finally, after TurnComplete, so
+        # nothing here can sit between the student stopping and her first audio (spec §6b).
+        printed = loop.on_turn
+
+        def remember(t) -> None:
+            if printed is not None:
+                printed(t)
+            mem.record_turn(student=t.transcript, tutor_sentences=list(t.sentences),
+                            student_extra={"stt_ms": round(t.stt_ms)},
+                            latency={"first_audio_ms": round(t.first_audio_ms),
+                                     "voice_to_voice_ms": round(t.voice_to_voice_ms())})
+
+        loop.on_turn = remember
 
     if hub is not None:
         # The browser is a better push-to-talk button than the terminal, because a browser can
@@ -403,9 +436,44 @@ async def _listen(cfg, brain, voice, stt, hub=None) -> None:
                       f"p90 {p90 / 1000:.2f}s (budget 3.0s){RESET}")
 
 
-async def _one_turn(brain, text: str, voice=None) -> None:
+async def _summarise(cfg, mem) -> int:
+    """One short-lived, cheap brain that summarises past sessions, then goes away.
+
+    Same Brain interface as the tutor (ADR-027) but its own process, its own model and no tools:
+    it must not share the tutor's session, or the summary request would sit in her transcript.
+    Every failure path returns 0 — no summary means no recall of that session, not no lesson.
+    """
+    instructions = (prompt.PROMPTS_DIR / "summarise.md").read_text(encoding="utf-8")
+    worker = brain_api.create(cfg, registry=None, allowed_tools=(),
+                              model=str(cfg.MEMORY_SUMMARY_MODEL),
+                              system_prompt="You summarise language lessons. Reply with one JSON object only.")
+    try:
+        await asyncio.wait_for(worker.start(), 90)
+    except Exception as exc:  # noqa: BLE001 - memory is best-effort by contract
+        print(f"{DIM}memory: summariser did not start ({type(exc).__name__}); skipping{RESET}")
+        return 0
+
+    async def ask(text: str) -> str:
+        out: list[str] = []
+        async for ev in worker.turn(text):
+            if isinstance(ev, TextDelta):
+                out.append(ev.text)
+            elif isinstance(ev, TurnComplete):
+                break
+        return "".join(out)
+
+    try:
+        return await asyncio.wait_for(mem.summarise_pending(ask, instructions), 240)
+    except Exception:  # noqa: BLE001
+        return 0
+    finally:
+        await worker.aclose()
+
+
+async def _one_turn(brain, text: str, voice=None, mem=None, opening: bool = False) -> None:
     """Send one turn; print each sentence the moment it closes, with its latency."""
     chunker = SentenceChunker()
+    spoken: list[dict] = []
     started = time.monotonic()
     first_chunk_at: float | None = None
     n = 0
@@ -417,6 +485,7 @@ async def _one_turn(brain, text: str, voice=None) -> None:
             now = time.monotonic() - started
             first_chunk_at = first_chunk_at if first_chunk_at is not None else now
             n += 1
+            spoken.append({"text": chunk.text, "emotion": chunk.emotion or None, "synth_ms": None})
             print(f"  {DIM}{now:5.2f}s{RESET} {_emotion_tag(chunk.emotion)}{chunk.text}")
             if voice is not None:
                 await voice.say(chunk)
@@ -436,6 +505,12 @@ async def _one_turn(brain, text: str, voice=None) -> None:
             print(f"  {BOLD}· error:{RESET} {event.message}")
         elif isinstance(event, TurnComplete):
             await show(chunker.close())
+            if mem is not None:
+                # The opening nudge is our cue, not something the student said — log it empty,
+                # but keep her opener: it is exactly the topic the next session must not repeat.
+                mem.record_turn(student="" if opening else text, tutor_sentences=spoken,
+                                latency={"ttft_ms": round(event.ttft_ms) if event.ttft_ms else None},
+                                usage=event.usage or {})
             if voice is not None:
                 await voice.drain()
             total = time.monotonic() - started

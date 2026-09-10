@@ -31,13 +31,19 @@ _AVATAR_DECLARATION = re.compile(r"<!--\s*avatar:\s*([A-Za-z0-9_.-]+\.glb)\s*-->
 
 SOUL_MAX_TOKENS = 400
 PROFILE_MAX_TOKENS = 600
+#: Cross-session memory (spec §6b, ADR-031): last-session brief, recent topics, student notes.
+#: Deliberately small — it is read on every turn as cached prompt, so its cost is tokens, not
+#: latency, and the point is a tutor who remembers the gist, not one who replays the transcript.
+MEMORY_MAX_TOKENS = 220
 #: Whole assembled prompt. Template is ~700 tokens, so this leaves room for both sections.
 #: Ceiling for template + both sections. Raised 2000 -> 2100 on 2026-09-09: the explicit
 #: correction policy and the elicitation rule grew the static template to ~1050 tokens, and at
 #: 2000 a fully-grown student profile would have overflowed. Prompt size is a §10 latency lever,
 #: so this is a deliberate spend, not headroom to fill — test_worst_case_sections_fit_the_total
 #: keeps it honest.
-TOTAL_MAX_TOKENS = 2100
+#: Raised again 2100 -> 2350 on 2026-09-10 for the memory section. The same trade as before:
+#: a deliberate spend, enforced by test_worst_case_sections_fit_the_total, not headroom to fill.
+TOTAL_MAX_TOKENS = 2350
 
 NEUTRAL_SOUL = "あなたは経験のある、あたたかい日本語の先生です。"
 
@@ -156,7 +162,7 @@ def load_soul(path: Path | None = None, name: str | None = None) -> str:
 
 
 def build(student_profile: str, *, soul: str | None = None, template: str | None = None,
-          persona: str | None = None) -> RenderedPrompt:
+          persona: str | None = None, memory: str = "") -> RenderedPrompt:
     """Assemble the system prompt. Placeholders that the template omits are simply not used."""
     tpl = template if template is not None else _read(TEMPLATE_FILE)
     if not tpl.strip():
@@ -165,8 +171,12 @@ def build(student_profile: str, *, soul: str | None = None, template: str | None
     truncated: list[str] = []
     soul_text = _fit((soul if soul is not None else load_soul(name=persona)).strip(), SOUL_MAX_TOKENS, "soul", truncated)
     profile_text = _fit(student_profile.strip(), PROFILE_MAX_TOKENS, "student_profile", truncated)
+    memory_text = _fit(memory.strip(), MEMORY_MAX_TOKENS, "memory", truncated) if memory.strip() else ""
 
-    text = tpl.replace("{{soul}}", soul_text).replace("{{student_profile}}", profile_text)
-    sections = {"soul": estimate_tokens(soul_text), "student_profile": estimate_tokens(profile_text)}
+    text = (tpl.replace("{{soul}}", soul_text)
+               .replace("{{student_profile}}", profile_text)
+               .replace("{{memory}}", memory_text))
+    sections = {"soul": estimate_tokens(soul_text), "student_profile": estimate_tokens(profile_text),
+                "memory": estimate_tokens(memory_text)}
     total = estimate_tokens(text)
     return RenderedPrompt(text=text, tokens=total, sections=sections, truncated=truncated)
