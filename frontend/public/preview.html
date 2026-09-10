@@ -543,8 +543,8 @@ function rightHand() {
 let lastMotion = { pose: null, gesture: null };
 
 //: Her mood as white kaomoji drifting up behind her and fading away (asciimoji-style faces).
-//: One pool per emotion tag (ADR-020's closed set); neutral is sparse and slow on purpose —
-//: calm should look calm. A mood change sends a small burst so the change reads at a glance.
+//: One pool per emotion tag (ADR-020's closed set). Faces come only when she feels something,
+//: in a short burst that then drifts off; neutral, idle or waiting shows none (see setMoodBg).
 const KAOMOJI = {
   neutral:     ["(・ω・)", "(´･ω･`)", "(￣ー￣)", "( ´ ▽ ` )"],
   happy:       ["(＾▽＾)", "٩(◕‿◕)۶", "(≧◡≦)", "ヽ(•‿•)ノ", "(´▽`)♪", "(^_^)"],
@@ -579,16 +579,25 @@ function spawnKao(mood = kaoMood, midway = false) {
   layer.appendChild(el);
 }
 
+//: How long a mood keeps sending faces before the flow stops and the last ones drift away.
+const KAO_BURST_MS = 3000;
+
+//: Faces appear when she FEELS something, then drift off. Nothing while she is neutral, idle or
+//: waiting: a constant stream behind a tutor who is just waiting reads as noise, not mood
+//: (user, 2026-09-10).
 function setMoodBg(mood) {
   mood = KAOMOJI[mood] ? mood : "neutral";
-  if (mood === kaoMood) return;
+  const fresh = mood !== kaoMood;
   kaoMood = mood;
-  if (mood !== "neutral") for (let i = 0; i < 4; i++) setTimeout(() => spawnKao(mood, true), i * 120);
   clearInterval(kaoTimer);
-  kaoTimer = setInterval(spawnKao, mood === "neutral" ? 2600 : 900);
+  if (mood === "neutral") return;                  // the ones in flight finish and fade
+  // A new mood arrives with a few faces already on their way up, so it reads at once; the same
+  // mood again (her next sentence) adds a couple. Either way the flow stops after a moment.
+  const now = fresh ? 4 : 2;
+  for (let i = 0; i < now; i++) setTimeout(() => spawnKao(mood, fresh), i * 150);
+  const flow = kaoTimer = setInterval(spawnKao, 700);
+  setTimeout(() => clearInterval(flow), KAO_BURST_MS);   // this burst's flow only, not a newer one
 }
-kaoTimer = setInterval(spawnKao, 2600);
-for (let i = 0; i < 5; i++) spawnKao("neutral", true);   // a calm sky from the first frame
 
 function applyRig(name) {
   const r = RIG[name] || RIG.neutral;
