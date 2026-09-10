@@ -339,15 +339,47 @@ async def _listen(cfg, brain, voice, stt, hub=None) -> None:
         # holding the key there gives real hold-to-talk instead of the toggle a TTY is limited to.
         # The terminal binding stays live as well — either can drive the same turn.
         def from_browser(action: str) -> None:
+            # Report what the press actually produced. "recording" in the browser only proves the
+            # message arrived; whether the microphone thread is feeding the buffer, and whether
+            # the result was long enough to become a turn, are separate questions that look
+            # identical from the UI (2026-09-10).
             # Visible on the console: a press that never arrives and a press that arrives but
             # produces no audio are different problems, and they look identical otherwise.
             print(chr(13) + DIM + "[browser: " + action + "]" + RESET + " " * 30, end="", flush=True)
             if action == "start":
                 loop.ptt_begin()
             elif action == "stop":
+                frames = len(loop._ptt_buf)
+                seconds = frames * 512 / 16000
+                before = loop._turn_task
                 loop.ptt_end()
+                started = loop._turn_task is not None and loop._turn_task is not before
+                print(chr(13) + DIM + "[browser: stop] " + str(frames) + " frames ("
+                      + format(seconds, ".1f") + "s) -> "
+                      + ("turn started" if started else "NO TURN")
+                      + "  mic_alive=" + str(loop._mic.is_alive() if loop._mic else False)
+                      + " frames_seen=" + str(loop.frames_seen)
+                      + (" err=" + loop.capture_error if loop.capture_error else "")
+                      + RESET + " " * 10, flush=True)
+                return
 
         hub.on_control = from_browser
+
+        # The browser was getting audio and nothing else: no transcript, no state. Silence after
+        # a press then looked the same as a broken microphone, when it might equally be a
+        # discarded transcript or the brain still thinking. These are cheap and they are the
+        # difference between "it is not working" and "it did not hear me".
+        def tell_browser(coro) -> None:
+            asyncio.get_running_loop().create_task(coro)
+
+        loop.on_state = lambda s: (
+            print(chr(13) + DIM + "[" + s + "]" + RESET + " " * 50, end="", flush=True)
+            if s != "listening" else None,
+            tell_browser(hub.state(s)))[0]
+        loop.on_transcript = lambda t: (
+            print(chr(13) + BOLD + "you:" + RESET + " " + t.text if t
+                  else chr(13) + DIM + "(discarded: " + t.reason + ")" + RESET),
+            tell_browser(hub.transcript(t.text, bool(t), getattr(t, "reason", ""))))[0]
 
     device = cfg.AUDIO_INPUT_DEVICE or "system default"
     keys = _ptt_keys(loop, asyncio.get_running_loop()) if loop.ptt else None
