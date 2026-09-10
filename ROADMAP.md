@@ -968,6 +968,13 @@ is defaults → `settings.json` → env. Secrets never return to the browser in 
   the conversation memory survives the respawn. Restart the app and confirm everything persisted.
 - **Integrate** — The `settings` / `settings_test` messages (subsystem 7) and the status
   registry (subsystem 16).
+- **Persona picker (user directive 2026-09-10).** `TUTOR_PERSONA` is one setting that switches
+  character, voice *and* face together (ADR-026/030), so the settings page offers it as a single
+  choice rather than three. Two rules the picker has to respect:
+  *only offer personas whose declared avatar actually exists* — `prompt.declared_avatar()` names
+  the file and `check_avatar` says whether it is usable — and *show why one is unavailable*
+  rather than hiding it, because "たなか needs an avatar" is actionable and a missing row is not.
+  Only `minami` ships with a face today; the rest wait on commissioned models.
 - **Gate M5b** — The M5 acceptance: clone → first conversation without ever creating a `.env`.
 
 ---

@@ -83,8 +83,8 @@ commercial and non-commercial use, but ONLY if the character is credited. The
 credit is per character, not per engine, so it depends on which persona is
 configured (TUTOR_PERSONA):
 
-    tanaka  (default)  VOICEVOX:麒ヶ島宗麟
-    minami             VOICEVOX:No.7
+    minami  (default)  VOICEVOX:No.7
+    tanaka             VOICEVOX:麒ヶ島宗麟
     hayashi            VOICEVOX:栗田まろん
     mori               VOICEVOX:冥鳴ひまり
 

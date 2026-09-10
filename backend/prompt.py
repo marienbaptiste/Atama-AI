@@ -20,7 +20,9 @@ from backend.srs.profile import estimate_tokens
 
 PROMPTS_DIR = config.REPO_ROOT / "prompts"
 TEMPLATE_FILE = PROMPTS_DIR / "tutor.md"
-DEFAULT_PERSONA = "tanaka"
+#: minami, not tanaka: she is the persona with a usable avatar, and a default that cannot
+#: render a face is not a default. Changing this changes the voice too, by design (ADR-030).
+DEFAULT_PERSONA = "minami"
 #: A persona may declare the voice it belongs with: `<!-- voice: 53 -->` on its own line.
 #: Character and voice are one choice — switching tutor should not mean remembering to change a
 #: speaker id as well, and a mismatch (a male persona in a female voice) is jarring.

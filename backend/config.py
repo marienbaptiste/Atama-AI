@@ -77,7 +77,7 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("LATENCY_WARN_S", 3.0, float, "advanced", "Warn when a turn exceeds this"),
     Setting("VRAM_WARN_GB", 10, int, "advanced", "Warn above this GPU memory use"),
     # Display
-    Setting("TUTOR_PERSONA", "tanaka", str, "voice", "Which tutor: a name in prompts/ (tanaka, hayashi, minami, mori) or a path. The persona declares its own voice, so this one setting switches character and voice together (ADR-030)"),
+    Setting("TUTOR_PERSONA", "minami", str, "voice", "Which tutor: a name in prompts/ (tanaka, hayashi, minami, mori) or a path. The persona declares its own voice AND its avatar, so this one setting switches character, voice and face together (ADR-026/030). Default is minami because she is the one with a shipped avatar"),
     Setting("SUBTITLES", "jp", str, "display", "jp | off"),
     Setting("AUDIO_INPUT_DEVICE", "", str, "audio", "Microphone. Empty = system default. Name or index; list them with `python -m backend.audio`"),
     Setting("AUDIO_OUTPUT_DEVICE", "", str, "audio", "Speakers/headphones. Empty = system default. Name or index; list them with `python -m backend.audio`"),
