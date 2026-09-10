@@ -79,6 +79,7 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("FILLER_AFTER_MS", 1200, int, "advanced", "Play a filler if the first sentence has not closed"),
     Setting("LATENCY_WARN_S", 5.0, float, "advanced", "Warn when a turn exceeds this. 5.0 since 2026-09-10 (ADR-033): the gate is voice->voice p90 <= 5.0 s"),
     Setting("VRAM_WARN_GB", 10, int, "advanced", "Warn above this GPU memory use"),
+    Setting("CONTEXT_ROTATE_AT", 0.0, float, "advanced", "Start a fresh session (with the lesson so far) when her context passes this fraction of the model's window, before the provider compacts on its own - which is seconds of silence mid-lesson (ADR-032). 0 = never. The window is 200k tokens (verified); where the provider compacts is not measured yet (ROADMAP V0.12), so keep this well below it, e.g. 0.7"),
     # Display
     Setting("TUTOR_PERSONA", "minami", str, "voice", "Which tutor: a name in prompts/ (tanaka, hayashi, minami, mori) or a path. The persona declares its own voice AND its avatar, so this one setting switches character, voice and face together (ADR-026/030). Default is minami because she is the one with a shipped avatar"),
     Setting("SUBTITLES", "jp", str, "display", "jp | off"),

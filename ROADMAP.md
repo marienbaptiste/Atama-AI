@@ -969,6 +969,18 @@ the avatar is still playing audio and the orchestrator is idle.
   voice→voice unchanged within noise between turns before and after a rotation; the turn log parses
   100% and matches the schema; a fresh launch demonstrably recalls the previous session.
 
+**Status 2026-09-10 — the rotation half is built, hermetically tested, and OFF by default.**
+`backend/session.py` (`Rotator`): arms at `CONTEXT_ROTATE_AT` × the model's window (read from
+`brain.meters` after every turn — fields verified, constants.py), starts the replacement in the
+background with a handoff from the lesson's turn log (`prompt.build(handoff=...)`, own 600-token
+budget, "carry on, do not greet again"), swaps only at a turn boundary via `VoiceLoop.before_turn`,
+closes the old session only after the new one has taken a turn, discards a pending replacement on
+a tutor switch, and gives up after 3 failed starts (the provider's own compaction then being the
+logged fallback). `tests/test_session.py` covers the contract above. **`CONTEXT_ROTATE_AT` defaults
+to 0 (never)** because V0.12 — where the provider compacts, and how long it stalls — is still
+unmeasured; setting it is the user's call until then. Gate M4c (a 40-minute live lesson crossing a
+rotation) is **not met**.
+
 **Status 2026-09-10 — the memory half is built, pulled forward from M4 by user directive.**
 `backend/memory.py`: the turn log (§6b schema, append-only, recorded from `on_turn` after
 `TurnComplete`), the start-of-session read into a `{{memory}}` prompt section, the summariser (run

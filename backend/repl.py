@@ -27,6 +27,7 @@ from backend import memory as memory_api
 from backend import vram as vram_mod
 from backend import usage as usage_api
 from backend import model_tiers
+from backend import session as session_api
 from backend.chunker import SentenceChunker
 from backend.brain import BrainError, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome, TurnComplete
 from backend.speaker import SpeechQueue
@@ -43,6 +44,9 @@ OPENING_NUDGE = "（セッション開始。あいさつして、始めてくだ
 TOPIC_NUDGE = "（話題を変えて）"
 #: After a live tutor change: the new person introduces themselves and carries on the lesson.
 TUTOR_NUDGE = "（先生が交代しました。新しい先生として自己紹介して、レッスンを続けてください。）"
+#: How much of the lesson a rotated session inherits (ADR-032), newest kept. Sized to sit inside
+#: prompt.HANDOFF_MAX_TOKENS so the handoff is rarely cut further.
+HANDOFF_CHARS = 1500
 
 
 def _emotion_tag(emotion: str) -> str:
@@ -230,9 +234,29 @@ async def run(args: argparse.Namespace) -> int:
         await old.aclose()
         return new
 
+    async def spawn_rotation(handoff: str):
+        """A replacement session for rotation (ADR-032): the same tutor, newest model for the tier
+        and tools, plus the lesson so far. Started here, swapped in at a turn boundary by _listen."""
+        fresh = config.load()
+        text = prompt.build(profile_text, persona=str(fresh.TUTOR_PERSONA), memory=memory_text,
+                            handoff=handoff).text
+        new = brain_api.create(fresh, registry=registry, mcp_config=mcp_json,
+                               mcp_ready_markers=mcp_config.markers(fresh) if mcp_json else None,
+                               system_prompt=text, allowed_tools=tools,
+                               model=await asyncio.to_thread(tiers.resolve, str(fresh.CLAUDE_MODEL)))
+        await new.start()
+        return new
+
+    def adopt(new) -> None:
+        # After a rotation the replacement is THE session: the one closed at the end, and the one
+        # a tutor switch replaces.
+        nonlocal brain
+        brain = new
+
     if args.listen:
         try:
-            await _listen(cfg, brain, voice, stt, hub, mem, switch_persona, account)
+            await _listen(cfg, brain, voice, stt, hub, mem, switch_persona, account,
+                          spawn_rotation, adopt)
         finally:
             if voice is not None:
                 await voice.aclose()
@@ -351,7 +375,8 @@ async def _check_microphone(cfg) -> bool:
     return True
 
 
-async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=None, account=None) -> None:
+async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=None, account=None,
+                  spawn_rotation=None, adopt=None) -> None:
     """Full voice loop: speak to him, he answers aloud (spec §2).
 
     Everything is already loaded by the time this runs — see the init block in `run()`.
@@ -425,6 +450,11 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
                 turns=len(done)))
         if account is not None:
             asyncio.get_running_loop().create_task(account(loop.brain))
+        # ADR-032, after the turn: close the session a rotation replaced (it has now spoken), then
+        # arm on this turn's context and start a replacement in the background if needed.
+        asyncio.get_running_loop().create_task(rotator.settle())
+        rotator.observe(loop.brain)
+        rotator.prepare()
 
     loop = VoiceLoop(
         turn_mode=cfg.TURN_MODE,
@@ -439,6 +469,35 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
         on_turn=report_turn,
     )
     loop_ref["loop"] = loop
+
+    # Pre-emptive rotation (ADR-032): off unless CONTEXT_ROTATE_AT > 0.
+    def lesson_so_far() -> str:
+        # The handoff: the lesson's own turn log, newest kept — deterministic, no model call.
+        if mem is not None:
+            return memory_api.excerpt_of(mem.log_path(), HANDOFF_CHARS)
+        lines = []
+        for t in loop.timings[-12:]:
+            if t.transcript:
+                lines.append(f"STUDENT: {t.transcript}")
+            said = "".join(str(s.get("text", "")) for s in t.sentences)
+            if said:
+                lines.append(f"TUTOR: {said}")
+        return "\n".join(lines)[-HANDOFF_CHARS:]
+
+    async def no_spawn(_handoff):
+        raise RuntimeError("rotation needs the session factory from run()")
+
+    rotator = session_api.Rotator(float(cfg.CONTEXT_ROTATE_AT), spawn_rotation or no_spawn, lesson_so_far,
+                                  log=lambda s: print(chr(13) + DIM + "[rotation] " + s + RESET, flush=True))
+
+    def swap_if_ready() -> None:
+        new = rotator.take(loop.brain)
+        if new is not None:
+            loop.brain = new
+            if adopt is not None:
+                adopt(new)
+
+    loop.before_turn = swap_if_ready
 
     def device_changed(state: str, detail: str) -> None:
         # Unplugged, missing at launch, back again, or on the default instead of the chosen one:
@@ -502,6 +561,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
             await hub.status("tutor", "failed", f"could not switch to {name} - "
                              f"{type(exc).__name__}", remember=False)
             return
+        await rotator.discard()          # a replacement built for the previous tutor is no use now
         await hub.status("tutor", "ok", f"now teaching: {name}", remember=False)
         loop.ask(TUTOR_NUDGE)
 
@@ -644,6 +704,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
         loop.stop()
         await watch.close()
         vram_task.cancel()
+        await rotator.aclose()
         if loop.timings:
             v2v = sorted(t.voice_to_voice_ms() for t in loop.timings if t.voice_to_voice_ms())
             if v2v:

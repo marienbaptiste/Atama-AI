@@ -44,6 +44,12 @@ MEMORY_MAX_TOKENS = 220
 #: Raised again 2100 -> 2350 on 2026-09-10 for the memory section. The same trade as before:
 #: a deliberate spend, enforced by test_worst_case_sections_fit_the_total, not headroom to fill.
 TOTAL_MAX_TOKENS = 2350
+#: A ROTATED session's handoff (ADR-032): the lesson so far, from the turn log. Only rotated
+#: sessions carry it, so it has its own budget on top of TOTAL_MAX_TOKENS rather than squeezing
+#: the sections every session needs. Spent only when a long lesson has earned a fresh window.
+HANDOFF_MAX_TOKENS = 600
+HANDOFF_HEADING = ("EARLIER IN THIS LESSON — you and the student were already talking; this is the "
+                   "latest of it. Carry on naturally from here: do not greet again or restart.")
 
 NEUTRAL_SOUL = "あなたは経験のある、あたたかい日本語の先生です。"
 
@@ -162,8 +168,11 @@ def load_soul(path: Path | None = None, name: str | None = None) -> str:
 
 
 def build(student_profile: str, *, soul: str | None = None, template: str | None = None,
-          persona: str | None = None, memory: str = "") -> RenderedPrompt:
-    """Assemble the system prompt. Placeholders that the template omits are simply not used."""
+          persona: str | None = None, memory: str = "", handoff: str = "") -> RenderedPrompt:
+    """Assemble the system prompt. Placeholders that the template omits are simply not used.
+
+    `handoff` is for a rotated session only (ADR-032): it follows the memory section under its own
+    heading and budget, so the template needs no placeholder for it."""
     tpl = template if template is not None else _read(TEMPLATE_FILE)
     if not tpl.strip():
         raise RuntimeError(f"missing or empty prompt template at {TEMPLATE_FILE} (ADR-012: it lives in a file)")
@@ -172,11 +181,13 @@ def build(student_profile: str, *, soul: str | None = None, template: str | None
     soul_text = _fit((soul if soul is not None else load_soul(name=persona)).strip(), SOUL_MAX_TOKENS, "soul", truncated)
     profile_text = _fit(student_profile.strip(), PROFILE_MAX_TOKENS, "student_profile", truncated)
     memory_text = _fit(memory.strip(), MEMORY_MAX_TOKENS, "memory", truncated) if memory.strip() else ""
+    handoff_text = _fit(handoff.strip(), HANDOFF_MAX_TOKENS, "handoff", truncated) if handoff.strip() else ""
+    memory_slot = "\n\n".join(s for s in (memory_text, f"{HANDOFF_HEADING}\n{handoff_text}" if handoff_text else "") if s)
 
     text = (tpl.replace("{{soul}}", soul_text)
                .replace("{{student_profile}}", profile_text)
-               .replace("{{memory}}", memory_text))
+               .replace("{{memory}}", memory_slot))
     sections = {"soul": estimate_tokens(soul_text), "student_profile": estimate_tokens(profile_text),
-                "memory": estimate_tokens(memory_text)}
+                "memory": estimate_tokens(memory_text), "handoff": estimate_tokens(handoff_text)}
     total = estimate_tokens(text)
     return RenderedPrompt(text=text, tokens=total, sections=sections, truncated=truncated)

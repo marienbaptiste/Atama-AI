@@ -87,6 +87,9 @@ class VoiceLoop:
     on_level: Callable[[float, float], None] | None = None
     #: (state, detail) when the microphone changes: ok | fallback | missing | lost (spec §9).
     on_device: Callable[[str, str], None] | None = None
+    #: Called at the turn boundary, before the brain is asked anything — the one place a rotated
+    #: session may take over (ADR-032: never inside a turn).
+    before_turn: Callable[[], None] | None = None
 
     _frames: asyncio.Queue | None = field(default=None, init=False)
     _stop: threading.Event = field(default_factory=threading.Event, init=False)
@@ -351,6 +354,8 @@ class VoiceLoop:
         await self._reply(text, heard_at, TurnTiming(speech_end_at=heard_at))
 
     async def _reply(self, text: str, heard_at: float, timing: TurnTiming) -> None:
+        if self.before_turn is not None:
+            self.before_turn()                 # a ready replacement session takes over HERE
         chunker = SentenceChunker()
         self.voice.resume()          # clear any latched barge-in, or this turn is silent
         self._speaking = True

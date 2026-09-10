@@ -1,0 +1,128 @@
+"""Pre-emptive session rotation (ADR-032, spec §6b, ROADMAP subsystem 18).
+
+A long lesson fills the model's window, and the provider then compacts on its own schedule —
+seconds of silence mid-lesson, arriving exactly when the lesson has gone well long enough to fill a
+window. The rotator sees it coming from the context meter the brain already reports after every
+turn (`brain.meters`, verified fields in constants.py) and replaces the session first:
+
+  observe(brain)  after a turn: arms at CONTEXT_ROTATE_AT x the model's window.
+  prepare()       starts the replacement in the background, with a handoff built from the lesson's
+                  own turn log (deterministic, no model call). Nothing waits on it.
+  take(current)   at a turn boundary, never inside one: the replacement if it is ready, else None —
+                  the old session carries on and the next gap tries again. Rotation is never the
+                  reason a turn is slow.
+  settle()        after the new session has taken a turn: only then is the old one closed.
+
+A replacement that fails to start keeps the old session; after MAX_FAILURES the rotator stops
+trying for the session and says so, and the provider's own compaction is the fallback — which the
+§10 instrumentation then shows as the slow turn it is. CONTEXT_ROTATE_AT = 0 never rotates, a
+supported configuration (spec §12 M4) and the default until ROADMAP V0.12 measures where the
+provider compacts.
+"""
+from __future__ import annotations
+
+import asyncio
+import contextlib
+from typing import Any, Awaitable, Callable
+
+#: Replacements that fail to start this many times running are not tried again this session.
+MAX_FAILURES = 3
+
+
+class Rotator:
+    def __init__(self, threshold: float, spawn: Callable[[str], Awaitable[Any]],
+                 handoff: Callable[[], str], log: Callable[[str], None] = lambda s: None) -> None:
+        self.threshold = float(threshold or 0.0)
+        self.spawn = spawn
+        self.handoff = handoff
+        self.log = log
+        self.armed = False
+        self.failures = 0
+        self.rotations = 0
+        self._task: asyncio.Task | None = None
+        self._ready: Any = None
+        self._retiring: Any = None
+        #: Bumped by discard(): a replacement that finishes starting after it was discarded is
+        #: closed rather than kept — it was built for a tutor, or a profile, that no longer applies.
+        self._generation = 0
+
+    @property
+    def enabled(self) -> bool:
+        return self.threshold > 0 and self.failures < MAX_FAILURES
+
+    def observe(self, brain: Any) -> bool:
+        """After a turn: arm when her context has reached the threshold. Returns `armed`."""
+        if not self.enabled or self.armed or self._ready is not None:
+            return self.armed
+        meters = getattr(brain, "meters", None) or {}
+        used, window = meters.get("context_tokens"), meters.get("context_window")
+        if used and window and used >= self.threshold * window:
+            self.armed = True
+            self.log(f"context {used:,} of {window:,} tokens (>= {self.threshold:.0%}): rotation armed")
+        return self.armed
+
+    def prepare(self) -> None:
+        """Start the replacement in the background, once. Never awaited by a turn."""
+        if not self.armed or self._task is not None or self._ready is not None:
+            return
+        self._task = asyncio.get_running_loop().create_task(self._prepare(self._generation))
+
+    async def _prepare(self, generation: int) -> None:
+        try:
+            brain = await self.spawn(self.handoff())
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - the old session carries on; say why and retry
+            self.failures += 1
+            self.log(f"replacement did not start ({type(exc).__name__}: {exc}); keeping the current "
+                     f"session, attempt {self.failures} of {MAX_FAILURES}")
+            if self.failures >= MAX_FAILURES:
+                self.armed = False
+                self.log("giving up for this session: the provider will compact on its own - "
+                         "expect one slow turn, logged as a latency event")
+            return
+        finally:
+            self._task = None
+        if generation != self._generation:
+            with contextlib.suppress(Exception):
+                await brain.aclose()
+            return
+        self._ready = brain
+        self.log("replacement ready - it takes over at the next turn")
+
+    def take(self, current: Any) -> Any:
+        """At a turn boundary: the ready replacement (now authoritative), or None."""
+        new, self._ready = self._ready, None
+        if new is None:
+            return None
+        self._retiring = current
+        self.armed = False
+        self.failures = 0
+        self.rotations += 1
+        self.log(f"rotated to a fresh session (rotation {self.rotations})")
+        return new
+
+    async def settle(self) -> None:
+        """After the replacement has taken a turn: close the session it replaced (ADR-032)."""
+        old, self._retiring = self._retiring, None
+        if old is not None:
+            with contextlib.suppress(Exception):
+                await old.aclose()
+
+    async def discard(self) -> None:
+        """Drop any pending replacement — the tutor or the profile changed underneath it."""
+        self._generation += 1
+        self.armed = False
+        task, self._task = self._task, None
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(BaseException):
+                await task
+        ready, self._ready = self._ready, None
+        if ready is not None:
+            with contextlib.suppress(Exception):
+                await ready.aclose()
+
+    async def aclose(self) -> None:
+        await self.discard()
+        await self.settle()

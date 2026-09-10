@@ -392,3 +392,13 @@ def test_voice_turns_record_thinking_and_ttft():
     asyncio.run(loop._turn(np.zeros(16000, dtype=np.float32)))
     t = loop.timings[-1]
     assert t.thinking_chars == 5 and t.ttft_ms == 1234.0
+
+
+# ----------------------------------------------------------------- rotation (ADR-032)
+def test_a_rotated_session_takes_over_at_the_turn_boundary():
+    """The swap hook runs before the brain is asked anything, so the new session gets the turn."""
+    old, new = FakeBrain("old reply。"), FakeBrain("new reply。")
+    loop = VoiceLoop(turn_mode="vad", brain=old, stt=FakeStt(accepted()), vad=FakeVad(), voice=FakeVoice())
+    loop.before_turn = lambda: setattr(loop, "brain", new)
+    asyncio.run(loop._turn(np.zeros(16000, dtype=np.float32)))
+    assert old.turns == [] and new.turns == ["こんにちは。"]

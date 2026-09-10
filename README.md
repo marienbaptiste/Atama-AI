@@ -808,6 +808,13 @@ something fresh the same way.
 fix it — it is plain markdown, and that is the correction mechanism. Delete the `memory` folder to
 start over. Set `MEMORY_ENABLED=false` to turn it off entirely.
 
+**Long lessons.** Her memory of the current conversation has a limit — the status bar's layered
+gauge shows how full it is. When it fills, Claude compacts it on its own, which is a silent pause
+of several seconds. With `CONTEXT_ROTATE_AT` set (Settings → Advanced, e.g. `0.7`) the app instead
+starts a fresh session in the background once that fraction is reached, hands it the lesson so far,
+and switches over between two turns — she carries on without greeting you again. It is off (`0`)
+until the point where Claude compacts has been measured (ROADMAP V0.12).
+
 ---
 
 ## Credits and licensing
