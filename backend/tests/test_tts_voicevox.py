@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from backend import config, emotions, tts_voicevox
-from backend.chunker import NEUTRAL
+from backend.chunker import EMOTIONS, NEUTRAL
 
 FX = Path(__file__).parent / "fixtures" / "voicevox"
 SPEAKERS = json.loads((FX / "speakers.json").read_text(encoding="utf-8"))
@@ -33,8 +33,13 @@ def test_styles_are_resolved_by_name_from_the_live_catalogue(tmp_path):
 
 
 def test_every_emotion_is_present_and_distinct_in_voice(tmp_path):
+    """Derived from chunker.EMOTIONS, not a second hand-kept list.
+
+    Adding a tag the tutor can emit without giving it a voice is a silent failure: it would fall
+    back to neutral params and sound identical, so the tag would look wired and do nothing.
+    """
     table, _ = emotions.resolve(cfg(tmp_path), SPEAKERS)
-    assert set(table) == {NEUTRAL, "happy", "thinking", "surprised", "serious"}
+    assert set(table) == {NEUTRAL, *EMOTIONS}
     signatures = {e: (p.style_id, p.speed, p.pitch, p.intonation) for e, p in table.items()}
     assert len(set(signatures.values())) == len(signatures), signatures
 

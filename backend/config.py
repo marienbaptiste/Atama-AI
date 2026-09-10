@@ -63,6 +63,9 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("EMOTION_THINKING", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
     Setting("EMOTION_SURPRISED", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
     Setting("EMOTION_SERIOUS", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
+    Setting("EMOTION_ENCOURAGING", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
+    Setting("EMOTION_PROUD", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
+    Setting("EMOTION_CONFUSED", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
     # Speech detection
     Setting("WHISPER_MODEL", "large-v3", str, "speech", "faster-whisper model (fallback: medium)"),
     Setting("WHISPER_COMPUTE_TYPE", "float16", str, "speech", "CTranslate2 compute type. float16 is the default because int8 buys nothing on a GPU that does fp16 natively: measured 2026-09-09, same median latency (287 vs 290 ms) and better transcripts, for 1.7 GB of headroom we were not spending. int8_float16 is the fallback if VRAM ever gets tight"),

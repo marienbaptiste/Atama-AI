@@ -21,7 +21,12 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-EMOTIONS = ("happy", "thinking", "surprised", "serious")
+#: The tags the tutor may emit. Deliberately NOT TalkingHead's full mood set: `angry`,
+#: `disgust`, `fear` and `sleep` exist in the library and are not offered here, because a tag the
+#: model can reach for is a tag it will eventually use, and none of those belong on a teacher.
+#: `encouraging`, `proud` and `confused` earn their place — they are the three things a tutor
+#: does constantly that the original four could not express (2026-09-10).
+EMOTIONS = ("happy", "thinking", "surprised", "serious", "encouraging", "proud", "confused")
 NEUTRAL = ""
 TERMINATORS = "。！？!?…‥\n"
 #: A chunk must contain at least one of these to be worth synthesising.

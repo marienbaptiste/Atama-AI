@@ -16,12 +16,14 @@ import json
 import sys
 from pathlib import Path
 
-from backend import config, prompt
+from backend import chunker, config, prompt
 from backend.tts_voicevox import VoicevoxClient, VoicevoxError
 
 OUT = config.REPO_ROOT / "frontend" / "public"
 LINE = "こんにちは。日本語を一緒に勉強しましょう。"
-EMOTIONS = ("", "happy", "thinking", "surprised", "serious")
+#: Every tag the tutor may emit, from the one list that defines them. A hand-kept copy here
+#: would silently stop previewing new emotions the moment one is added.
+EMOTIONS = ("",) + chunker.EMOTIONS
 
 
 def main(argv: list[str]) -> int:

@@ -122,6 +122,32 @@ const RIG = {
                poses:["straight","wide"],                poseChance:0.25,
                shapes:{ browDownLeft:0.55, browDownRight:0.55, mouthPressLeft:0.3,
                         mouthPressRight:0.3, eyeSquintLeft:0.2, eyeSquintRight:0.2 } },
+
+  // "go on, try it" — open, leaning in, brows up. An open palm invites; a raised finger corrects,
+  // which is why encouraging and serious must not share a gesture pool.
+  encouraging: { mood:"happy", release:2400,
+               gestures:["handup","ok","side"],          gestureChance:0.75,
+               poses:["straight","side"],                poseChance:0.30,
+               shapes:{ browInnerUp:0.45, browOuterUpLeft:0.3, browOuterUpRight:0.3,
+                        mouthSmileLeft:0.25, mouthSmileRight:0.25, eyeWideLeft:0.2,
+                        eyeWideRight:0.2 } },
+
+  // Praise with weight. Held longest of any expression, because a compliment that vanishes in a
+  // second reads as reflex rather than as meant, and it nods almost always.
+  proud:     { mood:"happy", release:3000,
+               react:"yes", reactChance:0.85,
+               gestures:["thumbup","ok","namaste"],      gestureChance:0.80,
+               poses:["straight"],                       poseChance:0.20,
+               shapes:{ mouthSmileLeft:0.5, mouthSmileRight:0.5, cheekSquintLeft:0.3,
+                        cheekSquintRight:0.3, browInnerUp:0.2 } },
+
+  // Puzzlement, NOT disapproval: no head shake here. Head tilted, one brow up, mouth to one side.
+  // The student should read "I did not catch that", not "you were wrong".
+  confused:  { mood:"neutral", release:2200,
+               gestures:["shrug","side"],                gestureChance:0.70,
+               poses:["hip","side"],                     poseChance:0.30,
+               shapes:{ browInnerUp:0.5, browDownRight:0.3, eyeSquintLeft:0.25,
+                        mouthLeft:0.35, mouthPucker:0.2, headRotateZ:0.12 } },
 };
 
 //: Last draw per pool, so the same gesture never fires twice running.

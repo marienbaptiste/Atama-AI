@@ -65,6 +65,13 @@ DEFAULT_TABLE: dict[str, tuple[tuple[str, ...], float, float, float]] = {
     "thinking":  (("おちつき", "ノーマル"),      0.95, -0.01, 0.90),
     "surprised": (("おどろき", "ノーマル"),      1.10,  0.04, 1.30),
     "serious":   (("アナウンス", "シリアス", "つよつよ", "ノーマル"), 0.95, -0.03, 0.85),
+    # Warm and forward-leaning: "go on, try it" — slightly faster and brighter than happy, because
+    # encouragement pushes where praise settles.
+    "encouraging": (("元気", "明るい", "喜び", "ノーマル"), 1.08,  0.03, 1.20),
+    # Praise that has weight: slower than happy, not faster. Rushing a compliment kills it.
+    "proud":     (("喜び", "うれしい", "読み聞かせ", "ノーマル"), 0.98,  0.03, 1.20),
+    # Genuine puzzlement, not disapproval: near-neutral pitch, flatter, a touch slower.
+    "confused":  (("ノーマル", "おちつき"),      0.96,  0.01, 0.95),
 }
 
 
