@@ -159,7 +159,7 @@ async def run(args: argparse.Namespace) -> int:
 
     if args.listen:
         try:
-            await _listen(cfg, brain, voice, stt)
+            await _listen(cfg, brain, voice, stt, hub)
         finally:
             if voice is not None:
                 await voice.aclose()
@@ -269,7 +269,7 @@ async def _check_microphone(cfg) -> bool:
     return True
 
 
-async def _listen(cfg, brain, voice, stt) -> None:
+async def _listen(cfg, brain, voice, stt, hub=None) -> None:
     """Full voice loop: speak to him, he answers aloud (spec §2).
 
     Everything is already loaded by the time this runs — see the init block in `run()`.
@@ -329,6 +329,16 @@ async def _listen(cfg, brain, voice, stt) -> None:
                                 f"voice→voice {t.voice_to_voice_ms():.0f}ms · turn {t.total_ms:.0f}ms{RESET}\n"),
     )
     loop_ref["loop"] = loop
+
+    if hub is not None:
+        # The browser is a better push-to-talk button than the terminal, because a browser can
+        # see key RELEASE. `control: start`/`stop` are exactly the ptt edges (spec §8/§9), so
+        # holding the key there gives real hold-to-talk instead of the toggle a TTY is limited to.
+        # The terminal binding stays live as well — either can drive the same turn.
+        hub.on_control = lambda action: (
+            loop.ptt_begin() if action == "start" else
+            loop.ptt_end() if action == "stop" else None)
+
     device = cfg.AUDIO_INPUT_DEVICE or "system default"
     keys = _ptt_keys(loop, asyncio.get_running_loop()) if loop.ptt else None
     if loop.ptt:
