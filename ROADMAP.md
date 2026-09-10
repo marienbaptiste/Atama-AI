@@ -782,6 +782,16 @@ the same record is sent to the client as `timing`.
 - **Integrate** — `--profile` overlay and the session JSONL.
 - **Gate M3d (hard)** — **voice→voice p90 ≤ 3.0 s over 20 turns.** Fillers do not count toward
   meeting it. Missing this gate blocks M4.
+- **Harness: built 2026-09-10** — `python -m backend.tools.latency_run` (recorded clips → warm
+  Whisper → scripted line to a real session → first complete sentence → its synthesis, + 0.15 s
+  slack; opening turn reported separately). Still missing from the contract: the live `timing`
+  message, rolling p50/p90 in the session log, and ttft/thinking on voice turns.
+- **Baseline 2026-09-10 — FAIL.** sonnet, effort medium, tools on, 20 turns, app running alongside
+  (shared GPU): voice→voice **p50 3.49 s, p90 5.30 s**; stt p50/p90 0.51/0.61 s; Claude first
+  sentence **2.61/3.99 s**; tts 0.30/0.61 s; opening 3.98 s. The Claude stage tracks the model's
+  **thinking**: thinking p50 306 chars; the five turns with zero thinking ran 1.70–2.56 s
+  voice→voice, and the 730-char turn 8.29 s — roughly +0.5 s per 100 chars. `--effort medium`
+  does not keep thinking off (spec §10 requires it OFF). Rows: logs/latency/20260910-171340.jsonl.
 
 ### 11. VRAM instrumentation — cross-cutting — **M2 onward**
 

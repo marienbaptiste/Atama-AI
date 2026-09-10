@@ -54,6 +54,13 @@ CLAUDE_INIT_TIMEOUT_S = 30.0
 # opening-turn first-token: low 2.75s/8.6s, medium 2.14s/5.8s, high 3.75s/19.2s. Medium is both
 # faster AND more considered than low. The FIRST turn of a session is always far slower than the
 # rest (prompt-cache creation), which is why the opening turn is measured separately.
+# Thinking CANNOT be turned off on Sonnet (docs, read 2026-09-10): code.claude.com/docs/en/
+# model-config says Sonnet 5 "always uses adaptive reasoning" and that "the session toggle,
+# `alwaysThinkingEnabled`, and `MAX_THINKING_TOKENS=0` have no effect on Sonnet 5" — reasoning
+# there is set by --effort. `alwaysThinkingEnabled` (settings-reference) exists for other models;
+# `MAX_THINKING_TOKENS` is mentioned but NOT in the env-vars reference, so it is not relied on.
+# `claude --help` (2.1.159) exposes only --effort. Measured the same day at medium, 20 turns:
+# thinking p50 306 chars and the Claude stage tracks it (~+0.5 s per 100 chars) — see ROADMAP 10.
 # Even with the marker, keep --allowedTools on the three MCP names (ADR-021 belt-and-braces).
 # Observed stream types: system/init, system/status ({"status":"requesting"} before each API
 # call), rate_limit_event ({"rate_limit_info": {status, resetsAt, rateLimitType: "five_hour",

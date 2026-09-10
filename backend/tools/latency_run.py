@@ -150,8 +150,10 @@ async def one_turn(brain, tts, stt, clip, line: str) -> dict[str, Any]:
     chunker = SentenceChunker()
     sent = time.monotonic()
     first, claude_ms, thinking, ttft_ms, tool_ms, error = None, None, 0, None, None, ""
+    reply: list[str] = []            # the whole answer, so a faster setting can be judged on quality too
     async for ev in brain.turn(line):
         if isinstance(ev, TextDelta):
+            reply.append(ev.text)
             if first is None:
                 closed = chunker.push(ev.text)
                 if closed:
@@ -176,6 +178,7 @@ async def one_turn(brain, tts, stt, clip, line: str) -> dict[str, Any]:
     parts = (stt_ms, claude_ms, tts_ms)
     return {
         "student": line, "heard": transcript.text, "first_sentence": first.text if first else "",
+        "reply": "".join(reply).strip(),
         "stt_ms": round(stt_ms), "claude_ms": round(claude_ms) if claude_ms is not None else None,
         "tts_ms": round(tts_ms) if tts_ms is not None else None,
         "v2v_ms": round(sum(parts) + PLAYBACK_SLACK_MS) if None not in parts else None,

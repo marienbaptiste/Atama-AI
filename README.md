@@ -687,6 +687,25 @@ The rules that shape this codebase. Most were expensive to learn; they are docum
 
 ---
 
+## Measuring latency
+
+The hard number is **voice→voice p90 ≤ 3.0 s** (spec §10). Measure it without talking:
+
+```bash
+python -m backend.tools.latency_run                 # 20 turns with your current settings
+python -m backend.tools.latency_run --effort low    # compare one setting, same script
+python -m backend.tools.latency_run --model haiku --turns 10
+```
+
+It replays your recorded utterances (`logs/stt/corpus-*`) through Whisper, sends a scripted
+student line to a real tutor session, and times her first complete sentence and its synthesis.
+It prints p50/p90 per stage against the budget, keeps the opening turn out of the p90 (the first
+turn of a session pays prompt-cache creation), and writes every turn to `logs/latency/*.jsonl`.
+It uses your Claude subscription for the turns it runs, reads the study profile from the local
+cache only, and writes nothing to lesson memory.
+
+---
+
 ## Troubleshooting
 
 **`make doctor` says the claude CLI is not authenticated.** Run `claude` **on the backend
