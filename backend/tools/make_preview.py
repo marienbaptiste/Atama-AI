@@ -29,6 +29,9 @@ EMOTIONS = ("",) + chunker.EMOTIONS
 def main(argv: list[str]) -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     made, cast = 0, []
+    # Read BEFORE the loop: it re-loads config per persona with TUTOR_PERSONA overridden, so
+    # inside the loop this value is always whichever persona is being rendered.
+    configured = config.load().TUTOR_PERSONA
     for md in sorted((config.REPO_ROOT / "prompts").glob("*.md")):
         if md.stem == "tutor":
             continue
@@ -70,13 +73,19 @@ def main(argv: list[str]) -> int:
                       if prompt.declared_avatar(m.stem) == glb), md.stem)
         cast.append({"id": md.stem, "glb": glb, "own_face": own_face,
                      "body": "M" if owner in ("tanaka", "hayashi") else "F",
-                     "voice": style})
+                     "voice": style,
+                     # Which one the app is actually configured to be. Without this the page
+                     # opened on whichever persona sorted first — はやし, wearing a stand-in face,
+                     # while the tutor you were talking to was みなみ (2026-09-10).
+                     "configured": md.stem == configured})
         print(f"  {md.stem:8} style {style:3} -> {path.name} "
               f"({len(payloads)} emotions, {path.stat().st_size / 1e6:.1f} MB)"
               f"{'' if own_face else '  [stand-in face: ' + glb + ']'}")
     if not made:
         print("no persona declares both a voice and an avatar", file=sys.stderr)
         return 2
+    # Configured persona first, so the page opens on the tutor you are about to talk to.
+    cast.sort(key=lambda row: (not row["configured"], row["id"]))
     (OUT / "cast.json").write_text(json.dumps(cast, ensure_ascii=False), encoding="utf-8")
     print(f"\nopen frontend/public/preview.html over HTTP, e.g.\n"
           f"  python -m http.server 8778 --bind 127.0.0.1 --directory frontend/public")
