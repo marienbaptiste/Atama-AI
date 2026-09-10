@@ -229,12 +229,19 @@ make run                      # start EVERYTHING and open the avatar
 make stop                     # stop everything (containers included)
 ```
 
+**On Windows there is no `make`.** Use the wrappers, which do exactly the same thing:
+
+```powershell
+.un                          # start everything and open the avatar
+.\stop                         # stop everything
+```
+
 `make run` brings up the containers, waits until VOICEVOX genuinely answers rather than assuming
 it, starts the tutor with the browser avatar, and opens the page. **Hold SPACE and talk.**
 Ctrl+C stops the tutor and leaves the containers running — they are slow to start and cheap to
 keep, so `make stop` is separate and deliberate.
 
-No `make`? Every target is a plain command: `python -m backend.tools.up` and
+Neither works? Both are plain modules: `python -m backend.tools.up` and
 `python -m backend.tools.down`.
 
 Then open `http://localhost:5173`. On first run the app opens on its **settings page**: paste
