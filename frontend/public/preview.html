@@ -2,6 +2,8 @@
 <meta charset="utf-8">
 <title>Sensei preview</title>
 <style>
+  input[type=text],#word{font:12px system-ui;padding:5px 8px;background:#2a2e35;color:#e6e6e6;
+                         border:1px solid #3a3f47;border-radius:6px}
   html,body{margin:0;height:100%;background:#15171a;color:#e6e6e6;
             font:13px system-ui,-apple-system,sans-serif;overflow:hidden}
   #stage{position:fixed;inset:0}
@@ -68,6 +70,13 @@
     <label>height <input type="range" id="high" min="-0.6" max="1.2" step="0.02" value="0.38"><span id="highv">0.38</span></label>
     <label>offset <input type="range" id="offx" min="-1" max="1" step="0.02" value="-0.18"><span id="offxv">-0.18</span></label>
 
+    <h2>bubble</h2>
+    <div class="row">
+      <input id="word" placeholder="言葉" style="flex:1;min-width:0">
+      <button id="showword">show</button>
+      <button id="hideword">hide</button>
+    </div>
+
     <h2>stillness</h2>
     <div class="row">
       <button id="freeze">freeze all motion</button>
@@ -88,6 +97,7 @@
 </script>
 
 <script type="module">
+import * as THREE from "three";
 import { TalkingHead } from "talkinghead";
 
 // Read out of talkinghead.mjs on 2026-09-10, not the README: the README lists seven gestures and
@@ -210,6 +220,74 @@ const head = new TalkingHead($("stage"), {
 });
 
 let payloads = null, ctx = null, held = [], frozen = false;
+
+/* ---------------------------------------------------------------- word bubble
+   A real object in her scene rather than an HTML overlay, so it sits in her space, scales with
+   the camera and cannot drift out of alignment when the view moves. A Sprite because a sprite
+   always faces the camera — a plane would show you its edge the moment you orbit.
+
+   Drawn to a canvas at high resolution and downscaled by the texture filter: text baked into a
+   texture goes soft very quickly otherwise, and a blurry kanji is worse than no kanji.
+*/
+const BUBBLE = { w: 512, h: 256, sprite: null, canvas: null, texture: null, timer: 0 };
+
+function drawBubble(word) {
+  const c = BUBBLE.canvas, g = c.getContext("2d");
+  const W = c.width, H = c.height, r = 40, tail = 26;
+  g.clearRect(0, 0, W, H);
+
+  g.beginPath();                               // rounded box with a tail pointing left, at her
+  g.moveTo(r, 8);
+  g.lineTo(W - r, 8); g.quadraticCurveTo(W - 8, 8, W - 8, 8 + r);
+  g.lineTo(W - 8, H - 8 - r); g.quadraticCurveTo(W - 8, H - 8, W - 8 - r, H - 8);
+  g.lineTo(r + tail, H - 8); g.quadraticCurveTo(8 + tail, H - 8, 8 + tail, H - 8 - r);
+  g.lineTo(8 + tail, H * 0.62);
+  g.lineTo(8, H * 0.72);                       // the tail
+  g.lineTo(8 + tail, H * 0.50);
+  g.lineTo(8 + tail, 8 + r); g.quadraticCurveTo(8 + tail, 8, 8 + tail + r, 8);
+  g.closePath();
+  g.fillStyle = "rgba(250,250,252,0.96)";
+  g.fill();
+  g.lineWidth = 5; g.strokeStyle = "rgba(30,34,42,0.9)"; g.stroke();
+
+  // Shrink to fit rather than clip: a word that runs off the edge tells you nothing.
+  let size = 96;
+  g.textAlign = "center"; g.textBaseline = "middle";
+  do {
+    g.font = `600 ${size}px "Noto Sans JP", "Yu Gothic", system-ui, sans-serif`;
+    size -= 6;
+  } while (g.measureText(word).width > W - 110 && size > 24);
+  g.fillStyle = "#15171a";
+  g.fillText(word, (W + tail) / 2, H / 2);
+  BUBBLE.texture.needsUpdate = true;
+}
+
+function ensureBubble() {
+  if (BUBBLE.sprite) return;
+  BUBBLE.canvas = document.createElement("canvas");
+  BUBBLE.canvas.width = BUBBLE.w; BUBBLE.canvas.height = BUBBLE.h;
+  BUBBLE.texture = new THREE.CanvasTexture(BUBBLE.canvas);
+  BUBBLE.texture.colorSpace = THREE.SRGBColorSpace;
+  BUBBLE.texture.minFilter = THREE.LinearFilter;          // no mipmaps: keeps the text crisp
+  BUBBLE.sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: BUBBLE.texture, transparent: true, depthTest: false, depthWrite: false }));
+  BUBBLE.sprite.renderOrder = 10;                          // always in front of her
+  BUBBLE.sprite.scale.set(0.62, 0.31, 1);
+  BUBBLE.sprite.visible = false;
+  head.scene.add(BUBBLE.sprite);
+}
+
+function showWord(word, ms = 4000) {
+  if (!word) return;
+  ensureBubble();
+  drawBubble(word);
+  // Beside her head, on the side away from the control panel. avatarHeight is measured from the
+  // eye position when the avatar loads, so this follows a taller or shorter model.
+  BUBBLE.sprite.position.set(0.45, head.avatarHeight * 0.92, 0.15);
+  BUBBLE.sprite.visible = true;
+  clearTimeout(BUBBLE.timer);
+  BUBBLE.timer = setTimeout(() => { if (BUBBLE.sprite) BUBBLE.sprite.visible = false; }, ms);
+}
 
 function buttons(host, names, fn) {
   $(host).innerHTML = "";
@@ -377,6 +455,7 @@ async function speak(tag) {
   const bytes = Uint8Array.from(atob(p.audio_b64), c => c.charCodeAt(0));
   const buf = await ctx.decodeAudioData(bytes.buffer);
   applyRig(tag);
+  showWord(p.text, buf.duration * 1000 + 1200);
   // `words` is REQUIRED for supplied visemes to be read at all: in speakAudio the
   // `if (r.visemes)` branch is nested inside `if (r.words)`, while `if (r.audio)` sits outside —
   // omit it and you get audio with a frozen face. One span over the utterance opens the gate
@@ -424,6 +503,13 @@ $("freeze").onclick = () => {
   log(frozen ? "motion frozen — this halts the whole render loop, so lip-sync stops too"
              : "motion resumed");
 };
+
+$("showword").onclick = () => showWord($("word").value.trim() || "こんにちは", 8000);
+$("hideword").onclick = () => { if (BUBBLE.sprite) BUBBLE.sprite.visible = false; };
+$("word").addEventListener("keydown", e => {
+  if (e.key === "Enter") $("showword").click();
+  e.stopPropagation();                 // SPACE typed here is a space, not push-to-talk
+});
 
 $("recentre").onclick = () => { reframe(); log("camera recentred on the upper body"); };
 
@@ -474,6 +560,8 @@ async function playSpeak(msg) {
   const bytes = Uint8Array.from(atob(msg.audio_b64), c => c.charCodeAt(0));
   const buf = await ctx.decodeAudioData(bytes.buffer);
   applyRig(msg.emotion || "neutral");
+  // Her own sentence in the bubble, for as long as the audio lasts plus a beat to read it.
+  showWord(msg.text, buf.duration * 1000 + 1200);
   head.speakAudio({ audio: buf, words: [msg.text || " "], wtimes: [0],
                     wdurations: [buf.duration * 1000],
                     visemes: msg.visemes, vtimes: msg.vtimes, vdurations: msg.vdurations });
