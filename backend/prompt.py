@@ -119,6 +119,36 @@ def declared_avatar(name_or_path: str | Path | None = None) -> str | None:
     return match.group(1) if match else None
 
 
+def avatar_dir() -> Path:
+    return config.REPO_ROOT / "frontend" / "public"
+
+
+def resolved_avatar(name_or_path: str | Path | None = None) -> tuple[str | None, bool]:
+    """(GLB actually usable for this persona, whether it is the one they declared).
+
+    A persona declares the face it is written for, but only one avatar is commissioned so far.
+    Rendering nothing because たなか has no model of his own is the wrong failure: the lesson is
+    the point, and the wrong face is better than no face. So an absent declaration falls back to
+    whichever avatar does exist, and the flag says it is a stand-in — callers can say so rather
+    than pretending.
+
+    Drop the real `tanaka.glb` in later and this starts returning it, with no code change.
+    """
+    declared = declared_avatar(name_or_path)
+    directory = avatar_dir()
+    if declared and (directory / declared).is_file():
+        return declared, True
+    # Prefer the DEFAULT persona's face as the stand-in, not whatever sorts first: the default is
+    # the one guaranteed to be present (`make avatar` fetches it), so the fallback is predictable
+    # rather than alphabetical.
+    fallback = declared_avatar(DEFAULT_PERSONA)
+    if fallback and (directory / fallback).is_file():
+        return fallback, False
+    for candidate in sorted(directory.glob("*.glb")):
+        return candidate.name, False
+    return None, False
+
+
 def load_soul(path: Path | None = None, name: str | None = None) -> str:
     """Sensei's persona, or a neutral default when the file is absent (ADR-026)."""
     text = _strip_comments(_read(path or persona_path(name))).strip()

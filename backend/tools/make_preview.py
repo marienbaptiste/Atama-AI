@@ -26,11 +26,12 @@ EMOTIONS = ("", "happy", "thinking", "surprised", "serious")
 
 def main(argv: list[str]) -> int:
     OUT.mkdir(parents=True, exist_ok=True)
-    made = 0
+    made, cast = 0, []
     for md in sorted((config.REPO_ROOT / "prompts").glob("*.md")):
         if md.stem == "tutor":
             continue
-        glb, style = prompt.declared_avatar(md.stem), prompt.declared_voice(md.stem)
+        style = prompt.declared_voice(md.stem)
+        glb, own_face = prompt.resolved_avatar(md.stem)
         if not glb or style is None:
             continue
         cfg = config.load(env={"VOICEVOX_SPEAKER": str(style), "TUTOR_PERSONA": md.stem})
@@ -61,11 +62,20 @@ def main(argv: list[str]) -> int:
         path = OUT / f"{md.stem}.speak.json"
         path.write_text(json.dumps(payloads), encoding="utf-8")
         made += 1
+        # `body` describes the MODEL, not the character: a male persona wearing the stand-in
+        # should get her idle animations, or the poses fight the mesh.
+        owner = next((m.stem for m in sorted((config.REPO_ROOT / "prompts").glob("*.md"))
+                      if prompt.declared_avatar(m.stem) == glb), md.stem)
+        cast.append({"id": md.stem, "glb": glb, "own_face": own_face,
+                     "body": "M" if owner in ("tanaka", "hayashi") else "F",
+                     "voice": style})
         print(f"  {md.stem:8} style {style:3} -> {path.name} "
-              f"({len(payloads)} emotions, {path.stat().st_size / 1e6:.1f} MB)")
+              f"({len(payloads)} emotions, {path.stat().st_size / 1e6:.1f} MB)"
+              f"{'' if own_face else '  [stand-in face: ' + glb + ']'}")
     if not made:
         print("no persona declares both a voice and an avatar", file=sys.stderr)
         return 2
+    (OUT / "cast.json").write_text(json.dumps(cast, ensure_ascii=False), encoding="utf-8")
     print(f"\nopen frontend/public/preview.html over HTTP, e.g.\n"
           f"  python -m http.server 8778 --bind 127.0.0.1 --directory frontend/public")
     return 0

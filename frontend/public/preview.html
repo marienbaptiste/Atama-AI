@@ -72,13 +72,13 @@ const GESTURES = ["handup","index","ok","thumbup","thumbdown","side","shrug","na
 const POSES    = ["side","hip","turn","bend","back","straight","wide","oneknee","kneel","sitting"];
 const EMOJIS   = ["yes","no"];          // nod / shake — spec §8's あいづち listening reaction
 
-// persona -> the GLB it declares, mirroring prompts/<persona>.md (ADR-026: one character choice)
-const CAST = [
-  { id:"minami",  glb:"minami.glb",  body:"F", label:"みなみ先生 — female teacher" },
-  { id:"hayashi", glb:"hayashi.glb", body:"M", label:"はやし先生 — younger man" },
-  { id:"mori",    glb:"yui.glb",     body:"F", label:"ゆい — teenager" },
-  { id:"tanaka",  glb:"tanaka.glb",  body:"M", label:"たなか先生 — older man" },
-];
+// The cast comes from cast.json, which backend.tools.make_preview writes from the persona files
+// themselves — so this page cannot drift from what prompts/<persona>.md actually declares.
+// Personas without their own commissioned model fall back to the default persona's face and are
+// marked as a stand-in rather than silently pretending (backend/prompt.py: resolved_avatar).
+const LABELS = { minami:"みなみ先生 — female teacher", hayashi:"はやし先生 — younger man",
+                 mori:"ゆい — teenager", tanaka:"たなか先生 — older man" };
+let CAST = [];
 
 // Spec §8's emotion -> rig table. Only neutral and happy are real TalkingHead moods (V0.4), so
 // the other three ride on `neutral` plus ARKit blendshapes pinned with setFixedValue.
@@ -136,7 +136,7 @@ function draw(key, pool) {
 
 const $ = id => document.getElementById(id);
 const log = m => { $("log").innerHTML = m; };
-CAST.forEach(c => $("who").add(new Option(c.label, c.id)));
+
 
 const head = new TalkingHead($("stage"), {
   // Constructor THROWS on a falsy ttsEndpoint (talkinghead.mjs:813) even though we never call
@@ -185,6 +185,20 @@ let settleTimer = null, restTimer = null;
  */
 function meetEye(ms = 600) { try { head.lookAtCamera(ms); } catch (e) {} }
 
+/** setPoseFromTemplate takes the TEMPLATE OBJECT, not its name.
+ *
+ *  Its parameter is documented as `{Object} template` and internally it is always called as
+ *  setPoseFromTemplate(this.poseTemplates[name]) — passing the string makes poseFactory throw on
+ *  a value that has no `.props`. Worth stating because the obvious call site reads naturally and
+ *  fails silently if you wrap it in a try/catch, which is exactly what happened (2026-09-10).
+ */
+function setPose(name, ms = 1200) {
+  const template = head.poseTemplates && head.poseTemplates[name];
+  if (!template) { log('<span class="err">unknown pose: ' + name + "</span>"); return false; }
+  head.setPoseFromTemplate(template, ms);
+  return true;
+}
+
 //: Keep finding the camera again between turns, or she drifts off during long silences.
 setInterval(() => { if (Math.random() < 0.7) meetEye(900); }, 4000);
 
@@ -196,10 +210,7 @@ function settleSoon() {
     head.setMood("neutral");
     log(($("log").innerHTML || "") + "<br><i>settled to neutral</i>");
   }, SETTLE_AFTER_MS);
-  restTimer = setTimeout(() => {
-    const rest = draw("rest", REST_POSES);
-    try { head.setPoseFromTemplate(rest, 2500); } catch (e) {}
-  }, REST_AFTER_MS);
+  restTimer = setTimeout(() => { setPose(draw("rest", REST_POSES), 2500); }, REST_AFTER_MS);
 }
 
 //: Which hand last gestured. TalkingHead's `mirror` argument is false for the LEFT hand and
@@ -240,9 +251,7 @@ function applyRig(name) {
 
   if (Math.random() < (r.poseChance ?? 0)) {
     const pose = draw(name + ":pose", r.poses);
-    if (pose) {
-      try { head.setPoseFromTemplate(pose, 1200); lastMotion.pose = pose; } catch (e) {}
-    }
+    if (pose && setPose(pose, 1200)) lastMotion.pose = pose;
   }
   if (Math.random() < (r.gestureChance ?? 0)) {
     const gesture = draw(name + ":gesture", r.gestures);
@@ -293,10 +302,7 @@ buttons("gestures", GESTURES.concat(["stop"]), g => {
       + (right ? "right" : "left") + " hand");
 });
 
-buttons("poses", POSES, p => {
-  try { head.setPoseFromTemplate(p, 1200); log("posture <b>" + p + "</b>"); }
-  catch (e) { log('<span class="err">pose ' + p + ": " + e + "</span>"); }
-});
+buttons("poses", POSES, p => { if (setPose(p, 1200)) log("posture <b>" + p + "</b>"); });
 
 buttons("emojis", EMOJIS, e => {
   head.playGesture(e, 2, false, 400);
@@ -316,12 +322,14 @@ $("freeze").onclick = () => {
 $("reset").onclick = () => {
   clearShapes();
   head.setMood("neutral");
-  try { head.setPoseFromTemplate("straight", 800); } catch (e) {}
+  setPose("straight", 800);
+  meetEye(400);
   log("reset to neutral");
 };
 
 async function pick(id) {
   const c = CAST.find(x => x.id === id);
+  if (!c) return;
   payloads = null;
   $("emotions").innerHTML = "";
   log("loading " + c.glb + "…");
@@ -340,9 +348,23 @@ async function pick(id) {
     return;
   }
   buttons("emotions", Object.keys(RIG), speak);
-  log("<b>" + c.glb + "</b> ready · audio VOICEVOX · visemes ours · times in ms");
+  log("<b>" + c.glb + "</b>" + (c.own_face ? "" : " <i>(stand-in — this persona has no model yet)</i>")
+      + "<br>voice " + c.voice + " · audio VOICEVOX · visemes ours · times in ms");
 }
 
 $("who").onchange = () => pick($("who").value);
-pick(CAST[0].id);
+
+(async function boot() {
+  try {
+    CAST = await (await fetch("cast.json")).json();
+  } catch (e) {
+    log('<span class="err">no cast.json</span> — run <code>make_preview</code>');
+    return;
+  }
+  for (const c of CAST) {
+    const label = (LABELS[c.id] || c.id) + (c.own_face ? "" : "  (stand-in face)");
+    $("who").add(new Option(label, c.id));
+  }
+  pick(CAST[0].id);
+})();
 </script>
