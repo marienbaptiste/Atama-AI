@@ -119,3 +119,13 @@ def test_rms_distinguishes_silence_from_speech():
 def test_transcript_is_falsy_when_rejected():
     assert not Transcript(text="x", accepted=False)
     assert Transcript(text="x", accepted=True)
+
+
+def test_a_quiet_headset_is_judged_against_its_own_room_not_a_fixed_level():
+    """2026-09-10: speech at rms ~0.003 counted as "quiet" by the fixed 0.012, so a routine
+    no_speech_prob of 0.67 threw a real answer away. Measured against the room, it is speech."""
+    import numpy as np
+    soft = (np.sin(np.arange(16000) / 7.0) * 0.0045).astype(np.float32)   # rms about 0.003
+    s = speaker("元気です、いかがですか", no_speech=0.67, avg_logprob=-0.3)
+    assert not s.listen(soft)                            # the fixed rule: rejected
+    assert s.listen(soft, quiet_rms=0.0001)              # the room's own level: accepted

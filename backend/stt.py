@@ -151,8 +151,14 @@ class SpeechToText:
         no_speech = max(s.no_speech_prob for s in segments)
         return text, avg_logprob, no_speech
 
-    def listen(self, audio: np.ndarray) -> Transcript:
-        """Transcribe one utterance, discarding what the model clearly invented."""
+    def listen(self, audio: np.ndarray, quiet_rms: float = QUIET_RMS) -> Transcript:
+        """Transcribe one utterance, discarding what the model clearly invented.
+
+        `quiet_rms` is what near-silence means for the microphone in use. The fixed QUIET_RMS
+        assumes a loud one: on a headset whose speech arrives at rms 0.003-0.004, every sentence
+        counted as "quiet", so a routine no_speech_prob of 0.67 threw real answers away
+        (2026-09-10). The voice loop passes a level measured from the room itself.
+        """
         if not self.ready:
             raise RuntimeError("SpeechToText.load() was never called")
         started = time.monotonic()
@@ -164,11 +170,11 @@ class SpeechToText:
 
         if not text:
             return self._reject(result, "empty")
-        if normalise(text) in self.blocklist and level < QUIET_RMS:
+        if normalise(text) in self.blocklist and level < quiet_rms:
             # The phrase alone is not enough: a student really can say ありがとうございました.
             return self._reject(result, "blocklisted phrase on near-silent audio")
-        if no_speech > MAX_NO_SPEECH_PROB and (level < QUIET_RMS or avg_logprob < CORROBORATING_AVG_LOGPROB):
-            why = "quiet audio" if level < QUIET_RMS else f"avg_logprob {avg_logprob:.2f}"
+        if no_speech > MAX_NO_SPEECH_PROB and (level < quiet_rms or avg_logprob < CORROBORATING_AVG_LOGPROB):
+            why = "quiet audio" if level < quiet_rms else f"avg_logprob {avg_logprob:.2f}"
             return self._reject(result, f"no_speech_prob {no_speech:.2f} + {why}")
         if avg_logprob < MIN_AVG_LOGPROB:
             return self._reject(result, f"avg_logprob {avg_logprob:.2f}")
