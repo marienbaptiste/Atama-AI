@@ -23,12 +23,16 @@ from backend.audio import SAMPLE_RATE
 from backend.brain import BrainError, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome, TurnComplete
 from backend.chunker import SentenceChunker
 from backend.speaker import SpeechQueue
-from backend.stt import SpeechToText, Transcript
+from backend.stt import QUIET_RMS, SpeechToText, Transcript
 from backend.vad import FRAME_SAMPLES, EventKind, Mode, VoiceActivityDetector
 
 
 def vad_frame_samples() -> int:
     return FRAME_SAMPLES
+
+
+#: Audio this many times above the room's own level is not "quiet" (see VoiceLoop.quiet_rms).
+QUIET_OVER_FLOOR = 4.0
 
 
 @dataclass
@@ -73,6 +77,8 @@ class VoiceLoop:
     on_bargein: Callable[[], None] | None = None
     #: (level, speech probability) per frame — so the user can SEE that they are being heard.
     on_level: Callable[[float, float], None] | None = None
+    #: (state, detail) when the microphone changes: ok | fallback | missing | lost (spec §9).
+    on_device: Callable[[str, str], None] | None = None
 
     _frames: asyncio.Queue | None = field(default=None, init=False)
     _stop: threading.Event = field(default_factory=threading.Event, init=False)
@@ -87,6 +93,11 @@ class VoiceLoop:
     dropped_frames: int = field(default=0, init=False)
     frames_seen: int = field(default=0, init=False)
     capture_error: str = field(default="", init=False)
+    mic_state: str = field(default="", init=False)
+    #: The room's own level between turns, for this microphone (see `quiet_rms`).
+    _floor: float | None = field(default=None, init=False)
+    #: Set to make the mic thread reopen at the next quiet moment (see `reopen_mic`).
+    _wake: threading.Event = field(default_factory=threading.Event, init=False)
     _ptt_open: bool = field(default=False, init=False)
     _ptt_buf: list = field(default_factory=list, init=False)
     timings: list[TurnTiming] = field(default_factory=list, init=False)
@@ -109,8 +120,13 @@ class VoiceLoop:
                 if self._ptt_open:
                     self._ptt_buf.append(frame)
                 events = self.vad.push(frame)
+                level = float(np.sqrt(np.mean(np.square(frame))))
+                prob = getattr(self.vad, "last_probability", 0.0)
+                if not self._ptt_open and not self._speaking and prob < 0.2:
+                    # The room between turns: what "quiet" means for THIS microphone.
+                    self._floor = level if self._floor is None else 0.98 * self._floor + 0.02 * level
                 if self.on_level is not None and not self._speaking:
-                    self.on_level(float(np.sqrt(np.mean(np.square(frame)))), self.vad.last_probability)
+                    self.on_level(level, prob)
                 for event in events:
                     await self._handle(event)
         finally:
@@ -180,16 +196,66 @@ class VoiceLoop:
             return                      # one turn at a time, same rule as vad mode
         self._turn_task = asyncio.get_running_loop().create_task(self._turn(audio))
 
+    def quiet_rms(self) -> float:
+        """What counts as near-silence for THIS microphone, for the STT's hallucination filter.
+
+        A few times the room's own level, never below digital silence, and never stricter than
+        the fixed QUIET_RMS it replaces — which assumed a loud microphone and, on a quiet headset
+        (speech at rms 0.003), rejected real sentences as silence (2026-09-10).
+        """
+        if self._floor is None:
+            return QUIET_RMS
+        return min(QUIET_RMS, max(audio_mod.SILENT_RMS * 2, self._floor * QUIET_OVER_FLOOR))
+
+    def ask(self, text: str) -> None:
+        """Start a turn from text, not speech (the page's New topic button). If she is talking
+        or thinking, that is interrupted first — the student asked for something else."""
+        if self._turn_task is not None and not self._turn_task.done():
+            self.voice.cancel()
+            self._turn_task.cancel()
+            if self._speaking and self.on_bargein is not None:
+                self.on_bargein()
+            self._speaking = False
+            self.vad.enter(Mode.LISTENING)
+        self._turn_task = asyncio.get_running_loop().create_task(self._turn_text(text))
+
+    def reopen_mic(self, device: str | int | None = None, *, changed: bool = False) -> None:
+        """Reopen the microphone at the next quiet moment (never mid push-to-talk).
+
+        `changed`: the settings panel picked a different device — use it now. Otherwise this is
+        the device watcher saying the list changed, which only matters while we are on the
+        system default because the chosen device was missing: it may be back.
+        """
+        if changed:
+            self.input_device = device
+            self._wake.set()
+        elif self.mic_state == "fallback":
+            self._wake.set()
+
     def stop(self) -> None:
         self._stop.set()
 
     # ------------------------------------------------------------------- inner
     def _capture(self, loop: asyncio.AbstractEventLoop) -> None:
         """Mic thread: PortAudio reads are blocking, so they never touch the event loop."""
+        def status(state: str, detail: str) -> None:
+            # Called on this thread; the callback belongs to the event loop.
+            self.mic_state = state
+            self.capture_error = detail if state in ("missing", "lost") else ""
+            if self.on_device is not None:
+                try:
+                    loop.call_soon_threadsafe(self.on_device, state, detail)
+                except RuntimeError:
+                    pass
+
         try:
             # Frames must be exactly Silero's window (512 samples @ 16 kHz); the VAD is stateful
             # and a different size silently degrades its judgement rather than erroring.
-            for frame in audio_mod.capture(self.input_device, frame_samples=vad_frame_samples()):
+            # Resilient: an unplugged or absent mic is waited for, not fatal (spec §9). Probing
+            # for a returning device never happens while push-to-talk is held.
+            for frame in audio_mod.capture_resilient(
+                    lambda: self.input_device, frame_samples=vad_frame_samples(), stop=self._stop,
+                    on_status=status, idle=lambda: not self._ptt_open, wake=self._wake):
                 if self._stop.is_set():
                     break
                 try:
@@ -259,7 +325,7 @@ class VoiceLoop:
         self._state("thinking")
 
         started = time.monotonic()
-        transcript = await asyncio.to_thread(self.stt.listen, audio)
+        transcript = await asyncio.to_thread(self.stt.listen, audio, self.quiet_rms())
         timing = TurnTiming(speech_end_at=heard_at, stt_ms=(time.monotonic() - started) * 1000.0,
                             transcript=transcript.text)
         if self.on_transcript is not None:
@@ -268,7 +334,15 @@ class VoiceLoop:
             self._state("listening")
             self.vad.enter(Mode.LISTENING)
             return
+        await self._reply(transcript.text, heard_at, timing)
 
+    async def _turn_text(self, text: str) -> None:
+        """A turn that starts from text instead of speech — the page's New topic button."""
+        heard_at = time.monotonic()
+        self._state("thinking")
+        await self._reply(text, heard_at, TurnTiming(speech_end_at=heard_at))
+
+    async def _reply(self, text: str, heard_at: float, timing: TurnTiming) -> None:
         chunker = SentenceChunker()
         self.voice.resume()          # clear any latched barge-in, or this turn is silent
         self._speaking = True
@@ -290,7 +364,7 @@ class VoiceLoop:
                 self._state("speaking")
 
         try:
-            async for ev in self.brain.turn(transcript.text):  # type: ignore[attr-defined]
+            async for ev in self.brain.turn(text):  # type: ignore[attr-defined]
                 if isinstance(ev, TextDelta):
                     await emit(chunker.push(ev.text))
                 elif isinstance(ev, (Thinking, ToolCall, ToolOutcome, RateLimited, BrainError)):

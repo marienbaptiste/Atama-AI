@@ -430,7 +430,7 @@ Capping it is cheaper than rotating more often.
 
 - TalkingHead init with the GLB avatar, lipsyncModules can be empty (we always pass visemes explicitly).
 - WebSocket client with auto-reconnect. Message protocol (define as typed constants shared in one place, mirrored in Python pydantic models; a contract test asserts the two sets are identical):
-  - client→server: `audio_chunk` (base64 PCM16), `control` (`start`, `stop`, `bargein_ack`, `resync`, `quit` — `start`/`stop` are the push-to-talk edges; `quit` shuts the orchestrator down cleanly from the page, and is deliberately not `stop`), `settings` (partial update of **any** key in the `config.py` schema, secrets included — §11; the server validates, persists to `settings.json`, applies live where possible, and replies with the applied `settings` echo in which secrets appear only as `{set, hint}`. `model` takes effect by respawning the claude subprocess with `--resume`, reported via `service_status: claude=restarting`; token changes re-run the session-start SRS fetch), `settings_test` (`{service}` — runs that service's real check and reports through `service_status`).
+  - client→server: `audio_chunk` (base64 PCM16), `control` (`start`, `stop`, `bargein_ack`, `resync`, `quit` — `start`/`stop` are the push-to-talk edges; `quit` shuts the orchestrator down cleanly from the page, and is deliberately not `stop`; `new_topic` is the page's New topic button — she drops the subject, interrupting herself if need be, and searches for a fresh one exactly as if the student had said 「話題を変えて」), `settings` (partial update of **any** key in the `config.py` schema, secrets included — §11; the server validates, persists to `settings.json`, applies live where possible, and replies with the applied `settings` echo in which secrets appear only as `{set, hint}`. `model` takes effect by respawning the claude subprocess with `--resume`, reported via `service_status: claude=restarting`; token changes re-run the session-start SRS fetch), `settings_test` (`{service}` — runs that service's real check and reports through `service_status`).
   - server→client: `state` (`listening|thinking|speaking`), `stt_final`, `assistant_text` (for subtitle display), `speak` (`{audio_b64, visemes[], vtimes[], vdurations[], text, emotion}`), `emotion`, `bargein`, `srs_profile` (for a collapsible debug panel), `service_status` (§5b), `settings` (echo), `timing` (per-turn stage breakdown, §10), `error`. `stt_partial` is **reserved**: STT runs on complete utterances, so partials are not produced in M2–M5; the type exists so a streaming-STT experiment does not need a protocol change.
 - UI: avatar full-viewport, waist-up camera framing; subtitle strip (toggle: JP / off — there is no English text source, since the tutor speaks only Japanese and 「英語で」 already gets an English explanation *spoken*; an EN subtitle mode would need a translation path and its latency cost, so it is explicitly out of scope until someone asks for it); mic state indicator; session timer; **service status bar** (§5b); settings drawer (voice speed, VAD sensitivity, model, subtitles); a one-line "headphones recommended" hint until the first successful barge-in.
 - Idle life: auto-blink (random 2–6 s), subtle procedural sway, `lookAt` camera. **Eye contact is held at ~0.9 idle and speaking** (`avatarIdleEyeContact` / `avatarSpeakingEyeContact`, both [0,1]): TalkingHead defaults to 0.2/0.5, which makes the tutor look away most of the time and reads as evasive rather than attentive. Not 1.0 — unbroken eye contact is a stare (verified 2026-09-10). **Listening reactions:** while `state=listening` and the server reports speech (VAD `speech_start`), the avatar shifts to an attentive pose and gives a small nod on each detected pause ≥ 300 ms — the あいづち a human tutor would give. While `thinking`, a subtle "considering" idle (gaze up-and-away, slight head tilt).
@@ -503,6 +503,24 @@ Heavier sibling of §9b, for a lesson that has gone wrong rather than one bad se
   Whisper and the SRS sync are not part of the conversation.
 - The session log records the clear as an event rather than starting a new file, so an abandoned
   attempt is still minable afterwards (§15).
+
+### Audio devices come and go (added 2026-09-10, user request)
+A headset is unplugged mid-lesson, or is not there at launch and arrives later. Neither may end
+the session, and neither may need a relaunch.
+- **Missing at launch is not fatal.** The launch check warns and starts; the microphone thread
+  waits (`missing`, retried every 2 s) and picks a device up the moment one appears.
+- **Pulled out mid-session** (`PortAudioError` on read/write): the stream is closed and reopened
+  on whatever is connected — the chosen device if it is back, else the system default.
+- **Chosen device missing → system default**, reported as `fallback`; when it returns, the app
+  switches back at the next idle moment, never while push-to-talk is held. "System default" is
+  Windows' MME Sound Mapper where present, because it routes to the OS default device.
+- **The list is watched from a child process** (`backend/device_watch.py`, every 2 s). PortAudio
+  snapshots devices at initialisation, and re-initialising it in the app would kill the open
+  microphone stream; a child with no streams can re-initialise freely. The settings panel's
+  pickers refresh from it, and changing the input or output device there applies live.
+- Every change is reported as `service_status: microphone` to the page and the terminal.
+- Verified with a fake PortAudio (hermetic tests). **Not yet observed live:** an actual unplug and
+  replug, and whether an open Sound Mapper stream follows a change of the OS default.
 
 ## 10. LATENCY BUDGET — HARD REQUIREMENT: ≤ 3.0 s voice→voice (instrument it — log per-turn timings as structured JSON)
 

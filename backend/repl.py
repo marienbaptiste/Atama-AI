@@ -36,6 +36,10 @@ DIM, BOLD, RESET = "\033[2m", "\033[1m", "\033[0m"
 #: Not something the student said — the cue that a session has begun, so Sensei opens it (§5c).
 #: Deliberately neutral: HOW to open (offer to continue last time, or find news) is tutor.md's.
 OPENING_NUDGE = "（セッション開始。あいさつして、始めてください。）"
+#: The page's New topic button. The same words tutor.md tells her to treat as 「話題を変えて」.
+TOPIC_NUDGE = "（話題を変えて）"
+#: After a live tutor change: the new person introduces themselves and carries on the lesson.
+TUTOR_NUDGE = "（先生が交代しました。新しい先生として自己紹介して、レッスンを続けてください。）"
 
 
 def _emotion_tag(emotion: str) -> str:
@@ -179,9 +183,33 @@ async def run(args: argparse.Namespace) -> int:
     if not args.no_open:
         await _one_turn(brain, OPENING_NUDGE, voice, mem=mem, opening=True)
 
+    async def switch_persona(name: str):
+        """Live tutor change (settings panel): a fresh session with the new persona, speaking in
+        the voice that persona declares (ADR-030). Returns the started brain. The old one keeps
+        answering until this one is up, so a failed switch leaves a tutor rather than nobody."""
+        nonlocal brain
+        fresh = config.load()
+        text = prompt.build(profile_text, persona=name, memory=memory_text).text
+        new = brain_api.create(fresh, registry=registry, mcp_config=mcp_json,
+                               mcp_ready_markers=mcp_config.markers(fresh) if mcp_json else None,
+                               system_prompt=text, allowed_tools=tools)
+        await new.start()
+        if voice is not None:
+            tts_new = VoicevoxClient.from_config(fresh)
+            try:
+                await asyncio.to_thread(tts_new.warm_up)
+            except VoicevoxError:
+                pass                  # the first sentence pays for loading the style instead
+            voice.tts = tts_new
+        old, brain = brain, new
+        if mem is not None:
+            mem.session_id = new.session_id
+        await old.aclose()
+        return new
+
     if args.listen:
         try:
-            await _listen(cfg, brain, voice, stt, hub, mem)
+            await _listen(cfg, brain, voice, stt, hub, mem, switch_persona)
         finally:
             if voice is not None:
                 await voice.aclose()
@@ -274,9 +302,12 @@ async def _check_microphone(cfg) -> bool:
     from backend import audio as audio_mod
     try:
         level = await asyncio.to_thread(audio_mod.input_level, cfg.AUDIO_INPUT_DEVICE, 1.0)
-    except audio_mod.AudioUnavailable as exc:
-        print(f"{BOLD}no microphone:{RESET} {exc}", file=sys.stderr)
-        return False
+    except Exception as exc:  # noqa: BLE001 - AudioUnavailable, or PortAudioError with no mic at all
+        # Not fatal any more (spec §9): the voice loop waits for a microphone and picks one up
+        # the moment it is plugged in. Aborting here meant relaunching for a USB cable.
+        print(f"{BOLD}no microphone yet{RESET} ({type(exc).__name__}) - starting anyway; plug one "
+              f"in and it will be picked up.", file=sys.stderr)
+        return True
     device = cfg.AUDIO_INPUT_DEVICE or "system default"
     if level < audio_mod.SILENT_RMS:
         print(f"\n{BOLD}The microphone ({device}) looks muted{RESET} — rms {level:.6f} over one second, "
@@ -291,7 +322,7 @@ async def _check_microphone(cfg) -> bool:
     return True
 
 
-async def _listen(cfg, brain, voice, stt, hub=None, mem=None) -> None:
+async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=None) -> None:
     """Full voice loop: speak to him, he answers aloud (spec §2).
 
     Everything is already loaded by the time this runs — see the init block in `run()`.
@@ -312,7 +343,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None) -> None:
 
     # A live meter on the prompt line: the difference between "it is not hearing me" and
     # "it heard me and decided that was not speech" should never be a guess.
-    meter_state = {"last": 0.0, "peak": 0.0}
+    meter_state = {"last": 0.0, "peak": 0.0, "sent": 0.0}
     #: The meter needs the loop to show push-to-talk state, and the loop is built below.
     loop_ref: dict = {"loop": None}
 
@@ -324,6 +355,9 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None) -> None:
         meter_state["last"] = now
         peak = meter_state["peak"]
         meter_state["peak"] = peak * 0.45                       # ~decays to nothing in 0.2 s
+        if hub is not None and now - meter_state["sent"] >= 0.1:   # the page's meter: 10 Hz is plenty
+            meter_state["sent"] = now
+            asyncio.get_running_loop().create_task(hub.level(peak, prob))
         # Quiet mics are the norm here (this one peaks around 0.02 on speech), so scale by the
         # square root: a linear bar on a 0-1 range barely twitches and reads as "not hearing you".
         bars = int(min(1.0, (peak * 30) ** 0.5) * 28)
@@ -351,6 +385,63 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None) -> None:
                                 f"voice→voice {t.voice_to_voice_ms():.0f}ms · turn {t.total_ms:.0f}ms{RESET}\n"),
     )
     loop_ref["loop"] = loop
+
+    def device_changed(state: str, detail: str) -> None:
+        # Unplugged, missing at launch, back again, or on the default instead of the chosen one:
+        # say so on both screens, or a dead mic is indistinguishable from a quiet student.
+        mark = BOLD if state in ("missing", "lost") else DIM
+        print(chr(13) + mark + "[microphone " + state + "] " + detail + RESET + " " * 10, flush=True)
+        if hub is not None:
+            asyncio.get_running_loop().create_task(hub.status("microphone", state, detail))
+
+    loop.on_device = device_changed
+
+    from backend import settings_view
+    from backend.device_watch import DeviceWatch
+
+    def devices_changed(options: dict) -> None:
+        # Plugged in or pulled out (spec §9): refresh the panel's pickers, and if we are on the
+        # default only because the chosen mic was missing, go and get it.
+        settings_view.latest = options
+        loop.reopen_mic()
+        if hub is not None:
+            asyncio.get_running_loop().create_task(hub.push_settings())
+
+    watch = DeviceWatch(devices_changed)
+    await watch.start()
+
+    async def change_tutor(name: str) -> None:
+        # A different person is about to speak: stop the current one, bring up the new persona
+        # and voice, then let them introduce themselves. Used to wait for the next launch, so the
+        # panel's tutor cards seemed to do nothing (2026-09-10).
+        await hub.status("tutor", "switching", f"switching to {name}...", remember=False)
+        print(chr(13) + BOLD + "[tutor] switching to " + name + RESET + " " * 20, flush=True)
+        if loop._turn_task is not None and not loop._turn_task.done():
+            loop.voice.cancel()
+            loop._turn_task.cancel()
+        try:
+            loop.brain = await switch_persona(name)
+        except Exception as exc:  # noqa: BLE001 - the old tutor carries on rather than nobody
+            print(chr(13) + BOLD + "[tutor] could not switch: " + f"{type(exc).__name__}: {exc}"
+                  + RESET, flush=True)
+            await hub.status("tutor", "failed", f"could not switch to {name} - "
+                             f"{type(exc).__name__}", remember=False)
+            return
+        await hub.status("tutor", "ok", f"now teaching: {name}", remember=False)
+        loop.ask(TUTOR_NUDGE)
+
+    if hub is not None:
+        def settings_saved(keys: list[str]) -> None:
+            # settings_view.LIVE: devices and the tutor take effect now; the rest at next launch.
+            fresh = config.load()
+            if "AUDIO_INPUT_DEVICE" in keys:
+                loop.reopen_mic(fresh.AUDIO_INPUT_DEVICE, changed=True)
+            if "AUDIO_OUTPUT_DEVICE" in keys:
+                voice.set_device(fresh.AUDIO_OUTPUT_DEVICE)
+            if "TUTOR_PERSONA" in keys and switch_persona is not None:
+                asyncio.get_running_loop().create_task(change_tutor(str(fresh.TUTOR_PERSONA)))
+
+        hub.on_settings = settings_saved
 
     if mem is not None:
         # Record in the speaking gap: on_turn fires from _turn's finally, after TurnComplete, so
@@ -386,21 +477,55 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None) -> None:
                 print(chr(13) + BOLD + "stop requested from the page - shutting down" + RESET, flush=True)
                 loop.stop()
                 return
+            import numpy as np
+            from backend import audio as audio_mod
+
+            def ack(state: str, detail: str) -> None:
+                # Every press gets an answer the page can show. A press that is never answered
+                # is how the page recognises a dead link, and it then reconnects (2026-09-10:
+                # presses were vanishing and the page could not tell anyone).
+                asyncio.get_running_loop().create_task(
+                    hub.status("ptt", state, detail, remember=False))
+
+            if action == "new_topic":
+                loop.ask(TOPIC_NUDGE)
+                ack("topic", "finding a new topic...")
+                return
             if action == "start":
+                if not loop.ptt:
+                    ack("off", "hands-free mode is on - just speak")
+                    return
                 loop.ptt_begin()
+                ack("recording", "listening - release to send")
             elif action == "stop":
-                frames = len(loop._ptt_buf)
+                buf = list(loop._ptt_buf)
+                frames = len(buf)
                 seconds = frames * 512 / 16000
+                rms = float(np.sqrt(np.mean(np.square(np.concatenate(buf))))) if buf else 0.0
                 before = loop._turn_task
                 loop.ptt_end()
                 started = loop._turn_task is not None and loop._turn_task is not before
                 print(chr(13) + DIM + "[browser: stop] " + str(frames) + " frames ("
-                      + format(seconds, ".1f") + "s) -> "
+                      + format(seconds, ".1f") + "s, rms " + format(rms, ".5f") + ") -> "
                       + ("turn started" if started else "NO TURN")
                       + "  mic_alive=" + str(loop._mic.is_alive() if loop._mic else False)
                       + " frames_seen=" + str(loop.frames_seen)
                       + (" err=" + loop.capture_error if loop.capture_error else "")
                       + RESET + " " * 10, flush=True)
+                if not loop.ptt:
+                    return
+                if frames == 0:
+                    ack("empty", "no audio arrived from the microphone")
+                elif rms < audio_mod.SILENT_RMS:
+                    # Digital silence: the device is open but muted (boom up, mute button, or
+                    # Windows privacy). Sending it anyway only earns a discarded hallucination.
+                    ack("silent", f"your microphone sent silence ({seconds:.1f}s) - is it muted?")
+                elif started:
+                    ack("sent", f"sent {seconds:.1f}s - she is listening to it")
+                elif seconds * 1000 < loop.vad.min_speech_ms:
+                    ack("short", "too short to send - hold SPACE while you speak")
+                else:
+                    ack("busy", "she is still working on your last turn")
                 return
 
         hub.on_control = from_browser
@@ -435,6 +560,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None) -> None:
         pass
     finally:
         loop.stop()
+        await watch.close()
         if loop.timings:
             v2v = sorted(t.voice_to_voice_ms() for t in loop.timings if t.voice_to_voice_ms())
             if v2v:

@@ -82,8 +82,8 @@ SCHEMA: tuple[Setting, ...] = (
     # Display
     Setting("TUTOR_PERSONA", "minami", str, "voice", "Which tutor: a name in prompts/ (tanaka, hayashi, minami, mori) or a path. The persona declares its own voice AND its avatar, so this one setting switches character, voice and face together (ADR-026/030). Default is minami because she is the one with a shipped avatar"),
     Setting("SUBTITLES", "jp", str, "display", "jp | off"),
-    Setting("AUDIO_INPUT_DEVICE", "", str, "audio", "Microphone. Empty = system default. Name or index; list them with `python -m backend.audio`"),
-    Setting("AUDIO_OUTPUT_DEVICE", "", str, "audio", "Speakers/headphones. Empty = system default. Name or index; list them with `python -m backend.audio`"),
+    Setting("AUDIO_INPUT_DEVICE", "", str, "audio", "Microphone, by name. Empty = system default. If it is unplugged, or not there at launch, the app uses the system default and switches back when it returns (spec §9)"),
+    Setting("AUDIO_OUTPUT_DEVICE", "", str, "audio", "Speakers/headphones for the terminal voice (--speak), by name. Empty = system default. If they are unplugged, or not there at launch, the app uses the system default and switches back when they return (spec §9). On the avatar page her voice plays through the browser, which follows the OS default output"),
     Setting("STATUS_HEARTBEAT_S", 30, int, "display", "service_status heartbeat"),
     # Files
     Setting("SETTINGS_FILE", "settings.json", str, "advanced", "Config store (git-ignored, 0600)"),

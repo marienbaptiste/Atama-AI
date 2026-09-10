@@ -4,7 +4,19 @@
 <style>
   html,body{margin:0;height:100%;background:#15171a;color:#e6e6e6;
             font:13px system-ui,-apple-system,sans-serif;overflow:hidden}
-  #stage{position:fixed;inset:0}
+  #stage{position:fixed;inset:0;z-index:1}
+  /* Her mood, drifting up behind her as white kaomoji that fade away. Behind the avatar, not on
+     top of her: TalkingHead's canvas is transparent (WebGLRenderer alpha:true and no scene
+     background — talkinghead.mjs 1.4 line 818, read 2026-09-10). */
+  #moodbg{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none}
+  .kao{position:absolute;bottom:-60px;left:var(--x);color:#fff;white-space:nowrap;opacity:0;
+       font:600 var(--s)/1 "Yu Gothic UI","Meiryo","Segoe UI Symbol",system-ui,sans-serif;
+       filter:blur(var(--b));animation:kao var(--d) linear forwards}
+  @keyframes kao{
+    0%  {transform:translate(0,0) rotate(var(--r0));opacity:0}
+    15% {opacity:var(--o)}
+    65% {opacity:var(--o)}
+    100%{transform:translate(var(--dx),-70vh) rotate(var(--r1));opacity:0}}
   #ui{position:fixed;top:12px;left:12px;z-index:10;background:#1e2126e6;padding:12px 14px;
       border-radius:10px;backdrop-filter:blur(10px);width:300px;max-height:calc(100vh - 24px);
       overflow:auto}
@@ -22,11 +34,20 @@
         touch-action:none;user-select:none}
   #talk.hot{background:#c0392b;border-color:#e05b4a;color:#fff}
   #live{font-size:11px;color:#8b939d;line-height:1.5}
+  #topic{margin-top:8px;width:100%;color:#cfe3ff;border-color:#3b4f6e}
+  #topic:hover{background:#2c3a52}
   #quit{margin-top:8px;width:100%;color:#ffb4a8;border-color:#5a3b37}
   #quit:hover{background:#4a2a26}
   #ended{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
          background:#0e0f12f2;color:#c9ced6;font-size:15px;text-align:center;line-height:1.7}
   #ended b{color:#fff;font-size:18px}
+  #start{position:fixed;inset:0;z-index:25;display:flex;align-items:center;justify-content:center;
+         background:rgba(14,15,18,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+         color:#dfe4ea;font-size:14px;text-align:center;line-height:1.8;cursor:pointer}
+  #start b{display:block;color:#fff;font-size:20px;margin-bottom:6px}
+  /* `display:flex` above outranks the browser's own [hidden]{display:none}: without this the
+     start screen never went away after the click, and sat over the page eating every click. */
+  #start[hidden]{display:none}
   /* Collapsed by default: the rig panel is for tuning, and it is in the way when the point is
      to have a conversation with her. */
   details{margin-top:12px;border-top:1px solid #2c3138;padding-top:8px}
@@ -35,18 +56,176 @@
   summary:hover{color:#b6bec8}
   details[open] summary{color:#b6bec8;margin-bottom:2px}
   #live.on{color:#8fd18f}
+  #mic{font-size:11px;margin-top:4px;line-height:1.5;color:#b6bec8}
+  #mic::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;
+               margin-right:6px;background:var(--dot,#8fd18f)}
   #log{margin-top:12px;font-size:11px;color:#8b939d;line-height:1.6;
        border-top:1px solid #2c3138;padding-top:9px}
   .err{color:#ff8a80}
   code{background:#2a2e35;padding:1px 4px;border-radius:3px}
+
+  /* ---- settings: frosted glass over a blurred scene. The cue is a friendly console home menu —
+     flat single-colour icons, soft rounded tiles, faint shapes drifting behind — but every icon
+     and shape here is drawn from scratch: no borrowed logos, glyphs or artwork. */
+  :root{--glass:rgba(250,251,253,.74);--ink:#2b2f36;--sub:#6b7380;--line:rgba(30,40,60,.10);
+        --accent:#e8453c}
+  #cog{position:fixed;top:14px;right:14px;z-index:15;width:48px;height:48px;border-radius:50%;
+       padding:0;display:grid;place-items:center;background:rgba(255,255,255,.8);
+       border:1px solid rgba(255,255,255,.9);box-shadow:0 4px 14px rgba(0,0,0,.28);
+       backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:transform .3s}
+  #cog:hover{background:#fff;transform:rotate(45deg)}
+  #cog svg{width:26px;height:26px}
+  #scrim{position:fixed;inset:0;z-index:30;overflow:hidden;background:rgba(236,239,244,.30);
+         backdrop-filter:blur(18px) saturate(1.1);-webkit-backdrop-filter:blur(18px) saturate(1.1);
+         opacity:0;pointer-events:none;transition:opacity .25s}
+  #scrim.open{opacity:1;pointer-events:auto}
+  #settings{position:fixed;z-index:31;top:50%;left:50%;transform:translate(-50%,-47%) scale(.98);
+            width:min(880px,94vw);height:min(620px,90vh);display:grid;grid-template-columns:210px 1fr;
+            background:var(--glass);backdrop-filter:blur(28px) saturate(1.4);
+            -webkit-backdrop-filter:blur(28px) saturate(1.4);border-radius:28px;
+            border:1px solid rgba(255,255,255,.85);box-shadow:0 24px 60px rgba(10,20,40,.35);
+            color:var(--ink);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;
+            overflow:hidden}
+  #settings.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%)}
+  #snav{padding:22px 12px;display:flex;flex-direction:column;gap:4px;
+        border-right:1px solid var(--line);background:rgba(255,255,255,.35);overflow:auto}
+  #settings .sgroup{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:14px;
+        background:none;border:2px solid transparent;color:var(--ink);font:600 13px system-ui;
+        text-align:left;cursor:pointer}
+  #settings .sgroup:hover{background:rgba(255,255,255,.65)}
+  #settings .sgroup.on{background:#fff;border-color:var(--c);box-shadow:0 3px 10px rgba(0,0,0,.08)}
+  .sgroup .tile{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;
+        background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.10);flex:none}
+  .sgroup .tile svg{width:20px;height:20px}
+  .sgroup.haserr::after{content:"";width:7px;height:7px;border-radius:50%;background:#e8453c;
+        margin-left:auto}
+  #smain{display:flex;flex-direction:column;min-width:0;min-height:0}
+  #smain header{display:flex;align-items:center;justify-content:space-between;padding:20px 24px 8px}
+  #stitle{margin:0;font:700 22px system-ui;color:var(--ink);letter-spacing:0;text-transform:none}
+  #stitle::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;
+        background:var(--c,#7b8494);margin-right:10px;vertical-align:middle}
+  #settings #sclose{width:36px;height:36px;border-radius:50%;padding:0;display:grid;place-items:center;
+        background:rgba(255,255,255,.85);border:1px solid var(--line)}
+  #sclose svg{width:16px;height:16px}
+  #sbody{flex:1;overflow:auto;padding:8px 24px 16px;display:flex;flex-direction:column;gap:10px}
+  .field{background:rgba(255,255,255,.74);border-radius:16px;padding:12px 14px;border:2px solid transparent}
+  .field.dirty{border-color:#7cc4ff}
+  .fhead{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .fname{font:600 13.5px system-ui;color:var(--ink);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .fdesc{margin-top:4px;color:var(--sub);font-size:12px;line-height:1.45;display:-webkit-box;
+        -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+  .fdesc.full{-webkit-line-clamp:unset;display:block}
+  .badge{font:600 10.5px system-ui;padding:2px 8px;border-radius:999px;background:#eef0f4;color:var(--sub)}
+  .badge.pin{background:#fff1dc;color:#a86300}
+  .serr{margin-top:6px;color:#d63a31;font-size:12px}
+  #settings input[type=text],#settings input[type=password],#settings input[type=number],
+  #settings select{font:13px system-ui;padding:7px 10px;border-radius:10px;border:1px solid #d9dde4;
+        background:#fff;color:var(--ink);width:230px;min-width:0;flex:none}
+  #settings input[type=number]{width:110px}
+  #settings select{width:auto;cursor:pointer}
+  #settings input:disabled,#settings select:disabled{background:#f1f2f5;color:#9aa1ab;cursor:not-allowed}
+  #settings input:focus,#settings select:focus{outline:none;border-color:#3b82f6;
+        box-shadow:0 0 0 3px rgba(59,130,246,.2)}
+  #settings .switch{position:relative;display:inline-block;width:44px;height:26px;margin:0;flex:none}
+  .switch input{opacity:0;width:0;height:0}
+  .switch span{position:absolute;inset:0;border-radius:999px;background:#cfd4dc;transition:.2s;cursor:pointer}
+  .switch span::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;
+        border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:.2s}
+  .switch input:checked+span{background:#22a355}
+  .switch input:checked+span::after{transform:translateX(18px)}
+  .switch input:disabled+span{opacity:.5;cursor:not-allowed}
+  #smain footer{display:flex;align-items:center;justify-content:space-between;gap:12px;
+        padding:12px 24px 18px;border-top:1px solid var(--line)}
+  #sstate{color:var(--sub);font-size:12.5px}
+  #settings #ssave{font:700 14px system-ui;padding:10px 28px;border-radius:999px;background:var(--accent);
+        color:#fff;border:none;box-shadow:0 4px 12px rgba(232,69,60,.35);cursor:pointer}
+  #settings #ssave:hover{filter:brightness(1.07)}
+  #settings #ssave:disabled{background:#cfd4dc;box-shadow:none;cursor:default;filter:none}
+  .shint{color:var(--sub)}
+  @media (max-width:640px){
+    #settings{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+    #snav{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:10px}
+    #settings .sgroup{flex:none}
+    .fhead{flex-wrap:wrap}
+  }
+
+  /* ---- curated tabs: sections, sliders, segmented pills, picture cards, a live meter. The
+     active tab tints the whole panel through --c, so each tab has its own colour. */
+  #settings .sgroup{padding:8px 10px;font-size:13.5px}
+  #settings .sgroup.on{background:color-mix(in srgb,var(--c) 12%,#fff);border-color:var(--c)}
+  .sgroup .tile{width:36px;height:36px;border-radius:11px}
+  #stitle{display:flex;align-items:center;gap:12px}
+  #stitle::before{display:none}
+  #stitle .tile{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:#fff;
+        box-shadow:0 1px 4px rgba(0,0,0,.12)}
+  #stitle .tile svg{width:22px;height:22px}
+  .ssec{margin:12px 4px 0;font:700 11px system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--sub)}
+  .ssec:first-child,.shint+.ssec{margin-top:2px}
+  .field{padding:14px 16px}
+  .field.dirty{border-color:var(--c)}
+  .ftop{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .flabel{min-width:0;flex:1}
+  .field:not(.raw) .fdesc{display:block;-webkit-line-clamp:unset;cursor:default}
+  .fwide{margin-top:12px}
+  .slider{display:grid;grid-template-columns:auto 1fr auto 62px;align-items:center;gap:12px;
+        font-size:12px;color:var(--sub)}
+  #settings .slider input{width:100%;margin:0;accent-color:var(--c);cursor:pointer}
+  .slider output{font:700 13px system-ui;color:var(--ink);text-align:right}
+  .seg{display:inline-flex;background:#e9ecf0;border-radius:999px;padding:3px;gap:2px;flex:none}
+  #settings .seg button{border:none;background:none;border-radius:999px;padding:7px 16px;
+        font:600 12.5px system-ui;color:var(--sub);cursor:pointer}
+  #settings .seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.16)}
+  #settings .seg button:disabled{cursor:not-allowed;opacity:.6}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+  #settings .card{display:flex;align-items:center;gap:10px;text-align:left;padding:11px 12px;border-radius:14px;
+        background:#fff;border:2px solid #e3e6eb;cursor:pointer;color:var(--ink);font:inherit}
+  #settings .card:hover{border-color:#cfd4dc;background:#fff}
+  #settings .card.on{border-color:var(--c);box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 22%,transparent)}
+  #settings .card:disabled{opacity:.55;cursor:not-allowed}
+  .card b{display:block;font:700 13.5px system-ui}
+  .card small{display:block;color:var(--sub);font-size:11.5px;margin-top:2px}
+  .card .face{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;flex:none;
+        font:700 17px system-ui;color:#fff}
+  .secret{display:flex;align-items:center;gap:10px;flex:none}
+  .secret .state{font:600 11.5px system-ui;padding:4px 11px;border-radius:999px;background:#eef0f4;
+        color:var(--sub);white-space:nowrap}
+  .secret .state.yes{background:#e3f6e8;color:#1c7a3c}
+  #settings select.device{max-width:300px}
+  .meter{margin-top:12px;height:8px;border-radius:999px;background:#e6e9ee;overflow:hidden}
+  .meter i{display:block;height:100%;width:0;border-radius:999px;
+        background:color-mix(in srgb,var(--c) 45%,#fff);transition:width .08s linear}
+  .meter i.speech{background:var(--c)}
+  /* Chrome's default range paints the unfilled track near-black on a light panel. Draw our own:
+     filled to the thumb in the tab's colour (--p is set from JS), light grey beyond it. */
+  #settings .slider input[type=range]{-webkit-appearance:none;appearance:none;height:6px;border-radius:999px;
+        background:linear-gradient(to right,var(--c) var(--p,50%),#dde1e7 var(--p,50%))}
+  #settings .slider input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;
+        border-radius:50%;background:#fff;border:3px solid var(--c);box-shadow:0 1px 4px rgba(0,0,0,.25)}
+  #settings .slider input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
+        background:#fff;border:3px solid var(--c)}
+  #settings .slider input[type=range]:disabled{opacity:.5}
+  #settings #ssave.done{background:#22a355;box-shadow:0 4px 12px rgba(34,163,85,.35)}
+  .shint{margin:0 4px 2px;font-size:12.5px}
+  @media (max-width:640px){
+    .ftop{flex-wrap:wrap}
+    .slider{grid-template-columns:auto 1fr auto;}
+    .slider output{grid-column:1/-1;text-align:left}
+  }
 </style>
 
+<div id="moodbg" aria-hidden="true"></div>
 <div id="stage"></div>
+<div id="start" role="button" tabindex="0">
+  <div><b>Click or press any key to start</b><br>
+  Browsers only let a page play sound once you have touched it.<br>She waits for you.</div>
+</div>
 <div id="ui">
   <select id="who"></select>
 
   <button id="talk" disabled>hold SPACE to talk</button>
   <div id="live">not connected</div>
+  <div id="mic" hidden></div>
+  <button id="topic" disabled title="Ask her to drop this subject and find a new one">↻ new topic</button>
   <button id="quit" disabled title="Stop the tutor and the server. The page cannot restart them.">stop</button>
 
   <details id="rig">
@@ -84,6 +263,29 @@
 
   <div id="log">loading…</div>
 </div>
+
+<button id="cog" title="Settings" aria-label="Settings">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#6b7380" stroke-width="2" stroke-linecap="round">
+    <circle cx="12" cy="12" r="6.2"/><circle cx="12" cy="12" r="2.3"/>
+    <path stroke-width="3" d="M12 5.4V2.6M16.67 7.33l1.98-1.98M18.6 12h2.8M16.67 16.67l1.98 1.98M12 18.6v2.8M7.33 16.67l-1.98 1.98M5.4 12H2.6M7.33 7.33 5.35 5.35"/>
+  </svg>
+</button>
+
+<div id="scrim" aria-hidden="true"></div>
+
+<section id="settings" role="dialog" aria-label="Settings" aria-hidden="true">
+  <nav id="snav"></nav>
+  <div id="smain">
+    <header>
+      <h1 id="stitle">Settings</h1>
+      <button id="sclose" aria-label="Close settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#6b7380" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+    <div id="sbody"></div>
+    <footer><span id="sstate"></span><button id="ssave" disabled>Save</button></footer>
+  </div>
+</section>
 
 <script type="importmap">
 {"imports":{
@@ -315,6 +517,7 @@ function settleSoon() {
   settleTimer = setTimeout(() => {
     clearShapes();
     head.setMood("neutral");
+    setMoodBg("neutral");
     log(($("log").innerHTML || "") + "<br><i>settled to neutral</i>");
   }, SETTLE_AFTER_MS);
   restTimer = setTimeout(() => { setPose(draw("rest", REST_POSES), 2500); }, REST_AFTER_MS);
@@ -339,10 +542,59 @@ function rightHand() {
 //: What the last draw actually produced, so the log can show it rather than the pool.
 let lastMotion = { pose: null, gesture: null };
 
+//: Her mood as white kaomoji drifting up behind her and fading away (asciimoji-style faces).
+//: One pool per emotion tag (ADR-020's closed set); neutral is sparse and slow on purpose —
+//: calm should look calm. A mood change sends a small burst so the change reads at a glance.
+const KAOMOJI = {
+  neutral:     ["(・ω・)", "(´･ω･`)", "(￣ー￣)", "( ´ ▽ ` )"],
+  happy:       ["(＾▽＾)", "٩(◕‿◕)۶", "(≧◡≦)", "ヽ(•‿•)ノ", "(´▽`)♪", "(^_^)"],
+  thinking:    ["(・・ )?", "(ー_ー)", "(´-ω-`)", "( ˘ω˘ )", "(。-ω-)"],
+  surprised:   ["Σ(°□°)", "(⊙_⊙)", "(°o°)", "w(°ｏ°)w", "ヽ(°〇°)ﾉ"],
+  serious:     ["(・_・)", "(￣^￣)", "(-_-)", "(｀_´)"],
+  encouraging: ["(ง •̀_•́)ง", "٩(^ᴗ^)و", "(•̀ᴗ•́)و ✧", "(9^o^)9", "ᕦ(ò_ó)ᕤ"],
+  proud:       ["( •̀ ω •́ )✧", "(￣▽￣)ノ", "＼(^o^)／", "(⌐■_■)", "☆(ゝω・)v"],
+  confused:    ["(・へ・)?", "¯\\_(ツ)_/¯", "(◎_◎;)", "(゜-゜)", "(・・？"],
+};
+const REDUCED_MOTION = matchMedia("(prefers-reduced-motion: reduce)").matches;
+let kaoMood = "neutral", kaoTimer = 0;
+
+function spawnKao(mood = kaoMood, midway = false) {
+  const layer = $("moodbg");
+  if (!layer || REDUCED_MOTION || document.hidden || frozen || layer.childElementCount > 18) return;
+  const pool = KAOMOJI[mood] || KAOMOJI.neutral;
+  const near = Math.random() < 0.35;               // a few close and crisp, most far and soft
+  const dur = 10 + Math.random() * 8;
+  const el = document.createElement("span");
+  el.className = "kao";
+  el.textContent = pool[Math.floor(Math.random() * pool.length)];
+  el.style.cssText = `--x:${(4 + Math.random() * 88).toFixed(1)}%;`
+    + `--s:${(near ? 30 + Math.random() * 14 : 18 + Math.random() * 10).toFixed(0)}px;`
+    + `--b:${near ? 0 : 1.2}px;--o:${near ? 0.34 : 0.18};--d:${dur.toFixed(1)}s;`
+    + `--dx:${(Math.random() * 120 - 60).toFixed(0)}px;`
+    + `--r0:${(Math.random() * 16 - 8).toFixed(0)}deg;--r1:${(Math.random() * 16 - 8).toFixed(0)}deg`;
+  // Already on its way up: a page that just loaded, or a mood that just changed, must not take
+  // ten seconds to show anything — each face starts below the screen and rises for 10-18 s.
+  if (midway) el.style.animationDelay = `-${(Math.random() * dur * 0.7).toFixed(1)}s`;
+  el.addEventListener("animationend", () => el.remove());
+  layer.appendChild(el);
+}
+
+function setMoodBg(mood) {
+  mood = KAOMOJI[mood] ? mood : "neutral";
+  if (mood === kaoMood) return;
+  kaoMood = mood;
+  if (mood !== "neutral") for (let i = 0; i < 4; i++) setTimeout(() => spawnKao(mood, true), i * 120);
+  clearInterval(kaoTimer);
+  kaoTimer = setInterval(spawnKao, mood === "neutral" ? 2600 : 900);
+}
+kaoTimer = setInterval(spawnKao, 2600);
+for (let i = 0; i < 5; i++) spawnKao("neutral", true);   // a calm sky from the first frame
+
 function applyRig(name) {
   const r = RIG[name] || RIG.neutral;
   clearShapes();
   head.setMood(r.mood);
+  setMoodBg(name);
   held = Object.keys(r.shapes);
   held.forEach(s => head.setFixedValue(s, r.shapes[s]));
   // Every emotion releases. An expression with no timer is an expression she is stuck in.
@@ -436,6 +688,7 @@ $("recentre").onclick = () => { reframe(); log("camera recentred on the upper bo
 $("reset").onclick = () => {
   clearShapes();
   head.setMood("neutral");
+  setMoodBg("neutral");
   setPose("straight", 800);
   meetEye(400);
   reframe();
@@ -487,11 +740,24 @@ async function playSpeak(msg) {
 
 //: The socket, once open. Push-to-talk is meaningless without it.
 let wire = null, talking = false;
+//: The server answers every press (service_status "ptt"). Once it has shown it does, a press
+//: left unanswered means the link is dead: reconnect rather than let presses vanish. Armed only
+//: after the first answer, so an older server without acks is not mistaken for a dead one.
+let pttAck = 0, serverAcks = false;
 
 function pushToTalk(on) {
-  if (!wire || wire.readyState !== 1 || on === talking) return;
+  if (!wire || wire.readyState !== 1) {
+    if (on) log('<span class="err">not connected to the tutor</span> — SPACE does nothing until it reconnects');
+    return;
+  }
+  if (on === talking) return;
   talking = on;
   wire.send(JSON.stringify({ type: "control", action: on ? "start" : "stop" }));
+  clearTimeout(pttAck);
+  if (on && serverAcks) pttAck = setTimeout(() => {
+    log('<span class="err">that press never reached the tutor</span> — reconnecting');
+    try { if (wire) wire.close(); } catch (e) {}
+  }, 2500);
   log(on ? "<b>listening…</b>" : "sent — waiting for her");
   $("talk").classList.toggle("hot", on);
   $("talk").textContent = on ? "listening — release to send" : "hold SPACE to talk";
@@ -505,13 +771,18 @@ function pushToTalk(on) {
 // dropdown focus sits on the <select>, and SPACE then did nothing at all — the microphone
 // looked broken when it was simply never asked to open (2026-09-10). Only real controls that
 // use SPACE themselves get to keep it.
-const SPACE_BELONGS_TO = new Set(["INPUT", "TEXTAREA", "BUTTON", "SUMMARY", "SELECT", "OPTION"]);
-const spaceIsOurs = target =>
-  !target || (!SPACE_BELONGS_TO.has(target.tagName) && !target.isContentEditable);
+//: Only controls where SPACE TYPES something keep it. Buttons used to keep it too, so after
+//: clicking the cog, ✕ or any other button, SPACE "clicked" that button instead of talking —
+//: it reopened the settings panel (where talking is off), and on the stop button it would have
+//: asked to quit (2026-09-10). A focused button is no reason to lose push-to-talk.
+const TYPES_SPACE = new Set(["text", "password", "number", "search", "email", "url"]);
+const spaceIsOurs = t => !t || !(
+  t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable
+  || (t.tagName === "INPUT" && TYPES_SPACE.has(t.type)));
 
 addEventListener("keydown", e => {
   if (e.code !== "Space" || e.repeat) return;
-  if (!spaceIsOurs(e.target)) return;
+  if (settingsOpen || !spaceIsOurs(e.target)) return;    // no talking while the panel is up
   e.preventDefault();
   pushToTalk(true);
 });
@@ -541,6 +812,14 @@ function showEnded() {
   document.body.appendChild(cover);
 }
 
+//: Same as saying 「話題を変えて」: she drops the subject (interrupting herself if need be) and
+//: searches for something fresh. The server acknowledges it like a press.
+$("topic").onclick = () => {
+  if (!wire || wire.readyState !== 1) return;
+  wire.send(JSON.stringify({ type: "control", action: "new_topic" }));
+  $("topic").blur();                                  // or the next SPACE would press it again
+};
+
 $("quit").onclick = () => {
   if (!wire || wire.readyState !== 1) { showEnded(); return; }
   if (!confirm("Stop the tutor and shut down the server?")) return;
@@ -553,6 +832,41 @@ $("quit").onclick = () => {
   setTimeout(showEnded, 8000);
 };
 
+//: Browsers refuse to play sound until the student has touched the page (autoplay policy), and
+//: audio sent before that was silently lost — her whole opening greeting (2026-09-10). The server
+//: holds her voice until a page says `ready`, which it does from here, after the first touch.
+//: Both audio contexts need resuming: ours, and the one TalkingHead creates for itself
+//: (`this.audioCtx = new AudioContext()`, talkinghead.mjs 1.4 line 749, read 2026-09-10).
+let unlocked = false;
+async function unlock() {
+  if (unlocked) return;
+  unlocked = true;
+  $("start").hidden = true;
+  try { ctx = ctx || new AudioContext(); await ctx.resume(); } catch (e) {}
+  try { if (head && head.audioCtx) await head.audioCtx.resume(); } catch (e) {}
+  if (wire && wire.readyState === 1) wire.send(JSON.stringify({ type: "control", action: "ready" }));
+}
+$("start").addEventListener("pointerdown", unlock);
+// Capture phase, so the first key only starts the page and never doubles as push-to-talk.
+addEventListener("keydown", e => {
+  if (unlocked) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  unlock();
+}, true);
+
+//: A socket can stay "open" while nothing arrives any more. The server sends a heartbeat every
+//: 4 s (backend/app.py HEARTBEAT_S); hearing nothing for 3 of them means the link is dead in all
+//: but name — close it and let onclose reconnect, which also replays the latest mic status.
+const WATCHDOG_MS = 12000;
+let lastHeard = 0;
+setInterval(() => {
+  if (wire && wire.readyState === 1 && performance.now() - lastHeard > WATCHDOG_MS) {
+    log('<span class="err">no word from the server for 12 s</span> — reconnecting');
+    try { wire.close(); } catch (e) {}
+  }
+}, 2000);
+
 function connect() {
   const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
   let socket;
@@ -560,8 +874,12 @@ function connect() {
 
   socket.onopen = () => {
     wire = socket;
+    lastHeard = performance.now();
+    // A reconnect is a new socket: tell the server again that this page can play sound.
+    if (unlocked) socket.send(JSON.stringify({ type: "control", action: "ready" }));
     $("talk").disabled = false;
     $("quit").disabled = false;
+    $("topic").disabled = false;
     $("live").textContent = "connected — hold SPACE, or the button, and speak";
     $("live").classList.add("on");
   };
@@ -571,6 +889,7 @@ function connect() {
     $("talk").classList.remove("hot");
     $("talk").textContent = "hold SPACE to talk";
     $("quit").disabled = true;
+    $("topic").disabled = true;
     $("live").classList.remove("on");
     if (quitting) { showEnded(); return; }  // stopped on purpose: do not retry a server we killed
     $("live").textContent = "disconnected — reconnecting…";
@@ -578,6 +897,7 @@ function connect() {
   };
   socket.onmessage = async (event) => {
     let msg;
+    lastHeard = performance.now();
     try { msg = JSON.parse(event.data); } catch (e) { return; }
     switch (msg.type) {
       case "speak":       await playSpeak(msg); break;
@@ -585,14 +905,388 @@ function connect() {
       case "stt_final":   log("<b>you:</b> " + (msg.text || "")
                               + (msg.accepted ? "" : " <i>(discarded: " + msg.reason + ")</i>")); break;
       case "bargein":     head.stopSpeaking && head.stopSpeaking(); break;
-      case "service_status": break;     // the status bar is M3 proper
+      case "service_status": showService(msg); break;   // the full status bar is M3 proper
+      case "settings":    onSettings(msg); break;
+      case "mic_level":   showLevel(msg); break;
       case "error":       log('<span class="err">' + msg.message + "</span>"); break;
     }
   };
 }
-connect();
+// ------------------------------------------------------------------ settings panel
+// Generated from the server's schema (backend/settings_view.py). TABS is the friendly face of
+// config.py: plain labels, one-line help, the right control for each setting. A key NOT listed
+// there still appears, under Advanced with its raw name and developer notes, so a new setting is
+// never hidden, only unpolished. Secrets arrive as {set, hint} and are never shown or sent back;
+// a blank secret box means "leave it". Keys set in .env are locked, because .env wins at launch.
+const PAL = { account: "#e8453c", brain: "#3b82f6", voice: "#f59e0b", sound: "#14b8c4",
+              display: "#8b5cf6", advanced: "#7b8494" };
+const ICON = {
+  account:  '<circle cx="8" cy="15" r="4"/><path d="M11 12 20 3M16 7l3 3M18.5 4.5l2 2"/>',
+  brain:    '<path d="M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"/>',
+  voice:    '<path d="M4 5h16v10H9l-5 4z"/><path d="M9 9v2M12 8v4M15 9v2"/>',
+  sound:    '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>',
+  display:  '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  advanced: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+};
+const times = v => v.toFixed(2) + "×";
+//: How far along its track a slider sits, for the filled part of the track (CSS --p).
+const pct = (v, min, max) => (((Number(v) - min) / (max - min)) * 100).toFixed(1) + "%";
+const TABS = [
+  { id: "account", label: "Account", sections: [
+    { title: "Study accounts", items: [
+      { key: "WANIKANI_TOKEN", label: "WaniKani",
+        help: "Personal access token — create it with no write permissions. The app only ever reads." },
+      { key: "BUNPRO_API_TOKEN", label: "Bunpro",
+        help: "Settings → API → Account API Token on bunpro.jp. Read-only here, always." },
+    ] },
+    { title: "Claude", items: [
+      { key: "CLAUDE_CODE_OAUTH_TOKEN", label: "Sign-in token",
+        help: "Optional. Leave it empty to use your normal claude login." },
+    ] },
+  ] },
+  { id: "brain", label: "Brain", sections: [
+    { title: "Her mind", items: [
+      { key: "CLAUDE_MODEL", label: "Model", kind: "cards", options: [
+        ["sonnet", "Sonnet", "Balanced · recommended"],
+        ["opus", "Opus", "Smartest · slower replies"],
+        ["haiku", "Haiku", "Fastest · lighter"]] },
+      { key: "CLAUDE_EFFORT", label: "Thinking", kind: "steps", lo: "Quicker", hi: "Deeper",
+        help: "How long she thinks before answering. Medium measured fastest; higher is slower to reply." },
+    ] },
+    { title: "Memory", items: [
+      { key: "MEMORY_ENABLED", label: "Remember past lessons", kind: "toggle",
+        help: "She recalls last time, avoids repeating topics, and keeps notes about you that you can edit." },
+    ] },
+  ] },
+  { id: "voice", label: "Voice", sections: [
+    { title: "Your tutor", items: [
+      { key: "TUTOR_PERSONA", label: "Tutor", kind: "persona",
+        help: "Who teaches you — voice and character switch at once, and they introduce themselves." },
+    ] },
+    { title: "How she sounds", items: [
+      { key: "VOICEVOX_SPEED_SCALE", label: "Speaking speed", kind: "slider",
+        min: 0.6, max: 1.4, step: 0.05, lo: "Slower", hi: "Faster", fmt: times },
+      { key: "VOICEVOX_PITCH_SCALE", label: "Pitch", kind: "slider",
+        min: -0.15, max: 0.15, step: 0.01, lo: "Lower", hi: "Higher",
+        fmt: v => (v > 0 ? "+" : "") + v.toFixed(2) },
+      { key: "VOICEVOX_INTONATION_SCALE", label: "Expressiveness", kind: "slider",
+        min: 0.5, max: 1.6, step: 0.05, lo: "Flatter", hi: "Livelier", fmt: times },
+      { key: "VOICEVOX_PAUSE_SCALE", label: "Pauses", kind: "slider",
+        min: 0.5, max: 1.6, step: 0.05, lo: "Shorter", hi: "Longer", fmt: times,
+        help: "The breaks at 、 and 。" },
+    ] },
+  ] },
+  { id: "sound", label: "Sound", sections: [
+    { title: "Devices", items: [
+      { key: "AUDIO_INPUT_DEVICE", label: "Microphone", kind: "device", meter: true,
+        help: "Unplug it any time — she switches to the system default, and back when it returns." },
+      { key: "AUDIO_OUTPUT_DEVICE", label: "Speakers", kind: "device",
+        help: "For the terminal voice only. On this page she plays through your browser's sound output." },
+    ] },
+    { title: "Talking", items: [
+      { key: "TURN_MODE", label: "How you talk", kind: "segmented",
+        options: [["ptt", "Hold SPACE"], ["vad", "Hands-free"]],
+        help: "Hold SPACE is the reliable one: her own voice can never end your turn." },
+      { key: "VAD_SILENCE_MS", label: "Pause before she answers", kind: "slider",
+        min: 400, max: 2000, step: 50, lo: "Snappier", hi: "More patient",
+        fmt: v => (v / 1000).toFixed(2) + " s",
+        help: "Hands-free only: how long a silence means you have finished." },
+    ] },
+  ] },
+  { id: "display", label: "Display", sections: [
+    { title: "On screen", items: [
+      { key: "SUBTITLES", label: "Subtitles", kind: "segmented", options: [["jp", "Japanese"], ["off", "Off"]] },
+    ] },
+  ] },
+  { id: "advanced", label: "Advanced", advanced: true, sections: [] },
+];
+const ITEM = {};
+TABS.forEach(t => t.sections.forEach(sec => sec.items.forEach(it => { ITEM[it.key] = it; })));
+//: Advanced lists every key not curated above, under the config group it belongs to.
+const RAW_GROUPS = [["model", "Brain"], ["voice", "Voice"], ["speech", "Listening"], ["audio", "Audio"],
+                    ["display", "Display"], ["advanced", "System"], ["account", "Account"]];
+const FACES = ["#f59e0b", "#3b82f6", "#e8453c", "#22a355", "#8b5cf6"];
+const WIDE = new Set(["slider", "steps", "cards", "persona"]);
 
-$("who").onchange = () => pick($("who").value);
+let SETTINGS = null, FIELD = {}, pending = {}, fieldErrors = {}, activeGroup = "voice", settingsOpen = false;
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const human = k => { const s = k.toLowerCase().replace(/_/g, " "); return s[0].toUpperCase() + s.slice(1); };
+const cap = s => String(s).charAt(0).toUpperCase() + String(s).slice(1);
+const icon = (paths, color) => `<svg viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" `
+  + `stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+
+function openSettings(on) {
+  settingsOpen = on;
+  if (on) pushToTalk(false);
+  $("scrim").classList.toggle("open", on);
+  $("settings").classList.toggle("open", on);
+  $("settings").setAttribute("aria-hidden", on ? "false" : "true");
+  if (on) renderSettings();
+  // Closing leaves focus on whatever was clicked last (✕, the cog, a slider). Let go of it, so
+  // the next SPACE is push-to-talk and not a keypress for a control nobody can see.
+  else if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+}
+$("cog").onclick = () => openSettings(!settingsOpen);
+$("scrim").onclick = () => openSettings(false);
+$("sclose").onclick = () => openSettings(false);
+addEventListener("keydown", e => { if (e.key === "Escape" && settingsOpen) openSettings(false); });
+
+function sectionsFor(tab) {
+  if (!tab.advanced)
+    return tab.sections.map(sec => ({ title: sec.title, items: sec.items.filter(it => FIELD[it.key]) }))
+      .filter(sec => sec.items.length);
+  return RAW_GROUPS.map(([group, title]) => ({
+    title, items: SETTINGS.fields.filter(f => f.group === group && !ITEM[f.key]).map(f => ({ key: f.key, raw: true })),
+  })).filter(sec => sec.items.length);
+}
+
+const current = k => (k in pending ? pending[k] : SETTINGS.values[k]);
+
+function kindOf(s) {
+  if (s.secret) return "secret";
+  if (s.type === "bool") return "toggle";
+  if (s.options) return "device";
+  if (s.choices.length) return "select";
+  return s.type === "int" || s.type === "float" ? "number" : "text";
+}
+
+const dis = off => (off ? " disabled" : "");
+const CONTROLS = {
+  secret(s, it, v, off) {
+    const st = SETTINGS.values[s.key] || {};
+    const ph = off ? "kept in your .env file" : st.set ? "paste a new one to replace it" : "paste it here";
+    return `<div class="secret"><span class="state${st.set ? " yes" : ""}">${st.set ? "connected" : "not set"}</span>`
+      + `<input type="password" autocomplete="off" data-k="${s.key}" placeholder="${esc(ph)}" value="${esc(pending[s.key] || "")}"${dis(off)}></div>`;
+  },
+  toggle: (s, it, v, off) =>
+    `<label class="switch"><input type="checkbox" data-k="${s.key}"${v ? " checked" : ""}${dis(off)}><span></span></label>`,
+  select: (s, it, v, off) => `<select data-k="${s.key}"${dis(off)}>`
+    + s.choices.map(c => `<option${c === v ? " selected" : ""}>${esc(c)}</option>`).join("") + "</select>",
+  device(s, it, v, off) {
+    const opts = [["", "System default"]].concat(s.options.map(o => [o, o]));
+    if (v && !s.options.includes(v)) opts.push([v, v + "  (not connected)"]);
+    return `<select class="device" data-k="${s.key}"${dis(off)}>` + opts.map(([val, l]) =>
+      `<option value="${esc(val)}"${val === (v || "") ? " selected" : ""}>${esc(l)}</option>`).join("") + "</select>";
+  },
+  number: (s, it, v, off) =>
+    `<input type="number" data-k="${s.key}" step="${s.type === "int" ? 1 : "any"}" value="${esc(v)}"${dis(off)}>`,
+  text: (s, it, v, off) =>
+    `<input type="text" data-k="${s.key}" value="${esc(v)}" placeholder="${esc(s.default === "" ? "empty" : s.default)}"${dis(off)}>`,
+  slider: (s, it, v, off) => `<div class="slider"><span>${esc(it.lo)}</span>`
+    + `<input type="range" data-k="${s.key}" min="${it.min}" max="${it.max}" step="${it.step}" value="${esc(v)}" `
+    + `style="--p:${pct(v, it.min, it.max)}"${dis(off)}>`
+    + `<span>${esc(it.hi)}</span><output>${esc(it.fmt(Number(v)))}</output></div>`,
+  steps(s, it, v, off) {
+    const at = Math.max(0, s.choices.indexOf(v));
+    return `<div class="slider"><span>${esc(it.lo)}</span>`
+      + `<input type="range" data-k="${s.key}" data-steps="${esc(JSON.stringify(s.choices))}" min="0" `
+      + `max="${s.choices.length - 1}" step="1" value="${at}" style="--p:${pct(at, 0, s.choices.length - 1)}"${dis(off)}>`
+      + `<span>${esc(it.hi)}</span><output>${esc(cap(s.choices[at] || v))}</output></div>`;
+  },
+  segmented: (s, it, v, off) => `<div class="seg">` + it.options.map(([val, l]) =>
+    `<button type="button" data-k="${s.key}" data-v="${esc(val)}" class="${val === v ? "on" : ""}"${dis(off)}>${esc(l)}</button>`)
+    .join("") + "</div>",
+  cards(s, it, v, off, options = it.options) {
+    const opts = !v || options.some(o => o[0] === v) ? options : options.concat([[v, v, "your own setting"]]);
+    return `<div class="cards">` + opts.map(([val, title, sub, face], i) =>
+      `<button type="button" class="card${val === v ? " on" : ""}" data-k="${s.key}" data-v="${esc(val)}"${dis(off)}>`
+      + (face ? `<span class="face" style="background:${FACES[i % FACES.length]}">${esc(face)}</span>` : "")
+      + `<span><b>${esc(title)}</b><small>${esc(sub)}</small></span></button>`).join("") + "</div>";
+  },
+  persona(s, it, v, off) {
+    if (typeof CAST === "undefined" || !CAST || !CAST.length) return CONTROLS.text(s, it, v, off);
+    const opts = CAST.map(c => {
+      const [name, sub = ""] = (LABELS[c.id] || c.id).split(" — ");
+      return [c.id, name, sub, name.charAt(0)];
+    });
+    return CONTROLS.cards(s, it, v, off, opts);
+  },
+};
+
+function item(it) {
+  const s = FIELD[it.key];
+  const pin = SETTINGS.pinned[s.key], lock = s.locked, off = !!(pin || lock);
+  const kind = it.kind || kindOf(s);
+  const ctl = CONTROLS[kind](s, it, current(s.key), off);
+  const badge = pin
+    ? `<span class="badge pin" title="Set in ${esc(pin)}, which overrides this panel. Remove it there to edit it here.">in ${esc(pin)}</span>`
+    : lock ? `<span class="badge" title="${esc(lock)}">locked</span>` : "";
+  const help = it.raw ? s.description : (it.help || "");
+  const wide = WIDE.has(kind);
+  return `<div class="field${s.key in pending ? " dirty" : ""}${it.raw ? " raw" : ""}" data-field="${s.key}">`
+    + `<div class="ftop"><div class="flabel"><div class="fname">${esc(it.label || human(s.key))}${badge}</div>`
+    + (help ? `<div class="fdesc">${esc(help)}</div>` : "") + "</div>" + (wide ? "" : ctl) + "</div>"
+    + (wide ? `<div class="fwide">${ctl}</div>` : "")
+    + (it.meter ? '<div class="meter" title="Microphone level"><i id="lvl"></i></div>' : "")
+    + (fieldErrors[s.key] ? `<div class="serr">${esc(fieldErrors[s.key])}</div>` : "") + "</div>";
+}
+
+function renderNav() {
+  $("snav").innerHTML = "";
+  for (const tab of TABS) {
+    const secs = SETTINGS ? sectionsFor(tab) : [];
+    if (SETTINGS && !secs.length) continue;
+    const hasErr = secs.some(sec => sec.items.some(it => fieldErrors[it.key]));
+    const b = document.createElement("button");
+    b.className = "sgroup" + (tab.id === activeGroup ? " on" : "") + (hasErr ? " haserr" : "");
+    b.style.setProperty("--c", PAL[tab.id]);
+    b.innerHTML = `<span class="tile">${icon(ICON[tab.id], PAL[tab.id])}</span>${esc(tab.label)}`;
+    b.onclick = () => { activeGroup = tab.id; renderSettings(); };
+    $("snav").appendChild(b);
+  }
+}
+
+function renderSettings() {
+  if (SETTINGS) FIELD = Object.fromEntries(SETTINGS.fields.map(f => [f.key, f]));
+  renderNav();
+  const tab = TABS.find(t => t.id === activeGroup) || TABS[0];
+  $("settings").style.setProperty("--c", PAL[tab.id]);
+  $("stitle").innerHTML = `<span class="tile">${icon(ICON[tab.id], PAL[tab.id])}</span>${esc(tab.label)}`;
+  const body = $("sbody");
+  if (!SETTINGS) {
+    body.innerHTML = '<p class="shint">Connect to the tutor to see the settings.</p>';
+    updateFooter();
+    return;
+  }
+  body.innerHTML = (tab.advanced ? '<p class="shint">For tinkering: the raw settings, with their developer notes.</p>' : "")
+    + sectionsFor(tab).map(sec => `<h3 class="ssec">${esc(sec.title)}</h3>` + sec.items.map(item).join("")).join("");
+  bindControls(body);
+  updateFooter();
+}
+
+// Not `wire`: that is the socket. Reusing the name shadowed it and broke the whole module.
+function bindControls(body) {
+  body.querySelectorAll("[data-k]").forEach(el => {
+    const k = el.dataset.k;
+    if (el.tagName === "BUTTON") {
+      el.onclick = () => {
+        el.parentElement.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === el));
+        change(k, el.dataset.v);
+      };
+      return;
+    }
+    const live = el.type === "checkbox" || el.tagName === "SELECT" ? "change" : "input";
+    el.addEventListener(live, () => {
+      let v = el.type === "checkbox" ? el.checked : el.value;
+      if (el.dataset.steps) v = JSON.parse(el.dataset.steps)[Number(el.value)];
+      if (el.type === "range") el.style.setProperty("--p", pct(el.value, Number(el.min), Number(el.max)));
+      const out = el.type === "range" ? el.parentElement.querySelector("output") : null;
+      if (out) out.textContent = el.dataset.steps ? cap(v) : ITEM[k].fmt(Number(v));
+      change(k, v);
+    });
+  });
+  body.querySelectorAll(".raw .fdesc").forEach(el => { el.onclick = () => el.classList.toggle("full"); });
+}
+
+function change(k, v) {
+  const s = FIELD[k], was = SETTINGS.values[k];
+  const numeric = s.type === "int" || s.type === "float";
+  const same = s.secret ? v === "" : numeric ? Number(v) === Number(was) : String(v) === String(was);
+  if (same) delete pending[k]; else pending[k] = v;
+  const f = $("sbody").querySelector(`[data-field="${k}"]`);
+  if (f) f.classList.toggle("dirty", k in pending);
+  updateFooter();
+}
+
+function updateFooter(text) {
+  const n = Object.keys(pending).length;
+  $("ssave").disabled = !n || !wire;
+  $("sstate").textContent = text
+    || (n ? `${n} ${n === 1 ? "change" : "changes"} not saved yet`
+          : "Tutor, microphone and speakers apply at once; the rest the next time you start.");
+}
+
+$("ssave").onclick = () => {
+  if (!wire || !Object.keys(pending).length) return;
+  wire.send(JSON.stringify({ type: "settings", values: pending }));
+  $("ssave").disabled = true;
+  $("sstate").textContent = "saving…";
+};
+
+//: Unplugged, missing, back, or on the default instead of the chosen one (spec §9).
+const DOT = { ok: "#8fd18f", fallback: "#f2b84b", missing: "#ff8a80", lost: "#ff8a80" };
+function showService(msg) {
+  if (msg.service === "ptt") {                     // what the last press actually did
+    clearTimeout(pttAck);
+    serverAcks = true;
+    $("live").textContent = msg.detail;
+    if (["silent", "empty", "short", "busy", "off"].includes(msg.state))
+      log('<span class="err">' + esc(msg.detail) + "</span>");
+    return;
+  }
+  if (msg.service === "tutor") {                   // a live tutor change in progress
+    $("live").textContent = msg.detail;
+    if (msg.state === "failed") log('<span class="err">' + esc(msg.detail) + "</span>");
+    else log("<b>" + esc(msg.detail) + "</b>");
+    return;
+  }
+  if (msg.service !== "microphone") return;
+  const el = $("mic");
+  el.hidden = false;
+  el.style.setProperty("--dot", DOT[msg.state] || "#8b939d");
+  el.textContent = "mic: " + (msg.detail || msg.state);
+  if (msg.state !== "ok") log('<span class="err">microphone ' + esc(msg.state) + "</span> — " + esc(msg.detail));
+}
+
+//: The Sound tab's meter: seeing the bar move is the fastest proof the right mic is live.
+function showLevel(msg) {
+  const bar = settingsOpen ? $("lvl") : null;
+  if (!bar) return;
+  bar.style.width = Math.round(Math.min(1, Math.sqrt(msg.level * 30)) * 100) + "%";
+  bar.classList.toggle("speech", msg.speech >= 0.5);
+}
+
+function onSettings(msg) {
+  SETTINGS = msg;
+  const tutor = msg.values && msg.values.TUTOR_PERSONA;
+  if (tutor && $("who").value !== tutor && [...$("who").options].some(o => o.value === tutor))
+    $("who").value = tutor;                           // keep the dropdown on the live tutor
+  FIELD = Object.fromEntries(msg.fields.map(f => [f.key, f]));
+  const saved = msg.saved || [], errors = msg.errors || {};
+  const reply = saved.length || Object.keys(errors).length;
+  if (reply) {
+    for (const k of saved) delete pending[k];
+    fieldErrors = errors;
+  }
+  if (settingsOpen) renderSettings();
+  if (!reply) return;
+  const e = Object.keys(errors).length;
+  const live = saved.filter(k => (FIELD[k] || {}).live);
+  const later = saved.length - live.length;
+  updateFooter([live.length ? "Applied now." : "",
+                later ? `${later} saved — applies the next time you start.` : "",
+                e ? `${e} not saved — see the red notes.` : ""].filter(Boolean).join(" "));
+  if (saved.length) {
+    const btn = $("ssave");
+    btn.classList.add("done");
+    btn.textContent = "Saved ✓";
+    setTimeout(() => { btn.classList.remove("done"); btn.textContent = "Save"; }, 1600);
+  }
+}
+
+connect();
+// A direct link to the panel, optionally to a tab: #settings or #settings/sound
+if (location.hash.startsWith("#settings")) {
+  const tab = location.hash.split("/")[1];
+  if (TABS.some(t => t.id === tab)) activeGroup = tab;
+  openSettings(true);
+}
+if (location.hash.startsWith("#mood=")) {         // preview a mood (no sound, so no start screen)
+  $("start").hidden = true;
+  setMoodBg(location.hash.slice(6));
+}
+
+// The dropdown and the panel's tutor cards are ONE setting. This used to change only the rig
+// preview, so picking a tutor here changed nothing she said (2026-09-10). It now switches the
+// live tutor through the same live setting, and follows the panel when that changes it.
+$("who").onchange = () => {
+  pick($("who").value);
+  if (wire && wire.readyState === 1)
+    wire.send(JSON.stringify({ type: "settings", values: { TUTOR_PERSONA: $("who").value } }));
+  $("who").blur();                                    // or SPACE would reopen the dropdown
+};
 
 (async function boot() {
   try {
@@ -606,5 +1300,6 @@ $("who").onchange = () => pick($("who").value);
     $("who").add(new Option(label, c.id));
   }
   pick(CAST[0].id);
+  if (settingsOpen) renderSettings();       // the tutor cards are drawn from the cast
 })();
 </script>

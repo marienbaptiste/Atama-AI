@@ -50,7 +50,11 @@ class Control(_Msg):
     #: `quit` shuts the orchestrator down cleanly — the claude subprocess, the speech queue and
     #: this socket. It is NOT `stop`, which is already the push-to-talk release edge; overloading
     #: it would make every released key a request to exit.
-    action: Literal["start", "stop", "bargein_ack", "resync", "quit"]
+    #: `new_topic` is the page's "New topic" button: she drops the current subject and finds a
+    #: fresh one, exactly as if the student had said 「話題を変えて」.
+    #: `ready`: the page has been touched, so the browser will let it play sound (autoplay
+    #: policy). The server holds her voice until a page says so.
+    action: Literal["start", "stop", "bargein_ack", "resync", "quit", "new_topic", "ready"]
 
 
 class SettingsUpdate(_Msg):
@@ -165,6 +169,23 @@ class Settings(_Msg):
 
     type: Literal["settings"] = "settings"
     values: dict[str, Any]
+    #: The config schema the page is generated from (backend/settings_view.py). Not `schema`:
+    #: that name shadows a pydantic BaseModel method.
+    fields: list[dict[str, Any]] = []
+    #: Keys set in `.env` or the environment, which win over anything saved from the page.
+    pinned: dict[str, str] = {}
+    #: In a reply to an update: which keys were written, and why the others were refused.
+    saved: list[str] = []
+    errors: dict[str, str] = {}
+
+
+class MicLevel(_Msg):
+    """Microphone level for the settings panel's meter — at most ~10 a second (spec §9).
+    `level` is RMS (peak-held between sends); `speech` is the VAD's probability."""
+
+    type: Literal["mic_level"] = "mic_level"
+    level: float
+    speech: float = 0.0
 
 
 class Timing(_Msg):
@@ -195,7 +216,7 @@ ClientMessage = Annotated[
 
 ServerMessage = Annotated[
     Union[State, SttPartial, SttFinal, AssistantText, Speak, Emotion, BargeIn,
-          SrsProfile, ServiceStatus, Settings, Timing, Error],
+          SrsProfile, ServiceStatus, Settings, MicLevel, Timing, Error],
     Field(discriminator="type"),
 ]
 

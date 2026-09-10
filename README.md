@@ -351,6 +351,21 @@ bar shows it and the configured fallback model carries the conversation.
 Configuration lives in the app's **settings page** and is stored in `settings.json` (repo
 root, git-ignored, mode `0600`). There is no `.env` to edit.
 
+**Built today:** the cog at the top right of the avatar page (or `preview.html#settings`) opens
+a frosted panel generated from `config.py`: every key, grouped, typed, with its description.
+Tabs: Account, Brain, Voice, Sound, Display, Advanced. Save writes `settings.json`. The
+**microphone and output pickers list what is plugged in right now** (the list refreshes as you
+plug and unplug) and apply at once; everything else applies the next time you launch. Live apply
+of the rest, and the Test buttons below, are not built yet. A key also set in `.env` or an
+`ATAMA_*` variable shows **set in .env** and is locked, because those override `settings.json`
+and a value saved here would be silently ignored — `python -m backend.tools.migrate_env` moves
+the non-secret ones out of `.env` for you (it backs `.env` up first; `--dry-run` to preview).
+`HOST` is never editable from the page (ADR-017).
+
+**Unplugging is fine.** No microphone at launch, a headset pulled out mid-lesson, a chosen
+device that is missing: the app keeps running on the system default and switches back when the
+device returns (spec §9). The page shows the microphone's state under the talk button.
+
 | Group              | What's there                                                                 |
 |--------------------|------------------------------------------------------------------------------|
 | Account & tokens   | WaniKani token, Bunpro API key, Claude OAuth token — masked, with a **Test** button each |
@@ -752,6 +767,14 @@ instant. If the summary fails, that lesson is simply retried next time.
 sentence and asks whether to carry on or talk about something new. Carry on, and she picks the
 thread back up with today's review items, since your SRS profile is refreshed at launch. Something
 new, or your very first lesson, and she finds one fresh news item that isn't a recent topic.
+
+**Changing tutor is live.** Pick one in Settings → Voice (or the dropdown at the top left): the
+voice and the character switch at once, in a fresh conversation, and the new tutor introduces
+themselves. The avatar stays the same model for every tutor.
+
+**Don't like the topic?** Say 「話題を変えて」 (or "change topic"), or press **↻ new topic** under
+the talk button. She drops the subject, interrupting herself if she is mid-sentence, and finds
+something fresh the same way.
 
 **A wrong memory is worse than none.** If she has something wrong about you, open `student.md` and
 fix it — it is plain markdown, and that is the correction mechanism. Delete the `memory` folder to

@@ -31,7 +31,8 @@ class FakeStt:
     def __init__(self, transcript: Transcript):
         self.transcript = transcript
 
-    def listen(self, audio):
+    def listen(self, audio, quiet_rms=None):
+        self.quiet_rms = quiet_rms
         return self.transcript
 
 
@@ -316,3 +317,58 @@ def test_pressing_while_the_tutor_speaks_is_an_unambiguous_bargein():
         await loop._turn_task
         assert voice.armed is True
     asyncio.run(scenario())
+
+
+# ------------------------------------------------------------------ new topic (page button)
+def test_new_topic_is_a_turn_from_text_not_speech():
+    """The page's New topic button: the cue reaches her, and nothing is logged as speech."""
+    loop, brain, voice, vad, states = loop_with(accepted())
+
+    async def run():
+        loop.ask("（話題を変えて）")
+        await loop._turn_task
+
+    asyncio.run(run())
+    assert brain.turns == ["（話題を変えて）"]
+    assert [c.text for c in voice.said] == ["はい。", "そうですね。"]
+    assert loop.timings[-1].transcript == ""          # the student said nothing
+    assert states[-1] == "listening"
+
+
+def test_new_topic_interrupts_a_reply_in_flight():
+    async def run():
+        gate = asyncio.Event()
+        brain, voice, vad = SlowBrain(gate), FakeVoice(), FakeVad()
+        loop = VoiceLoop(turn_mode="ptt", brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice)
+        first = asyncio.create_task(loop._turn(np.zeros(16000, dtype=np.float32)))
+        loop._turn_task = first
+        await asyncio.sleep(0.01)                     # she is still working on the first one
+        loop.ask("（話題を変えて）")
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        gate.set()                                    # let the new-topic turn answer
+        await loop._turn_task
+        return brain, voice
+
+    brain, voice = asyncio.run(run())
+    assert voice.cancelled >= 1
+    assert brain.turns == ["こんにちは。", "（話題を変えて）"]
+
+
+# ------------------------------------------------------- quiet, for THIS microphone
+def test_quiet_is_measured_from_the_room_between_turns():
+    from backend import audio as audio_mod
+    from backend.stt import QUIET_RMS
+    loop, *_ = loop_with(accepted())
+    assert loop.quiet_rms() == QUIET_RMS                 # nothing measured yet: the old default
+    loop._floor = 0.00002                                # a noise-suppressed headset at rest
+    assert loop.quiet_rms() == pytest.approx(audio_mod.SILENT_RMS * 2)
+    loop._floor = 0.01                                   # a noisy room
+    assert loop.quiet_rms() == QUIET_RMS                 # never stricter than before
+
+
+def test_the_turn_hands_the_measured_level_to_the_stt():
+    loop, *_ = loop_with(accepted())
+    loop._floor = 0.001
+    asyncio.run(loop._turn(np.zeros(16000, dtype=np.float32)))
+    assert loop.stt.quiet_rms == pytest.approx(0.004)
