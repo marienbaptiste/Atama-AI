@@ -857,6 +857,13 @@ get covered without spawning a CLI.
 
 **Status:** Accepted (2026-09-09) — user directive. Supersedes ADR-025.
 
+**Amended 2026-09-10 (user directive: "the search for news can come from multiple sources,
+including Yahoo News").** Still one read tool behind SearxNG, with three changes, all verified live:
+results are interleaved round-robin by provider (one engine was supplying 82% of them); Yahoo!
+JAPAN's official topic RSS is merged into `news` results as one provider, with a 72-hour age
+cutoff; and two dead default SearxNG engines are disabled. NHK's RSS is excluded because it is
+frozen — it answers 200 with month-old items. See spec §5c for the measurements.
+
 **Context.** ADR-025 had the orchestrator fetch headlines at launch and paste them into the
 prompt. The user rejected it: a fixed list is rigid, it cannot follow the conversation, and it
 makes the opening a recitation. If Sensei can *look things up*, she can pick something worth

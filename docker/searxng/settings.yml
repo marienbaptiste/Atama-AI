@@ -34,3 +34,12 @@ outgoing:
   max_request_timeout: 10.0
   pool_connections: 10
   pool_maxsize: 10
+# Engines that are enabled by default but useless here. Measured 2026-09-10 on a Japanese
+# news query: google news is suspended behind a CAPTCHA and startpage news fails to parse.
+# Both return nothing and each still costs up to outgoing.request_timeout on EVERY search,
+# which is latency on the tutor's opening turn for zero results.
+engines:
+  - name: google news
+    disabled: true
+  - name: startpage news
+    disabled: true

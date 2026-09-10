@@ -1,0 +1,28 @@
+# Japanese-language headline feeds for the search tool's `news` category (spec §5c, ADR-028).
+#
+# Format: one feed per line — `provider/label  https-url`. Everything before the first `/` is
+# the PROVIDER, and results are interleaved by provider, not by feed: nine Yahoo feeds count as
+# one source, or they would fill every result slot and simply replace brave's monopoly with
+# Yahoo's. Blank lines and `#` comments are ignored; non-https URLs are rejected.
+#
+# Data, not code (CLAUDE.md): feeds come and go without a release. Every line below was fetched
+# live on 2026-09-10 — 200, no redirect, newest item under 8 hours old.
+#
+# NOT here, deliberately:
+#   yahoo-japan/life   https://news.yahoo.co.jp/rss/topics/life.xml   -> HTTP 500
+#   nhk/*              https://www3.nhk.or.jp/rss/news/cat<N>.xml     -> still answers 200, but
+#       every item across cat0/1/5/6 is 32-38 days old and lastBuildDate is 2026-08-08/09: the
+#       feed is frozen (NHK moved to news.web.nhk). A 200 with month-old items is worse than a
+#       404 — she would present stale news as current. The age cutoff in search_mcp.py would
+#       drop them anyway; listing them would only cost a request per search for nothing.
+#   nhk-easy           news-list.json -> 401 missing_token (JWT required).
+
+yahoo-japan/top-picks      https://news.yahoo.co.jp/rss/topics/top-picks.xml
+yahoo-japan/domestic       https://news.yahoo.co.jp/rss/topics/domestic.xml
+yahoo-japan/world          https://news.yahoo.co.jp/rss/topics/world.xml
+yahoo-japan/business       https://news.yahoo.co.jp/rss/topics/business.xml
+yahoo-japan/entertainment  https://news.yahoo.co.jp/rss/topics/entertainment.xml
+yahoo-japan/sports         https://news.yahoo.co.jp/rss/topics/sports.xml
+yahoo-japan/it             https://news.yahoo.co.jp/rss/topics/it.xml
+yahoo-japan/science        https://news.yahoo.co.jp/rss/topics/science.xml
+yahoo-japan/local          https://news.yahoo.co.jp/rss/topics/local.xml

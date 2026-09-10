@@ -50,7 +50,7 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("HOST", "127.0.0.1", str, "advanced", "Bind address. Loopback only (ADR-017)"),
     Setting("PORT", 8000, int, "advanced", "Orchestrator port"),
     Setting("VOICEVOX_URL", "http://127.0.0.1:50021", str, "advanced", "VOICEVOX engine (local Docker)"),
-    Setting("SEARXNG_URL", "http://127.0.0.1:8888", str, "advanced", "Self-hosted SearxNG for the tutor's search tool (ADR-028). Not implemented yet — ROADMAP V0.11"),
+    Setting("SEARXNG_URL", "http://127.0.0.1:8888", str, "advanced", "Self-hosted SearxNG for the tutor's search tool (ADR-028). News also draws on the headline feeds in backend/data/news_feeds.txt"),
     # Voice
     Setting("VOICEVOX_SPEAKER", -1, int, "voice", "Base VOICEVOX style id. -1 = take it from the persona, which is what you usually want. 53 = 麒ヶ島宗麟 (たなか), 67 = 栗田まろん (はやし), 29 = No.7 (みなみ), 14 = 冥鳴ひまり (ゆい)"),
     Setting("VOICEVOX_SPEED_SCALE", 0.9, float, "voice", "Default speech speed for learners"),
