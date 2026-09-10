@@ -45,6 +45,10 @@
   <h2>reaction</h2>
   <div class="row" id="emojis"></div>
 
+  <h2>framing</h2>
+  <label>zoom <input type="range" id="zoom" min="-3" max="2" step="0.1" value="-1.4"><span id="zoomv">-1.4</span></label>
+  <label>height <input type="range" id="high" min="-0.4" max="0.6" step="0.02" value="0.16"><span id="highv">0.16</span></label>
+
   <h2>stillness</h2>
   <div class="row">
     <button id="freeze">freeze all motion</button>
@@ -222,11 +226,15 @@ function meetEye(ms = 600) { try { head.lookAtCamera(ms); } catch (e) {} }
  *  that shifts weight or leans slowly walks her out of shot, and orbiting with the mouse leaves
  *  her wherever you dropped her. Re-asserting after every pose change keeps her centred.
  *
- *  cameraDistance pulls back slightly from the stock `upper` framing: the default crops close
- *  enough that a raised hand leaves the top of the frame, and gestures are half the point.
+ *  setView derives `upper` as z = cameraDistance + 4.5 and y = (1 - cameraY) * tan(fov/2) * z
+ *  + 2 * avatarHeight / 3. So a NEGATIVE cameraDistance zooms in, and a POSITIVE cameraY drops
+ *  the camera, which lifts her within the frame. Both are on sliders because this is a judgement
+ *  by eye, not a number anyone can derive.
  */
 function reframe() {
-  try { head.setView("upper", { cameraDistance: 0.6, cameraY: -0.02 }); } catch (e) {}
+  const cameraDistance = parseFloat($("zoom").value);
+  const cameraY = parseFloat($("high").value);
+  try { head.setView("upper", { cameraDistance, cameraY }); } catch (e) {}
 }
 
 /** setPoseFromTemplate takes the TEMPLATE OBJECT, not its name.
@@ -356,6 +364,8 @@ buttons("emojis", EMOJIS, e => {
 });
 
 $("dur").oninput = () => { $("durv").textContent = $("dur").value + "s"; };
+$("zoom").oninput = () => { $("zoomv").textContent = $("zoom").value; reframe(); };
+$("high").oninput = () => { $("highv").textContent = $("high").value; reframe(); };
 
 $("freeze").onclick = () => {
   frozen = !frozen;

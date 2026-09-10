@@ -221,6 +221,9 @@ Optional, but the whole point: a **read-only** WaniKani API token and a Bunpro A
 git clone <this-repo> atama-ai
 cd atama-ai
 
+python -m venv .venv          # then activate it
+pip install -e ".[dev]"       # every dependency, declared in pyproject.toml
+
 docker compose up -d          # VOICEVOX on 127.0.0.1:50021
 make avatar                   # fetch the default avatar (see the licence note below)
 make doctor                   # verify everything before you waste time

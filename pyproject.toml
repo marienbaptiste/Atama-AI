@@ -4,15 +4,24 @@ version = "0.0.1"
 description = "Real-time voice Japanese tutor with a 3D avatar (spec: ATAMA-AI_SPEC.md)"
 requires-python = ">=3.11"
 dependencies = [
+    # M0/M1 — config, SRS client, brain, MCP
     "httpx>=0.28",
     "pydantic>=2",
     "mcp>=1.2",
+    # M2 — ears and mouth. These were installed in the working venv but never declared, so a
+    # fresh clone could not run the voice loop at all (found 2026-09-10).
+    "numpy>=2",
+    "sounddevice>=0.5",       # PortAudio: mic capture and playback
+    "faster-whisper>=1.2",    # STT (ADR-004)
+    "onnxruntime>=1.20",      # Silero VAD runs on ONNX, not torch (spec §10b: ~2 MB, not a GB)
+    # M3 — the browser talks to the orchestrator over a WebSocket (spec §8)
+    "uvicorn>=0.30",
+    "starlette>=0.40",
+    "websockets>=13",         # uvicorn serves NO WebSocket without this or wsproto
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
-# Voice pipeline deps (M2+) are added when those milestones start:
-# fastapi, uvicorn, faster-whisper, silero-vad (torch), numpy.
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
