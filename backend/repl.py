@@ -82,6 +82,14 @@ async def run(args: argparse.Namespace) -> int:
         print(f"\n{BOLD}cannot start the brain:{RESET} {exc}\n", file=sys.stderr)
         return 2
     # --- mouth (spec §7): synthesis of sentence N+1 overlaps playback of N -------
+    # --- the browser, if it is watching (spec §8) --------------------------------
+    hub, server_task = None, None
+    if args.browser:
+        from backend import app as web
+        hub = web.Hub()
+        server_task, url = await web.serve(hub, cfg)
+        print(f"{BOLD}avatar:{RESET} {url}   {DIM}(open it before you start talking){RESET}")
+
     voice = None
     if args.speak:
         tts = VoicevoxClient.from_config(cfg)
@@ -89,7 +97,10 @@ async def run(args: argparse.Namespace) -> int:
             registry.report("voicevox", "loading", f"engine {tts.version} · speaker {tts.speaker}")
             for warning in tts.warnings:
                 print(f"{DIM}voice: {warning}{RESET}")
-            voice = SpeechQueue(tts, device=cfg.AUDIO_OUTPUT_DEVICE)
+            # With a browser attached the audio goes there, not to this machine — otherwise she
+            # speaks twice, a few hundred milliseconds apart, which is worse than either alone.
+            voice = SpeechQueue(tts, device=cfg.AUDIO_OUTPUT_DEVICE,
+                                sink=(lambda s: hub.speak(s)) if hub else None)
             await voice.start()
             # The engine loads a style's model on first use, so answering /version is not the
             # same as being able to speak. Pay that here rather than inside Sensei's opening
@@ -153,6 +164,9 @@ async def run(args: argparse.Namespace) -> int:
             if voice is not None:
                 await voice.aclose()
             await brain.aclose()
+            if server_task is not None:
+                from backend import app as web
+                await web.shutdown(server_task)
         return 0
 
     try:
@@ -179,6 +193,9 @@ async def run(args: argparse.Namespace) -> int:
         if voice is not None:
             await voice.aclose()
         await brain.aclose()
+        if server_task is not None:
+            from backend import app as web
+            await web.shutdown(server_task)
     return 0
 
 
@@ -390,8 +407,9 @@ def main() -> int:
     ap.add_argument("--no-open", action="store_true", help="do not let Sensei speak first")
     ap.add_argument("--speak", action="store_true", help="speak each sentence aloud via VOICEVOX")
     ap.add_argument("--listen", action="store_true", help="talk to her: mic -> VAD -> Whisper (implies --speak)")
+    ap.add_argument("--browser", action="store_true", help="send her voice to the browser avatar instead of this machine's speakers (implies --speak)")
     args = ap.parse_args()
-    args.speak = args.speak or args.listen      # the help says implies; make it true (2026-09-09)
+    args.speak = args.speak or args.listen or args.browser   # the help says implies; make it true
     try:
         return asyncio.run(run(args))
     except KeyboardInterrupt:

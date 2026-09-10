@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 
 class _Msg(BaseModel):
@@ -195,6 +195,12 @@ ServerMessage = Annotated[
           SrsProfile, ServiceStatus, Settings, Timing, Error],
     Field(discriminator="type"),
 ]
+
+
+#: Parse an incoming frame into the right model, or raise. The discriminator does the work, so an
+#: unknown `type` fails here rather than three layers down as a missing attribute.
+ClientMessageAdapter = TypeAdapter(ClientMessage)
+ServerMessageAdapter = TypeAdapter(ServerMessage)
 
 
 def _types(union) -> frozenset[str]:

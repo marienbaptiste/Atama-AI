@@ -36,6 +36,11 @@ class SpeechQueue:
 
     tts: VoicevoxClient
     device: str | int | None = None
+    #: Where a synthesised sentence GOES. None plays it on this machine's speakers; set it and the
+    #: audio is handed elsewhere instead — the browser, over the WebSocket — and the queue simply
+    #: waits out its duration so drain(), barge-in and the §10 timings keep working unchanged.
+    #: async (Speech) -> seconds of audio.
+    sink: object = None
     on_event: Callable[[str, SpokenChunk], None] | None = None
     _player: audio_mod.Player | None = field(default=None, init=False, repr=False)
     _queue: asyncio.Queue | None = field(default=None, init=False)
@@ -47,6 +52,9 @@ class SpeechQueue:
         self._cancelled = False
         # One output stream for the session: a stream opened per sentence drops its own first
         # ~100 ms while starting, which clipped every opening syllable (fixed 2026-09-09).
+        if self.sink is not None:
+            self._task = asyncio.create_task(self._play_loop())
+            return                        # no local audio device at all when the browser has it
         self._player = audio_mod.Player(self.device)
         # Open it now, not on the first sentence: an unopened stream eats its own first ~100 ms,
         # which clipped the tutor's opening syllable (2026-09-09).
@@ -118,7 +126,17 @@ class SpeechQueue:
         while True:
             speech, record = await self._queue.get()
             try:
-                if not self._cancelled and self._player is not None:
+                if self._cancelled:
+                    pass
+                elif self.sink is not None:
+                    record.played_at = time.monotonic()
+                    self._emit("playing", record)
+                    seconds = await self.sink(speech)
+                    # The browser is playing it, so hold the queue for as long as that takes.
+                    # Without this every sentence would be dispatched at once and the tutor would
+                    # talk over herself; cancellation during the wait is barge-in working.
+                    await asyncio.sleep(max(0.0, seconds))
+                elif self._player is not None:
                     record.played_at = time.monotonic()
                     self._emit("playing", record)
                     await asyncio.to_thread(self._player.play, speech.wav)

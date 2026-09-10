@@ -18,6 +18,8 @@
   .row{display:flex;gap:5px;flex-wrap:wrap}
   label{display:flex;align-items:center;gap:6px;color:#9aa3ad;margin-top:6px}
   input[type=range]{flex:1}
+  #live{font-size:11px;color:#8b939d;line-height:1.5}
+  #live.on{color:#8fd18f}
   #log{margin-top:12px;font-size:11px;color:#8b939d;line-height:1.6;
        border-top:1px solid #2c3138;padding-top:9px}
   .err{color:#ff8a80}
@@ -55,6 +57,9 @@
     <button id="reset">reset</button>
     <button id="recentre">recentre camera</button>
   </div>
+
+  <h2>live</h2>
+  <div id="live">not connected</div>
 
   <div id="log">loading…</div>
 </div>
@@ -412,6 +417,52 @@ async function pick(id) {
   log("<b>" + c.glb + "</b>" + (c.own_face ? "" : " <i>(stand-in — this persona has no model yet)</i>")
       + "<br>voice " + c.voice + " · audio VOICEVOX · visemes ours · times in ms");
 }
+
+/** Play one `speak` message from the orchestrator (spec §8).
+ *
+ *  Identical to the offline preview path, which is the point: the payload the server sends is
+ *  the same shape make_preview writes to disk, so if one works the other does.
+ */
+async function playSpeak(msg) {
+  ctx = ctx || new AudioContext();
+  await ctx.resume();
+  const bytes = Uint8Array.from(atob(msg.audio_b64), c => c.charCodeAt(0));
+  const buf = await ctx.decodeAudioData(bytes.buffer);
+  applyRig(msg.emotion || "neutral");
+  head.speakAudio({ audio: buf, words: [msg.text || " "], wtimes: [0],
+                    wdurations: [buf.duration * 1000],
+                    visemes: msg.visemes, vtimes: msg.vtimes, vdurations: msg.vdurations });
+}
+
+function connect() {
+  const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+  let socket;
+  try { socket = new WebSocket(url); } catch (e) { return; }
+
+  socket.onopen = () => {
+    $("live").textContent = "connected — talk to her in the terminal (SPACE to push to talk)";
+    $("live").classList.add("on");
+  };
+  socket.onclose = () => {
+    $("live").textContent = "disconnected — reconnecting…";
+    $("live").classList.remove("on");
+    setTimeout(connect, 2000);          // the REPL may simply not be running yet
+  };
+  socket.onmessage = async (event) => {
+    let msg;
+    try { msg = JSON.parse(event.data); } catch (e) { return; }
+    switch (msg.type) {
+      case "speak":       await playSpeak(msg); break;
+      case "state":       $("live").textContent = "she is " + msg.state; break;
+      case "stt_final":   log("<b>you:</b> " + (msg.text || "")
+                              + (msg.accepted ? "" : " <i>(discarded: " + msg.reason + ")</i>")); break;
+      case "bargein":     head.stopSpeaking && head.stopSpeaking(); break;
+      case "service_status": break;     // the status bar is M3 proper
+      case "error":       log('<span class="err">' + msg.message + "</span>"); break;
+    }
+  };
+}
+connect();
 
 $("who").onchange = () => pick($("who").value);
 
