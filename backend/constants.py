@@ -131,6 +131,10 @@ TALKINGHEAD_VISEMES = ("aa", "E", "I", "O", "U", "PP", "SS", "TH", "DD", "FF",
 # name is a silent no-op, so those three tags drive `neutral` plus explicit blendshape overrides
 # (spec §8), never a mood string.
 TALKINGHEAD_MOODS = ("neutral", "happy", "angry", "sad", "fear", "disgust", "love", "sleep")
+# Eye contact is a pair of [0,1] options whose defaults are LOW — avatarIdleEyeContact 0.2 and
+# avatarSpeakingEyeContact 0.5 — so an untouched avatar looks away most of the time. A tutor
+# should hold the student's gaze; 0.9/0.9 does that while leaving enough drift to avoid a stare.
+TALKINGHEAD_EYE_CONTACT_DEFAULTS = {"idle": 0.2, "speaking": 0.5}
 TALKINGHEAD_GESTURES = ("handup", "index", "ok", "thumbup", "thumbdown", "side", "shrug")
 # Blendshape override: head.setFixedValue("jawOpen", 1) and setFixedValue(name, null) to release;
 # or an `anim` object {dt: [ms], vs: {shape: [values]}} inside speakAudio for audio-synced motion.

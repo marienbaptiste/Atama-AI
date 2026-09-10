@@ -85,7 +85,10 @@ const CAST = [
 const RIG = {
   neutral:   { mood:"neutral", shapes:{} },
   happy:     { mood:"happy",   shapes:{}, gesture:"ok" },
-  thinking:  { mood:"neutral", gesture:"shrug", pose:"hip",
+  // `release` matters here, not just on surprised: a pinned gaze beats avatarIdleEyeContact
+  // outright, so without it she would look away for the rest of the session after one
+  // `thinking` turn. Considering something is momentary; being evasive is not.
+  thinking:  { mood:"neutral", gesture:"shrug", pose:"hip", release:2000,
                shapes:{ eyesRotateX:-0.35, eyesRotateY:0.45, browDownLeft:0.25,
                         browDownRight:0.25, mouthPucker:0.15 } },
   surprised: { mood:"neutral", gesture:"handup", release:1200,
@@ -108,6 +111,12 @@ const head = new TalkingHead($("stage"), {
   cameraView: "upper",
   avatarMood: "neutral",
   modelPixelRatio: 1,          // it multiplies by devicePixelRatio itself; passing it squares it
+  // TalkingHead defaults to 0.2 idle / 0.5 speaking, so out of the box the tutor looks away most
+  // of the time. That reads as evasive on a teacher — a student wants to be looked at while being
+  // corrected. 0.9 keeps her eyes on you almost always; the residual 10% is what stops it
+  // becoming a stare, since unbroken eye contact is its own kind of wrong.
+  avatarIdleEyeContact: 0.9,
+  avatarSpeakingEyeContact: 0.9,
 });
 
 let payloads = null, ctx = null, held = [], frozen = false;
