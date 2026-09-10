@@ -49,6 +49,7 @@
   <div class="row">
     <button id="freeze">freeze all motion</button>
     <button id="reset">reset</button>
+    <button id="recentre">recentre camera</button>
   </div>
 
   <div id="log">loading…</div>
@@ -70,6 +71,10 @@ import { TalkingHead } from "talkinghead";
 const MOODS    = ["neutral","happy","angry","sad","fear","disgust","love","sleep"];
 const GESTURES = ["handup","index","ok","thumbup","thumbdown","side","shrug","namaste"];
 const POSES    = ["side","hip","turn","bend","back","straight","wide","oneknee","kneel","sitting"];
+//: Safe for an upper-body frame. `bend` and `back` pitch the torso far enough to walk her out of
+//: shot, and kneel/sitting/oneknee drop her below it entirely — she is teaching, standing.
+//: The full list above stays available from the buttons, so you can still see what they do.
+const FRAMED_POSES = ["side","hip","turn","straight","wide"];
 const EMOJIS   = ["yes","no"];          // nod / shake — spec §8's あいづち listening reaction
 
 // The cast comes from cast.json, which backend.tools.make_preview writes from the persona files
@@ -113,7 +118,7 @@ const RIG = {
                         browDownRight:0.25, mouthPucker:0.15 } },
   surprised: { mood:"neutral", release:1200,
                gestures:["handup","index","shrug"],      gestureChance:0.85,
-               poses:["straight","back"],                poseChance:0.40,
+               poses:["straight","side"],                poseChance:0.40,
                shapes:{ browInnerUp:0.9, browOuterUpLeft:0.7, browOuterUpRight:0.7,
                         eyeWideLeft:0.6, eyeWideRight:0.6, jawOpen:0.18 } },
   serious:   { mood:"neutral", release:2600,
@@ -199,7 +204,7 @@ function clearShapes() { held.forEach(s => head.setFixedValue(s, null)); held = 
 //: character stops reading as alive and starts reading as frozen (reported 2026-09-10).
 const SETTLE_AFTER_MS = 4000;          // face and mood back to neutral this long after a turn
 const REST_AFTER_MS   = 9000;          // posture drifts back to standing a while later
-const REST_POSES = ["straight", "side"];
+const REST_POSES = ["straight", "side"];      // both framed; see FRAMED_POSES
 let settleTimer = null, restTimer = null;
 
 /** Actively aim the gaze at the camera.
@@ -210,6 +215,19 @@ let settleTimer = null, restTimer = null;
  *  lookAt(null, null, t)). Verified 2026-09-10.
  */
 function meetEye(ms = 600) { try { head.lookAtCamera(ms); } catch (e) {} }
+
+/** Put the upper body back in the middle of the frame.
+ *
+ *  setView computes a STATIC frame from avatarHeight — it does not track the body — so a pose
+ *  that shifts weight or leans slowly walks her out of shot, and orbiting with the mouse leaves
+ *  her wherever you dropped her. Re-asserting after every pose change keeps her centred.
+ *
+ *  cameraDistance pulls back slightly from the stock `upper` framing: the default crops close
+ *  enough that a raised hand leaves the top of the frame, and gestures are half the point.
+ */
+function reframe() {
+  try { head.setView("upper", { cameraDistance: 0.6, cameraY: -0.02 }); } catch (e) {}
+}
 
 /** setPoseFromTemplate takes the TEMPLATE OBJECT, not its name.
  *
@@ -222,6 +240,7 @@ function setPose(name, ms = 1200) {
   const template = head.poseTemplates && head.poseTemplates[name];
   if (!template) { log('<span class="err">unknown pose: ' + name + "</span>"); return false; }
   head.setPoseFromTemplate(template, ms);
+  setTimeout(reframe, ms * 0.6);       // recentre as the pose settles, not before it moves
   return true;
 }
 
@@ -269,6 +288,7 @@ function applyRig(name) {
 
   lastMotion = { pose: null, gesture: null, react: null };
   meetEye(500);              // look at the student first, then react
+  reframe();
 
   if (r.react && Math.random() < (r.reactChance ?? 0)) {
     head.playGesture(r.react, 2, false, 400);
@@ -276,7 +296,7 @@ function applyRig(name) {
   }
 
   if (Math.random() < (r.poseChance ?? 0)) {
-    const pose = draw(name + ":pose", r.poses);
+    const pose = draw(name + ":pose", (r.poses || []).filter(p => FRAMED_POSES.includes(p)));
     if (pose && setPose(pose, 1200)) lastMotion.pose = pose;
   }
   if (Math.random() < (r.gestureChance ?? 0)) {
@@ -345,11 +365,14 @@ $("freeze").onclick = () => {
              : "motion resumed");
 };
 
+$("recentre").onclick = () => { reframe(); log("camera recentred on the upper body"); };
+
 $("reset").onclick = () => {
   clearShapes();
   head.setMood("neutral");
   setPose("straight", 800);
   meetEye(400);
+  reframe();
   log("reset to neutral");
 };
 
@@ -373,6 +396,8 @@ async function pick(id) {
     log('<span class="err">no audio for ' + id + "</span> — run <code>make_preview</code>");
     return;
   }
+  reframe();
+  meetEye(600);
   buttons("emotions", Object.keys(RIG), speak);
   log("<b>" + c.glb + "</b>" + (c.own_face ? "" : " <i>(stand-in — this persona has no model yet)</i>")
       + "<br>voice " + c.voice + " · audio VOICEVOX · visemes ours · times in ms");
