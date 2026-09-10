@@ -5,7 +5,7 @@
 #   .venv/Scripts/python -m backend.tools.doctor
 PY ?= $(shell test -x .venv/bin/python && echo .venv/bin/python || echo .venv/Scripts/python)
 
-.PHONY: check-readonly check-secrets test doctor hooks capture-bunpro run avatar
+.PHONY: check-readonly check-secrets test doctor hooks capture-bunpro run stop avatar
 
 # Golden Rule gate (spec §0). First target of `test`, prerequisite of `run` and `doctor`.
 check-readonly:
@@ -33,5 +33,13 @@ hooks:
 capture-bunpro: check-readonly
 	$(PY) -m backend.tools.capture_bunpro
 
+# ONE command to start everything: containers, wait for VOICEVOX to actually answer, the tutor
+# with the browser avatar, and the page opened. Ctrl+C stops the tutor; the containers stay up
+# because they are slow to start and cheap to keep.
 run: check-readonly
-	@echo "make run lands with M2 (backend/app.py)"; exit 1
+	$(PY) -m backend.tools.up
+
+# ONE command to stop everything the tutor cannot stop itself — i.e. the containers, which are
+# detached and `restart: unless-stopped`, so they outlive the app and survive a reboot.
+stop:
+	$(PY) -m backend.tools.down

@@ -88,7 +88,10 @@ async def run(args: argparse.Namespace) -> int:
         from backend import app as web
         hub = web.Hub()
         server_task, url = await web.serve(hub, cfg)
-        print(f"{BOLD}avatar:{RESET} {url}   {DIM}(open it before you start talking){RESET}")
+        print(f"{BOLD}avatar:{RESET} {url}")
+        if getattr(args, "show", False):
+            import webbrowser
+            webbrowser.open(url)
 
     voice = None
     if args.speak:
@@ -410,18 +413,28 @@ async def _one_turn(brain, text: str, voice=None) -> None:
             print(f"  {DIM}{' · '.join(bits)}{RESET}\n")
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="atama-AI M1 text REPL")
+def parse(argv: list[str] | None = None) -> argparse.Namespace:
+    """Command line -> options. Separate from main() so `backend.tools.up` can reuse it rather
+    than re-declaring flags that would then drift."""
+    ap = argparse.ArgumentParser(prog="python -m backend.repl", description="atama-AI voice tutor")
     ap.add_argument("--refresh", action="store_true", help="force a fresh SRS sync")
     ap.add_argument("--no-srs", action="store_true", help="skip WaniKani/Bunpro entirely")
     ap.add_argument("--no-open", action="store_true", help="do not let Sensei speak first")
     ap.add_argument("--speak", action="store_true", help="speak each sentence aloud via VOICEVOX")
     ap.add_argument("--listen", action="store_true", help="talk to her: mic -> VAD -> Whisper (implies --speak)")
     ap.add_argument("--browser", action="store_true", help="send her voice to the browser avatar instead of this machine's speakers (implies --speak)")
-    args = ap.parse_args()
+    # NOT --open: `--no-open` above already means "do not let her greet you first", and a pair
+    # that reads as each other's negation while meaning unrelated things is a trap.
+    ap.add_argument("--show", action="store_true",
+                    help="open the avatar page in your browser once the server is up")
+    args = ap.parse_args(argv)
     args.speak = args.speak or args.listen or args.browser   # the help says implies; make it true
+    return args
+
+
+def main() -> int:
     try:
-        return asyncio.run(run(args))
+        return asyncio.run(run(parse()))
     except KeyboardInterrupt:
         return 130
 

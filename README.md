@@ -223,12 +223,19 @@ cd atama-ai
 
 python -m venv .venv          # then activate it
 pip install -e ".[dev]"       # every dependency, declared in pyproject.toml
-
-docker compose up -d          # VOICEVOX on 127.0.0.1:50021
 make avatar                   # fetch the default avatar (see the licence note below)
-make doctor                   # verify everything before you waste time
-make run                      # orchestrator :8000 + frontend :5173
+
+make run                      # start EVERYTHING and open the avatar
+make stop                     # stop everything (containers included)
 ```
+
+`make run` brings up the containers, waits until VOICEVOX genuinely answers rather than assuming
+it, starts the tutor with the browser avatar, and opens the page. **Hold SPACE and talk.**
+Ctrl+C stops the tutor and leaves the containers running — they are slow to start and cheap to
+keep, so `make stop` is separate and deliberate.
+
+No `make`? Every target is a plain command: `python -m backend.tools.up` and
+`python -m backend.tools.down`.
 
 Then open `http://localhost:5173`. On first run the app opens on its **settings page**: paste
 your tokens, press each **Test** button, and the conversation view unlocks once Claude tests
