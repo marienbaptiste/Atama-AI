@@ -82,22 +82,52 @@ const CAST = [
 
 // Spec §8's emotion -> rig table. Only neutral and happy are real TalkingHead moods (V0.4), so
 // the other three ride on `neutral` plus ARKit blendshapes pinned with setFixedValue.
+//
+// Gestures and poses are POOLS, not single values, because one emotion mapped to one fixed
+// gesture is what makes an avatar read as a machine: the fourth time she says something happy
+// with the identical hand movement, the illusion is gone. Each turn draws from the pool, never
+// repeats the previous draw, and quite often does nothing at all — `gestureChance` below 1 is
+// deliberate, since a person punctuating every single sentence with their hands is as wrong as
+// one who never moves.
+//
+// `pose` changes far more rarely than `gesture`: posture is where you are standing, a gesture is
+// punctuation over it. Kneel/sitting/oneknee are excluded everywhere — she is teaching, standing.
 const RIG = {
-  neutral:   { mood:"neutral", shapes:{} },
-  happy:     { mood:"happy",   shapes:{}, gesture:"ok" },
+  neutral:   { mood:"neutral", shapes:{},
+               gestures:["side"],                        gestureChance:0.10,
+               poses:["side","straight","hip"],          poseChance:0.20 },
+  happy:     { mood:"happy",   shapes:{},
+               gestures:["ok","thumbup","handup","namaste"], gestureChance:0.65,
+               poses:["straight","side"],                poseChance:0.30 },
   // `release` matters here, not just on surprised: a pinned gaze beats avatarIdleEyeContact
   // outright, so without it she would look away for the rest of the session after one
   // `thinking` turn. Considering something is momentary; being evasive is not.
-  thinking:  { mood:"neutral", gesture:"shrug", pose:"hip", release:2000,
+  thinking:  { mood:"neutral", release:2000,
+               gestures:["shrug","side","index"],        gestureChance:0.55,
+               poses:["hip","side","turn"],              poseChance:0.35,
                shapes:{ eyesRotateX:-0.35, eyesRotateY:0.45, browDownLeft:0.25,
                         browDownRight:0.25, mouthPucker:0.15 } },
-  surprised: { mood:"neutral", gesture:"handup", release:1200,
+  surprised: { mood:"neutral", release:1200,
+               gestures:["handup","index","shrug"],      gestureChance:0.85,
+               poses:["straight","back"],                poseChance:0.40,
                shapes:{ browInnerUp:0.9, browOuterUpLeft:0.7, browOuterUpRight:0.7,
                         eyeWideLeft:0.6, eyeWideRight:0.6, jawOpen:0.18 } },
-  serious:   { mood:"neutral", gesture:"index",
+  serious:   { mood:"neutral",
+               gestures:["index","side","handup"],       gestureChance:0.70,
+               poses:["straight","wide"],                poseChance:0.25,
                shapes:{ browDownLeft:0.55, browDownRight:0.55, mouthPressLeft:0.3,
                         mouthPressRight:0.3, eyeSquintLeft:0.2, eyeSquintRight:0.2 } },
 };
+
+//: Last draw per pool, so the same gesture never fires twice running.
+const lastDraw = {};
+function draw(key, pool) {
+  if (!pool || !pool.length) return null;
+  const fresh = pool.length > 1 ? pool.filter(x => x !== lastDraw[key]) : pool;
+  const value = fresh[Math.floor(Math.random() * fresh.length)];
+  lastDraw[key] = value;
+  return value;
+}
 
 const $ = id => document.getElementById(id);
 const log = m => { $("log").innerHTML = m; };
@@ -133,6 +163,9 @@ function buttons(host, names, fn) {
 
 function clearShapes() { held.forEach(s => head.setFixedValue(s, null)); held = []; }
 
+//: What the last draw actually produced, so the log can show it rather than the pool.
+let lastMotion = { pose: null, gesture: null };
+
 function applyRig(name) {
   const r = RIG[name] || RIG.neutral;
   clearShapes();
@@ -140,8 +173,26 @@ function applyRig(name) {
   held = Object.keys(r.shapes);
   held.forEach(s => head.setFixedValue(s, r.shapes[s]));
   if (r.release) setTimeout(clearShapes, r.release);
-  if (r.pose) { try { head.setPoseFromTemplate(r.pose, 1200); } catch (e) {} }
-  if (r.gesture) head.playGesture(r.gesture, +$("dur").value, $("mirror").checked, 800);
+
+  lastMotion = { pose: null, gesture: null };
+
+  if (Math.random() < (r.poseChance ?? 0)) {
+    const pose = draw(name + ":pose", r.poses);
+    if (pose) {
+      try { head.setPoseFromTemplate(pose, 1200); lastMotion.pose = pose; } catch (e) {}
+    }
+  }
+  if (Math.random() < (r.gestureChance ?? 0)) {
+    const gesture = draw(name + ":gesture", r.gestures);
+    if (gesture) {
+      // Jitter the hold and the hand as well: identical timing is its own kind of robotic, and a
+      // right-handed person still reaches with the other hand now and then.
+      const hold = Math.max(1, +$("dur").value + (Math.random() * 1.4 - 0.7));
+      const right = $("mirror").checked ? Math.random() > 0.15 : false;
+      head.playGesture(gesture, hold, right, 600 + Math.random() * 500);
+      lastMotion.gesture = gesture + (right ? "" : " (left)");
+    }
+  }
 }
 
 async function speak(tag) {
@@ -159,7 +210,9 @@ async function speak(tag) {
   head.speakAudio({ audio: buf, words: [p.text], wtimes: [0], wdurations: [buf.duration * 1000],
                     visemes: p.visemes, vtimes: p.vtimes, vdurations: p.vdurations });
   log("<b>" + tag + "</b> — " + p.visemes.length + " visemes over "
-      + Math.round(buf.duration * 1000) + " ms");
+      + Math.round(buf.duration * 1000) + " ms<br>gesture: <b>"
+      + (lastMotion.gesture || "none") + "</b> · posture: <b>"
+      + (lastMotion.pose || "unchanged") + "</b>");
 }
 
 buttons("moods", MOODS, m => { head.setMood(m); log("mood <b>" + m + "</b>"); });
