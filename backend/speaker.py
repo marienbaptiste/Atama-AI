@@ -64,6 +64,12 @@ class SpeechQueue:
             pass
         self._task = asyncio.create_task(self._play_loop())
 
+    def set_device(self, device: str | int | None) -> None:
+        """Switch local playback to another output, live. Nothing to do when the browser plays."""
+        self.device = device
+        if self._player is not None:
+            self._player.switch(device)
+
     async def say(self, chunk: Chunk) -> None:
         """Synthesise one sentence and queue it. Returns as soon as the audio exists."""
         if self._queue is None:
@@ -140,7 +146,8 @@ class SpeechQueue:
                     record.played_at = time.monotonic()
                     self._emit("playing", record)
                     await asyncio.to_thread(self._player.play, speech.wav)
-            except (audio_mod.AudioUnavailable, OSError) as exc:
+            except Exception as exc:  # noqa: BLE001 - PortAudioError is neither of the old two,
+                # and one sentence that cannot play must not end playback for the session.
                 record.error = f"playback failed: {exc}"
                 self._emit("error", record)
             finally:

@@ -17,9 +17,10 @@ from __future__ import annotations
 import io
 import sys
 import threading
+import time
 import wave
 from dataclasses import dataclass
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 import numpy as np
 
@@ -58,6 +59,20 @@ def _sd():
 USABLE_HOSTAPIS = ("MME", "Windows DirectSound")
 CAPTURE_HOSTAPIS = USABLE_HOSTAPIS
 PLAYBACK_HOSTAPIS = USABLE_HOSTAPIS
+
+#: A lost or missing device is looked for again this often.
+RETRY_S = 2.0
+#: While on the system default because the chosen device is missing, how often to check whether
+#: it has come back. Each check closes and reopens the stream (a gap of a fraction of a second),
+#: so it only runs between turns — never while push-to-talk is held.
+PROBE_S = 5.0
+#: Windows' MME "Sound Mapper" entries route to whatever the OS default device is, so they are
+#: the best meaning of "system default". Verified 2026-09-10: the output mapper opens at 24 kHz.
+#: That an open mapper stream FOLLOWS a live change of the OS default is Windows' wave-mapper
+#: behaviour and has not been observed here yet.
+MAPPER_PREFIX = "Microsoft Sound Mapper"
+#: DirectSound's own alias for the default device; like the mapper, not a device to pick by name.
+DEFAULT_ALIASES = ("Primary Sound Driver", "Primary Sound Capture Driver")
 
 
 @dataclass(frozen=True)
@@ -151,6 +166,68 @@ def resolve_device(spec: str | int | None, kind: str) -> int | None:
     return None
 
 
+def _system_default(kind: str) -> int | None:
+    """The MME Sound Mapper when there is one (it follows the OS default), else PortAudio's."""
+    try:
+        devices = list_devices(kind)
+    except AudioUnavailable:
+        return None
+    for d in devices:
+        if d.usable and d.name.startswith(MAPPER_PREFIX):
+            return d.index
+    return None
+
+
+def pick(spec: str | int | None, kind: str) -> tuple[int | None, bool]:
+    """(device index, fell_back). The chosen device when it is connected; otherwise the system
+    default, with `fell_back` True so the caller can say so and look for it again later."""
+    wanted = "" if spec is None else str(spec).strip()
+    index = resolve_device(wanted, kind) if wanted else None
+    if index is not None:
+        return index, False
+    return _system_default(kind), bool(wanted)
+
+
+def device_name(index: int | None, kind: str) -> str:
+    try:
+        sd = _sd()
+        if index is None:
+            index = sd.default.device[0 if kind == "input" else 1]
+        return str(sd.query_devices(index)["name"])
+    except Exception:  # noqa: BLE001 - a name is for display; never fail over it
+        return "system default"
+
+
+#: Open streams, so `rescan` never re-initialises PortAudio underneath one.
+_pa_lock = threading.Lock()
+_open_streams = 0
+
+
+def _track(delta: int) -> None:
+    global _open_streams
+    with _pa_lock:
+        _open_streams += delta
+
+
+def rescan() -> bool:
+    """Re-read the device list from the OS. Returns False when it was not safe to.
+
+    PortAudio snapshots the devices when it initialises, so a headset plugged in after launch is
+    invisible until this runs. Terminating PortAudio under an open stream would tear that stream
+    down mid-read, so this refuses while any stream is open; callers re-scan after closing theirs.
+    """
+    sd = _sd()
+    with _pa_lock:
+        if _open_streams > 0:
+            return False
+        try:
+            sd._terminate()
+            sd._initialize()
+        except Exception:  # noqa: BLE001 - an unscannable system keeps the old list
+            return False
+    return True
+
+
 def decode_wav(data: bytes) -> tuple[np.ndarray, int]:
     """WAV bytes -> (float32 samples in [-1, 1], samplerate). Mono or stereo in, mono out."""
     with wave.open(io.BytesIO(data), "rb") as wav:
@@ -200,7 +277,8 @@ class Player:
 
     def __init__(self, device: str | int | None = None, samplerate: int = DEFAULT_RATE):
         self._sd = _sd()
-        self._device = resolve_device(device, "output")
+        self._spec = device
+        self._device: int | None = None
         self._rate = samplerate
         self._stream = None
         self._cancel = threading.Event()
@@ -215,9 +293,18 @@ class Player:
         # keep-alive thread, which is itself waiting for that lock.
         self._close_stream()
         self._rate = rate
-        self._stream = self._sd.OutputStream(samplerate=rate, channels=1, dtype="float32",
-                                             device=self._device, blocksize=self.BLOCK)
-        self._stream.start()
+        # Resolved at every open, not once: after a device drops out, this is what lands the
+        # reopened stream on whatever is there now — the chosen device or the system default.
+        self._device, _ = pick(self._spec, "output")
+        stream = self._sd.OutputStream(samplerate=rate, channels=1, dtype="float32",
+                                       device=self._device, blocksize=self.BLOCK)
+        try:
+            stream.start()
+        except Exception:
+            stream.close()
+            raise
+        self._stream = stream
+        _track(+1)
         # Prime with a few blocks of silence so the very first sample of real audio lands in a
         # stream that is already running, not one that is still starting.
         self._stream.write(np.zeros(self.BLOCK * 2, dtype=np.float32))
@@ -245,30 +332,60 @@ class Player:
         """Write silence while idle. Blocking writes pace this at real time by themselves."""
         silence = np.zeros(self.KEEPALIVE_BLOCK, dtype=np.float32)
         while not self._stop.is_set():
+            broken = False
             with self._lock:
-                stream = self._stream
-                if stream is not None:
+                if self._stream is not None:
                     try:
-                        stream.write(silence)
+                        self._stream.write(silence)
                         continue
-                    except Exception:  # noqa: BLE001 - a closing stream must not raise here
-                        return
-            self._stop.wait(0.05)   # no stream yet: idle politely rather than spinning
+                    except Exception:  # noqa: BLE001 - the device went away (PortAudioError)
+                        # This used to `return`, which ended the keep-alive for good: one
+                        # unplug and every later sentence paid the spin-up clip again.
+                        self._close_stream()
+                        broken = True
+                else:
+                    try:
+                        self._ensure(self._rate)   # reopen after a loss, on whatever is there now
+                        continue
+                    except Exception:  # noqa: BLE001 - nothing to play on yet; try again soon
+                        broken = True
+            if broken:
+                self._stop.wait(RETRY_S)
+                rescan()
 
     def play(self, wav_bytes: bytes) -> float:
         """Play a WAV through the open stream. Returns seconds actually played."""
         samples, rate = decode_wav(wav_bytes)
         with self._lock:
             self._cancel.clear()
-            self._ensure(rate)
-            written = 0
-            for start in range(0, len(samples), self.BLOCK):
-                if self._cancel.is_set():
-                    break
-                block = samples[start:start + self.BLOCK]
-                self._stream.write(np.ascontiguousarray(block, dtype=np.float32))  # type: ignore[union-attr]
-                written += len(block)
-        return written / float(rate or SAMPLE_RATE)
+            for attempt in (1, 2):
+                try:
+                    self._ensure(rate)
+                    written = 0
+                    for start in range(0, len(samples), self.BLOCK):
+                        if self._cancel.is_set():
+                            break
+                        block = samples[start:start + self.BLOCK]
+                        self._stream.write(np.ascontiguousarray(block, dtype=np.float32))  # type: ignore[union-attr]
+                        written += len(block)
+                    return written / float(rate or SAMPLE_RATE)
+                except AudioUnavailable:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - PortAudioError: the device went away
+                    # Drop the dead stream; the retry reopens on whatever is connected now and
+                    # plays the sentence from the top. A second failure is reported, not raised
+                    # as a PortAudioError nobody upstream knows to catch.
+                    self._close_stream()
+                    if attempt == 2:
+                        raise AudioUnavailable(f"no playback device: {exc}") from None
+                    rescan()
+        return 0.0
+
+    def switch(self, device: str | int | None) -> None:
+        """Play on a different output from now on — the settings panel, live."""
+        with self._lock:
+            self._spec = device
+            self._close_stream()      # the keep-alive (or the next sentence) reopens on the choice
 
     def cancel(self) -> None:
         """Stop the sentence in flight. Safe from another thread — that is the point."""
@@ -283,6 +400,7 @@ class Player:
                 stream.close()
             except Exception:  # noqa: BLE001 - closing audio must never raise on shutdown
                 pass
+            _track(-1)
 
     def close(self) -> None:
         # Stop the keeper FIRST and outside the lock, or the join waits on a thread
@@ -309,6 +427,83 @@ def capture(device: str | int | None = None, frame_samples: int = FRAME_SAMPLES)
             yield frame[:, 0].copy()
 
 
+def capture_resilient(device: Any = None, frame_samples: int = FRAME_SAMPLES,
+                      stop: threading.Event | None = None,
+                      on_status: Callable[[str, str], None] | None = None,
+                      idle: Callable[[], bool] = lambda: True,
+                      wake: threading.Event | None = None) -> Iterator[np.ndarray]:
+    """`capture`, but it survives the microphone going away (spec §9).
+
+    * The chosen device is not connected (at launch or later) -> the system default, reported as
+      `fallback`; every PROBE_S, between turns only (`idle()`), it looks again and switches back.
+    * No input device at all -> `missing`, retried every RETRY_S until one appears.
+    * The device vanishes mid-read (PortAudioError) -> `lost`, then the same reopen path.
+
+    Every reopen re-scans first, because PortAudio's device list is a snapshot taken at start-up
+    (`rescan`). `on_status(state, detail)` fires on change only: ok | fallback | missing | lost.
+
+    `device` may be a callable, read at every (re)open, so a new choice from the settings panel
+    applies live. With `wake`, reopening is event-driven — set it and the stream reopens at the
+    next idle moment (the device watcher saw a change, or the choice changed); without it, a
+    timer probes every PROBE_S while on the fallback.
+    """
+    sd = _sd()
+    stop = stop or threading.Event()
+    last: list = [None]
+
+    def report(state: str, detail: str) -> None:
+        if on_status is not None and last[0] != (state, detail):
+            last[0] = (state, detail)
+            on_status(state, detail)
+
+    first = True
+    while not stop.is_set():
+        if not first:
+            rescan()
+        first = False
+        spec = device() if callable(device) else device
+        index, fell_back = pick(spec, "input")
+        try:
+            stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
+                                    blocksize=frame_samples, device=index)
+            stream.start()
+        except Exception:  # noqa: BLE001 - PortAudioError "Error querying device -1": none at all
+            report("missing", "no microphone found - plug one in and it will be picked up")
+            stop.wait(RETRY_S)
+            continue
+        _track(+1)
+        name = device_name(index, "input")
+        if fell_back:
+            report("fallback", f"'{spec}' is not connected - using the system default ({name})")
+        else:
+            report("ok", name)
+        probe_at = time.monotonic() + PROBE_S
+        try:
+            while not stop.is_set():
+                frame, _overflowed = stream.read(frame_samples)
+                yield frame[:, 0].copy()
+                if wake is not None:
+                    # Event-driven: the device watcher (a new device list) or the settings panel
+                    # (a new choice) asks for a reopen. Never mid push-to-talk.
+                    if wake.is_set() and idle():
+                        wake.clear()
+                        break
+                elif fell_back and time.monotonic() >= probe_at:
+                    if idle():
+                        break                  # reopen: the chosen device may be back
+                    probe_at = time.monotonic() + 1.0
+        except Exception as exc:  # noqa: BLE001 - PortAudioError when the device is pulled out
+            report("lost", f"microphone disconnected ({type(exc).__name__}) - reconnecting")
+            stop.wait(RETRY_S / 4)
+        finally:
+            try:
+                stream.stop()
+                stream.close()
+            except Exception:  # noqa: BLE001 - a dead device may refuse even this
+                pass
+            _track(-1)
+
+
 def to_pcm16(frame: np.ndarray) -> bytes:
     """float32 [-1, 1] -> PCM16 bytes, the wire format of spec §8's `audio_chunk`."""
     return (np.clip(frame, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
@@ -328,7 +523,7 @@ def input_level(device: str | int | None = None, seconds: float = 1.0) -> float:
     sd = _sd()
     frames = []
     with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
-                        blocksize=FRAME_SAMPLES, device=resolve_device(device, "input")) as stream:
+                        blocksize=FRAME_SAMPLES, device=pick(device, "input")[0]) as stream:
         for _ in range(max(1, int(seconds * SAMPLE_RATE / FRAME_SAMPLES))):
             frames.append(stream.read(FRAME_SAMPLES)[0][:, 0])
     audio = np.concatenate(frames) if frames else np.zeros(1, dtype=np.float32)
