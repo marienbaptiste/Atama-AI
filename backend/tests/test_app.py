@@ -139,7 +139,7 @@ def test_meters_merge_sources_and_replay_to_a_late_page():
     from backend import models
 
     hub = app.Hub()
-    asyncio.run(hub.meters(context_tokens=6204, context_window=200000, month_cost_usd=0.33, month_turns=2))
+    asyncio.run(hub.meters(context_tokens=6204, context_window=200000, month_turns=2))
     asyncio.run(hub.meters(vram_used_mib=5700, vram_total_mib=16376))
     assert hub.last_meters["context_tokens"] == 6204 and hub.last_meters["vram_used_mib"] == 5700
     assert "meters" in models.SERVER_TYPES

@@ -70,7 +70,8 @@ CLAUDE_INIT_TIMEOUT_S = 30.0
 #                   output_tokens, iterations: [...per API call...], ...}
 #   result.modelUsage = {<model id>: {inputTokens, outputTokens, cacheReadInputTokens,
 #                   cacheCreationInputTokens, costUSD, contextWindow: 200000, maxOutputTokens}}
-#   result.total_cost_usd — API-equivalent dollars (the account is a subscription: not a bill)
+#   result.total_cost_usd — API-equivalent dollars, CUMULATIVE per session (two-turn probe). Not
+#                   shown anywhere: through `claude -p` on a subscription it is not a bill (user)
 #   rate_limit_event.rate_limit_info = {status: "allowed", resetsAt: <epoch s>,
 #                   rateLimitType: "five_hour", overageStatus, overageDisabledReason, isUsingOverage}
 # No utilisation percentage and nothing monthly is reported.

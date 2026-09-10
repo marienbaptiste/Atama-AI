@@ -188,11 +188,11 @@ async def run(args: argparse.Namespace) -> int:
 
     async def account(b) -> None:
         m = dict(getattr(b, "meters", {}) or {})
-        month = await asyncio.to_thread(ledger.add_session_total, m.get("cost_total_usd"))
+        month = await asyncio.to_thread(ledger.add_turn)
         rl = dict(getattr(b, "rate_limit", {}) or {})
         if hub is not None:
             await hub.meters(context_tokens=m.get("context_tokens"), context_window=m.get("context_window"),
-                             month_cost_usd=month["cost_usd"], month_turns=month["turns"],
+                             month_turns=month["turns"],
                              limit_status=rl.get("status"), limit_type=rl.get("rateLimitType"),
                              limit_resets_at=rl.get("resetsAt"))
 
@@ -219,7 +219,6 @@ async def run(args: argparse.Namespace) -> int:
                 pass                  # the first sentence pays for loading the style instead
             voice.tts = tts_new
         old, brain = brain, new
-        ledger.new_session()          # the new session's first cost total counts in full
         if mem is not None:
             mem.session_id = new.session_id
         await old.aclose()

@@ -1281,13 +1281,17 @@ function onMeters(m) {
       `Her memory of this conversation: ${kTok(m.context_tokens)} of ${kTok(m.context_window)} tokens. `
       + "When it is full, the oldest part of the conversation has to go.");
   }
-  if (m.month_cost_usd != null) {
+  if (m.month_turns != null || m.limit_status) {
+    // No dollars: the subscription runs through `claude -p` and is not billed per turn (user,
+    // 2026-09-10). The CLI reports only whether the five-hour window allows requests, and when
+    // it resets — not how much of it is left — so the dot is the window and the text is turns.
     const reset = m.limit_resets_at
       ? new Date(m.limit_resets_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
-    gauge("m-use", null, "$" + m.month_cost_usd.toFixed(2),
-      `This month: ${m.month_turns} turns, $${m.month_cost_usd.toFixed(2)} at API prices — your `
-      + "subscription is not billed per turn; this shows how much the app uses."
-      + (m.limit_status ? ` Five-hour window: ${m.limit_status}${reset ? ", resets at " + reset : ""}.` : ""));
+    const turns = m.month_turns != null ? m.month_turns : 0;
+    gauge("m-use", null, turns + (turns === 1 ? " turn" : " turns"),
+      `This month: ${turns} ${turns === 1 ? "turn" : "turns"} with her.`
+      + (m.limit_status ? ` Five-hour usage window: ${m.limit_status}${reset ? ", resets at " + reset : ""}.` : "")
+      + " The subscription says only whether you are inside the window, not how much of it is left.");
     $("m-use").querySelector(".dot").style.background = LIMIT_DOT[m.limit_status] || "#c9ced6";
   }
   if (m.vram_used_mib != null && m.vram_total_mib) {

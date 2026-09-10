@@ -197,8 +197,8 @@ class Meters(_Msg):
     #: How full her context is: tokens the last request read, of the model's window.
     context_tokens: int | None = None
     context_window: int | None = None
-    #: This calendar month, API-equivalent dollars (a subscription is not billed per turn).
-    month_cost_usd: float | None = None
+    #: Turns with her this calendar month. A subscription has no bill, and the CLI reports no
+    #: monthly figure — turns are the honest count (backend/usage.py).
     month_turns: int | None = None
     #: The CLI's rate-limit window: status ("allowed", ...), kind ("five_hour"), reset (epoch s).
     limit_status: str | None = None
