@@ -4,7 +4,7 @@
 
 Brings up the containers, waits until VOICEVOX can actually answer, then runs the tutor with the
 browser avatar and opens it. Ctrl+C stops the tutor and leaves the containers running, because
-they are slow to start and cheap to keep; `make stop` is the one command that takes them down.
+they are slow to start and cheap to keep; `make stop` (or `.\stop` on Windows) takes them down.
 
 Waiting is the point of this file. `docker compose up -d` returns as soon as the container is
 created, not when the engine inside it is listening, so starting the app immediately means the
@@ -23,6 +23,11 @@ import urllib.error
 import urllib.request
 
 from backend import config
+
+#: What to tell the user to type. `make` does not exist on Windows, which is the platform this
+#: is developed on, so printing it there sends them to a CommandNotFoundException (2026-09-10).
+STOP_HINT = r".\stop" if sys.platform == "win32" else "make stop"
+RUN_HINT = r".\run" if sys.platform == "win32" else "make run"
 
 
 def compose(*args: str) -> int:
@@ -76,7 +81,7 @@ def main(argv: list[str]) -> int:
     try:
         return asyncio.run(repl.run(parsed))
     except KeyboardInterrupt:
-        print("\nstopped. The containers are still up — `make stop` to take them down.")
+        print(f"\nstopped. The containers are still up — `{STOP_HINT}` takes them down.")
         return 0
 
 
