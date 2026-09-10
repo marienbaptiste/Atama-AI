@@ -1222,5 +1222,13 @@ over their stage budgets, partly from sharing the GPU), prompt size, the length 
 sentence, and perceived latency (a visible thinking cue; fillers as masking). The baseline is
 0.30 s over the new gate.
 
+**Amended the same day (user directive):** no latency change that could touch quality — the
+user declined asking for a shorter first sentence, a smaller Whisper beam, and fillers. Latency
+work is limited to what provably cannot change a word she says or hears (measurement, visible
+thinking cues). A clean re-run then measured p90 6.03 s: **M3d is not met at these settings**,
+mostly from server-side time-to-first-token variance (one turn with no thinking at all waited
+11.4 s). Whether the gate is raised, made non-blocking, or accepted as failing is the user's
+call when M4 is reached.
+
 **Reversed if:** 4–5 s pauses turn out to break real lessons, or a model or provider keeps the
 quality at a lower thinking cost — then measure with the harness and decide again.
