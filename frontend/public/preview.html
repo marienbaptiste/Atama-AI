@@ -910,13 +910,24 @@ function connect() {
     try { msg = JSON.parse(event.data); } catch (e) { return; }
     switch (msg.type) {
       case "speak":       await playSpeak(msg); break;
-      case "state":       $("live").textContent = "she is " + msg.state; break;
+      case "state":       $("live").textContent = "she is " + msg.state;
+                          // Thinking is silence the student hears; show it rather than let it
+                          // read as a frozen app. Speaking sets its own mood per sentence.
+                          // Spec §8: a "considering" look — gaze up and away while she thinks.
+                          // lookAt(x, y, ms), x/y in viewport pixels (talkinghead.mjs 1.4, read
+                          // 2026-09-10); her first sentence looks back at the student (applyRig).
+                          if (msg.state === "thinking") {
+                            setMoodBg("thinking");
+                            try { head.lookAt(innerWidth * (Math.random() < 0.5 ? 0.3 : 0.7), innerHeight * 0.12, 900); } catch (e) {}
+                          } else if (msg.state === "listening") setMoodBg("neutral");
+                          break;
       case "stt_final":   log("<b>you:</b> " + (msg.text || "")
                               + (msg.accepted ? "" : " <i>(discarded: " + msg.reason + ")</i>")); break;
       case "bargein":     head.stopSpeaking && head.stopSpeaking(); break;
       case "service_status": showService(msg); break;   // the full status bar is M3 proper
       case "settings":    onSettings(msg); break;
       case "mic_level":   showLevel(msg); break;
+      case "timing":      showTiming(msg); break;
       case "error":       log('<span class="err">' + msg.message + "</span>"); break;
     }
   };
@@ -1213,6 +1224,15 @@ $("ssave").onclick = () => {
   $("ssave").disabled = true;
   $("sstate").textContent = "saving…";
 };
+
+//: Spec §10: the last turn's breakdown, and where this session's p90 stands against the gate.
+function showTiming(msg) {
+  const s = v => (v == null ? "-" : (v / 1000).toFixed(1) + " s");
+  if (msg.barged_in) return;                        // an interrupted turn was not slow
+  log(`last turn: <b>${s(msg.first_audio_ms)}</b> until her voice (listening ${s(msg.stt_ms)}, `
+      + `first sentence ${s(msg.first_chunk_ms)}` + (msg.thinking_chars ? `, thought ${msg.thinking_chars} chars` : "")
+      + ")" + (msg.p90_ms != null ? ` · session p90 ${s(msg.p90_ms)} of 5.0 s over ${msg.turns}` : ""));
+}
 
 //: Unplugged, missing, back, or on the default instead of the chosen one (spec §9).
 const DOT = { ok: "#8fd18f", fallback: "#f2b84b", missing: "#ff8a80", lost: "#ff8a80" };

@@ -52,6 +52,14 @@ class TurnTiming:
     #: The student talked over this turn, so it was cut short. Recorded, but never counted in the
     #: §10 p90 as a completed turn — it did not fail to be fast, it was interrupted.
     barged_in: bool = False
+    #: The brain's own view of the Claude stage (spec §10): time to first token, how much it
+    #: thought before speaking, and tool time. Measured 2026-09-10: the stage tracks thinking.
+    ttft_ms: float | None = None
+    thinking_chars: int = 0
+    tool_ms: float | None = None
+    #: This session's rolling voice->voice p50/p90 as of this turn (set by the REPL's reporter).
+    session_p50_ms: float | None = None
+    session_p90_ms: float | None = None
 
     def voice_to_voice_ms(self) -> float:
         return self.first_audio_ms
@@ -367,9 +375,12 @@ class VoiceLoop:
             async for ev in self.brain.turn(text):  # type: ignore[attr-defined]
                 if isinstance(ev, TextDelta):
                     await emit(chunker.push(ev.text))
-                elif isinstance(ev, (Thinking, ToolCall, ToolOutcome, RateLimited, BrainError)):
+                elif isinstance(ev, Thinking):
+                    timing.thinking_chars += len(ev.text)   # silence the student hears (spec §10)
+                elif isinstance(ev, (ToolCall, ToolOutcome, RateLimited, BrainError)):
                     pass                               # surfaced by the caller's own handlers
                 elif isinstance(ev, TurnComplete):
+                    timing.ttft_ms, timing.tool_ms = ev.ttft_ms, ev.tool_ms
                     await emit(chunker.close())
                     await self.voice.drain()
                     break

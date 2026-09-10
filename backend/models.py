@@ -197,6 +197,13 @@ class Timing(_Msg):
     first_audio_ms: float = 0.0
     total_ms: float = 0.0
     barged_in: bool = False
+    #: The Claude stage taken apart: time to first token and thinking before speaking.
+    ttft_ms: float | None = None
+    thinking_chars: int = 0
+    #: Rolling over this session, so the page can show where the p90 stands against the gate.
+    p50_ms: float | None = None
+    p90_ms: float | None = None
+    turns: int = 0
 
 
 class Error(_Msg):

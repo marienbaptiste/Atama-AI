@@ -116,3 +116,18 @@ def test_a_page_that_leaves_is_no_longer_ready():
     hub.mark_ready(page)
     hub.leave(page)
     assert page not in hub._ready
+
+
+def test_timing_carries_the_claude_stage_and_the_rolling_p90():
+    from backend import models
+    sent = []
+    hub = app.Hub()
+
+    async def capture(message):
+        sent.append(message)
+
+    hub.send = capture
+    asyncio.run(hub.timing(stt_ms=400, first_chunk_ms=2600, first_audio_ms=3100, total_ms=9000,
+                           ttft_ms=2400, thinking_chars=306, p50_ms=3490, p90_ms=5300, turns=20))
+    assert sent[0]["type"] == "timing" and sent[0]["thinking_chars"] == 306 and sent[0]["p90_ms"] == 5300
+    assert "timing" in models.SERVER_TYPES

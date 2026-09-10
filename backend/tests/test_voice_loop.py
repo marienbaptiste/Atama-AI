@@ -372,3 +372,23 @@ def test_the_turn_hands_the_measured_level_to_the_stt():
     loop._floor = 0.001
     asyncio.run(loop._turn(np.zeros(16000, dtype=np.float32)))
     assert loop.stt.quiet_rms == pytest.approx(0.004)
+
+
+# -------------------------------------------- the Claude stage, taken apart (spec §10)
+def test_voice_turns_record_thinking_and_ttft():
+    """Measured 2026-09-10: the Claude stage tracks thinking. Voice turns must show it too."""
+    from backend.brain import Thinking
+
+    class ThinkingBrain(FakeBrain):
+        async def turn(self, text):
+            self.turns.append(text)
+            yield Thinking("まず考える")
+            for piece in self.reply:
+                yield TextDelta(piece)
+            yield TurnComplete(text=self.reply, ttft_ms=1234.0)
+
+    loop = VoiceLoop(turn_mode="vad", brain=ThinkingBrain(), stt=FakeStt(accepted()), vad=FakeVad(),
+                     voice=FakeVoice())
+    asyncio.run(loop._turn(np.zeros(16000, dtype=np.float32)))
+    t = loop.timings[-1]
+    assert t.thinking_chars == 5 and t.ttft_ms == 1234.0

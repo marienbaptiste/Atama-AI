@@ -793,6 +793,14 @@ the same record is sent to the client as `timing`.
   **thinking**: thinking p50 306 chars; the five turns with zero thinking ran 1.70–2.56 s
   voice→voice, and the 730-char turn 8.29 s — roughly +0.5 s per 100 chars. `--effort medium`
   does not keep thinking off (spec §10 requires it OFF). Rows: logs/latency/20260910-171340.jsonl.
+- **Clean re-run 2026-09-10 (app stopped, GPU idle) — FAIL against 5.0 s:** voice→voice
+  **p50 3.89 s, p90 6.03 s** — worse than the shared-GPU baseline, so sharing was NOT the cause.
+  STT stayed at 0.51/0.58 s on its own (large-v3, beam 5, 2–4 s clips): over its 0.35 s budget by
+  itself. The Claude stage is ttft-bound and noisy run to run: less thinking than the baseline
+  (p50 179 vs 306 chars) yet a higher ttft (p50 2.71 s), and one turn with NO thinking waited
+  11.4 s for its first token — server-side variance, not ours. **Twenty turns are too few to judge
+  a change against a p90 this noisy:** compare settings over repeated or longer runs.
+  Rows: logs/latency/20260910-172211.jsonl.
 
 ### 11. VRAM instrumentation — cross-cutting — **M2 onward**
 

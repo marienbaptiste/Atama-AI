@@ -371,6 +371,28 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
             colour = BOLD if hot else DIM
         print(f"\r{colour}{label}{RESET} |{('#' * bars):<28}| {DIM}{prob:.2f}{RESET}  ", end="", flush=True)
 
+    def report_turn(t) -> None:
+        # Spec §10 / ROADMAP 10: every turn's breakdown with the Claude stage taken apart, the
+        # session's rolling p50/p90, a warning over LATENCY_WARN_S, and the same record to the
+        # page as `timing`. Barged-in turns are recorded but kept out of the percentiles.
+        from backend.tools.latency_run import percentile
+        done = [x.voice_to_voice_ms() for x in loop.timings if not x.barged_in and x.voice_to_voice_ms()]
+        t.session_p50_ms, t.session_p90_ms = percentile(done, 50), percentile(done, 90)
+        v2v = t.voice_to_voice_ms()
+        slow = bool(v2v) and v2v > float(cfg.LATENCY_WARN_S) * 1000
+        print(f"  {BOLD if slow else DIM}stt {t.stt_ms:.0f}ms · first sentence {t.first_chunk_ms:.0f}ms "
+              f"(ttft {t.ttft_ms or 0:.0f}ms" + (f", thinking {t.thinking_chars} chars" if t.thinking_chars else "")
+              + f") · voice→voice {v2v:.0f}ms · turn {t.total_ms:.0f}ms"
+              + (f" · session p50 {t.session_p50_ms / 1000:.2f}s p90 {t.session_p90_ms / 1000:.2f}s "
+                 f"({len(done)} turns)" if t.session_p50_ms else "")
+              + (f"  OVER {float(cfg.LATENCY_WARN_S):.1f}s" if slow else "") + f"{RESET}\n")
+        if hub is not None:
+            asyncio.get_running_loop().create_task(hub.timing(
+                stt_ms=t.stt_ms, first_chunk_ms=t.first_chunk_ms, first_audio_ms=t.first_audio_ms,
+                total_ms=t.total_ms, barged_in=t.barged_in, ttft_ms=t.ttft_ms,
+                thinking_chars=t.thinking_chars, p50_ms=t.session_p50_ms, p90_ms=t.session_p90_ms,
+                turns=len(done)))
+
     loop = VoiceLoop(
         turn_mode=cfg.TURN_MODE,
         brain=brain, stt=stt, vad=vad, voice=voice, input_device=cfg.AUDIO_INPUT_DEVICE,
@@ -381,8 +403,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
             else f"\r{DIM}(discarded: {t.reason} — {t.text[:40]}){RESET}"),
         on_chunk=lambda c, ms: print(f"  {DIM}{ms / 1000:5.2f}s{RESET} {_emotion_tag(c.emotion)}{c.text}"),
         on_bargein=lambda: print(f"\r{BOLD}— interrupted —{RESET}"),
-        on_turn=lambda t: print(f"  {DIM}stt {t.stt_ms:.0f}ms · first sentence {t.first_chunk_ms:.0f}ms · "
-                                f"voice→voice {t.voice_to_voice_ms():.0f}ms · turn {t.total_ms:.0f}ms{RESET}\n"),
+        on_turn=report_turn,
     )
     loop_ref["loop"] = loop
 
@@ -454,7 +475,13 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
             mem.record_turn(student=t.transcript, tutor_sentences=list(t.sentences),
                             student_extra={"stt_ms": round(t.stt_ms)},
                             latency={"first_audio_ms": round(t.first_audio_ms),
-                                     "voice_to_voice_ms": round(t.voice_to_voice_ms())})
+                                     "voice_to_voice_ms": round(t.voice_to_voice_ms()),
+                                     "ttft_ms": round(t.ttft_ms) if t.ttft_ms else None,
+                                     "thinking_chars": t.thinking_chars,
+                                     "barged_in": t.barged_in,
+                                     # rolling over the session so far (spec §10)
+                                     "session_p50_ms": round(t.session_p50_ms) if t.session_p50_ms else None,
+                                     "session_p90_ms": round(t.session_p90_ms) if t.session_p90_ms else None})
 
         loop.on_turn = remember
 

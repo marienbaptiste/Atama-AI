@@ -138,6 +138,10 @@ class Hub:
         if self._clients:            # nobody watching: do not even build the message
             await self.send(models.MicLevel(level=round(level, 5), speech=round(speech, 3)).model_dump())
 
+    async def timing(self, **fields: Any) -> None:
+        """One turn's stage breakdown, plus the session's rolling p50/p90 (spec §10)."""
+        await self.send(models.Timing(**fields).model_dump())
+
     async def push_settings(self) -> None:
         """Send every page a fresh settings echo — e.g. the device list just changed."""
         echo = await asyncio.to_thread(settings_view.snapshot)
