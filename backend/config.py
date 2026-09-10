@@ -40,7 +40,7 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("CLAUDE_CODE_OAUTH_TOKEN", "", str, "account", "Optional; from `claude setup-token`. Empty = interactive login", secret=True),
     # Model
     Setting("BRAIN_PROVIDER", "claude-cli", str, "model", "Which brain implementation to use (ADR-027). Implemented: claude-cli. An OpenAI headless provider is planned (ROADMAP subsystem 20)"),
-    Setting("CLAUDE_MODEL", "sonnet", str, "model", "Model alias for the tutor subprocess"),
+    Setting("CLAUDE_MODEL", "sonnet", str, "model", "Model tier for the tutor: sonnet | opus | haiku, each resolved to the NEWEST model your account can use (backend/data/model_tiers.txt, checked once a week). A full model id pins that exact model"),
     Setting("CLAUDE_EFFORT", "medium", str, "model", "CLI effort level (low|medium|high|xhigh|max). Measured 2026-09-09, median first-token BETWEEN turns / opening turn: low 2.75s/8.6s, medium 2.14s/5.8s, high 3.75s/19.2s. Medium is the floor, not a compromise: it is the fastest of the three on BOTH numbers, so dropping to low would buy nothing. Sonnet cannot turn thinking off at any level (docs, 2026-09-10); the Claude stage budget is 3.60s since ADR-033 (spec S10)"),
     Setting("CLAUDE_FALLBACK_MODEL", "haiku", str, "model", "Fallback when the model is overloaded / rate limited"),
     Setting("CLAUDE_REPLACE_SYSTEM_PROMPT", True, bool, "model", "true: --system-prompt (Sensei only). false: --append-system-prompt, which leaves Claude Code's coding-agent prompt in front and breaks the persona"),

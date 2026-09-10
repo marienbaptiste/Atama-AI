@@ -26,6 +26,7 @@ from backend import config, prompt
 from backend import memory as memory_api
 from backend import vram as vram_mod
 from backend import usage as usage_api
+from backend import model_tiers
 from backend.chunker import SentenceChunker
 from backend.brain import BrainError, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome, TurnComplete
 from backend.speaker import SpeechQueue
@@ -92,8 +93,12 @@ async def run(args: argparse.Namespace) -> int:
     # --- brain (ADR-027: the REPL talks to the interface, not to Claude) --------
     tools = mcp_config.allowed_tools(cfg)
     mcp_json = mcp_config.write(cfg) if tools else None
+    # Each tier is the NEWEST model the CLI accepts, not whatever its bare alias maps to: the
+    # `sonnet` alias ran claude-sonnet-4-6 while claude-sonnet-5 works (2026-09-10, model_tiers.py).
+    tiers = model_tiers.Resolver.from_config(cfg)
+    tutor_model = await asyncio.to_thread(tiers.resolve, str(cfg.CLAUDE_MODEL))
     brain = brain_api.create(
-        cfg, registry=registry,
+        cfg, registry=registry, model=tutor_model,
         mcp_config=mcp_json,
         mcp_ready_markers=mcp_config.markers(cfg) if mcp_json else None,
         system_prompt=rendered.text,
@@ -208,6 +213,7 @@ async def run(args: argparse.Namespace) -> int:
         fresh = config.load()
         text = prompt.build(profile_text, persona=name, memory=memory_text).text
         new = brain_api.create(fresh, registry=registry, mcp_config=mcp_json,
+                               model=await asyncio.to_thread(tiers.resolve, str(fresh.CLAUDE_MODEL)),
                                mcp_ready_markers=mcp_config.markers(fresh) if mcp_json else None,
                                system_prompt=text, allowed_tools=tools)
         await new.start()
@@ -654,8 +660,10 @@ async def _summarise(cfg, mem) -> int:
     Every failure path returns 0 — no summary means no recall of that session, not no lesson.
     """
     instructions = (prompt.PROMPTS_DIR / "summarise.md").read_text(encoding="utf-8")
+    summary_model = await asyncio.to_thread(model_tiers.Resolver.from_config(cfg).resolve,
+                                            str(cfg.MEMORY_SUMMARY_MODEL))
     worker = brain_api.create(cfg, registry=None, allowed_tools=(),
-                              model=str(cfg.MEMORY_SUMMARY_MODEL),
+                              model=summary_model,
                               system_prompt="You summarise language lessons. Reply with one JSON object only.")
     try:
         await asyncio.wait_for(worker.start(), 90)

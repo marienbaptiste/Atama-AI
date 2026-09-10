@@ -61,6 +61,11 @@ CLAUDE_INIT_TIMEOUT_S = 30.0
 # `MAX_THINKING_TOKENS` is mentioned but NOT in the env-vars reference, so it is not relied on.
 # `claude --help` (2.1.159) exposes only --effort. Measured the same day at medium, 20 turns:
 # thinking p50 306 chars and the Claude stage tracks it (~+0.5 s per 100 chars) — see ROADMAP 10.
+# Model ids, verified 2026-09-10 (one tiny turn each): the bare aliases LAG — `sonnet` ran
+# claude-sonnet-4-6 and `opus` claude-opus-4-8, while claude-sonnet-5 and claude-opus-5 both work;
+# `haiku` ran claude-haiku-4-5-20251001. An unavailable id still starts and fails on its first
+# turn ("There's an issue with the selected model ..."). Tiers therefore resolve through
+# backend/model_tiers.py + backend/data/model_tiers.txt to the newest id the CLI accepts.
 # CORRECTION, same day: the `sonnet` alias resolves to **claude-sonnet-4-6** on this account
 # (result.modelUsage keys, CLI 2.1.159), not Sonnet 5 — so the Sonnet 5 wording above may not
 # describe it. Moot while the user rules out any thinking change (ADR-033); re-verify before one.

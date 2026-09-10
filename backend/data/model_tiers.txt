@@ -1,0 +1,16 @@
+# Model tiers: each line is `tier  newest-id  ...  bare-alias`, newest first.
+#
+# A setting of `sonnet`, `opus` or `haiku` uses the FIRST id on its line that the Claude CLI
+# accepts (one-word probe, cached a week in .cache/model_tiers.json — backend/model_tiers.py).
+# The bare alias ends each line as the last resort: the CLI always accepts it.
+#
+# Why not just the alias: verified 2026-09-10 (CLI 2.1.159, one tiny turn each) — the aliases lag
+# behind the releases. `sonnet` ran claude-sonnet-4-6 and `opus` ran claude-opus-4-8, while
+# claude-sonnet-5 and claude-opus-5 both work on this account. `haiku` ran
+# claude-haiku-4-5-20251001, the newest Haiku.
+#
+# A new release is one id added at the front of its line. Data, not code: no release needed.
+
+sonnet  claude-sonnet-5  sonnet
+opus    claude-opus-5    opus
+haiku   claude-haiku-4-5-20251001  haiku

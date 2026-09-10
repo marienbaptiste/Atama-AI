@@ -209,7 +209,10 @@ async def main_async(args) -> int:
     rendered = prompt.build(profile_api.render(student), persona=cfg.TUTOR_PERSONA, memory=memory_text)
     tools = () if args.no_mcp else mcp_config.allowed_tools(cfg)
     mcp_json = mcp_config.write(cfg) if tools else None
-    brain = brain_api.create(cfg, registry=registry, mcp_config=mcp_json,
+    from backend import model_tiers        # the same newest-per-tier model the lessons use
+    model = await asyncio.to_thread(model_tiers.Resolver.from_config(cfg).resolve, str(cfg.CLAUDE_MODEL))
+    print(f"model: {cfg.CLAUDE_MODEL} -> {model}")
+    brain = brain_api.create(cfg, registry=registry, mcp_config=mcp_json, model=model,
                              mcp_ready_markers=mcp_config.markers(cfg) if mcp_json else None,
                              system_prompt=rendered.text, allowed_tools=tools)
 

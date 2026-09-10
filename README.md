@@ -790,6 +790,12 @@ sentence and asks whether to carry on or talk about something new. Carry on, and
 thread back up with today's review items, since your SRS profile is refreshed at launch. Something
 new, or your very first lesson, and she finds one fresh news item that isn't a recent topic.
 
+**Always the newest model.** Choosing Sonnet, Opus or Haiku uses the newest version of that tier
+your account can use — today claude-sonnet-5, claude-opus-5 and claude-haiku-4-5. Claude Code's
+own short names lag behind (`sonnet` still meant Sonnet 4.6), so the app keeps its own list in
+`backend/data/model_tiers.txt`, newest first, and checks once a week which one answers. A new
+release is one line in that file. Delete `.cache/model_tiers.json` to check again straight away.
+
 **Changing tutor is live.** Pick one in Settings → Voice (or the dropdown at the top left): the
 voice and the character switch at once, in a fresh conversation, and the new tutor introduces
 themselves. The avatar stays the same model for every tutor.
