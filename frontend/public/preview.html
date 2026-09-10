@@ -460,6 +460,7 @@ function pushToTalk(on) {
   if (!wire || wire.readyState !== 1 || on === talking) return;
   talking = on;
   wire.send(JSON.stringify({ type: "control", action: on ? "start" : "stop" }));
+  log(on ? "<b>listening…</b>" : "sent — waiting for her");
   $("talk").classList.toggle("hot", on);
   $("talk").textContent = on ? "listening — release to send" : "hold SPACE to talk";
 }
@@ -467,13 +468,25 @@ function pushToTalk(on) {
 // A browser sees keyup, which a TTY cannot, so this is a real hold rather than a toggle.
 // `event.repeat` matters: holding a key fires keydown continuously, and without the guard every
 // repeat would restart the turn.
+//
+// The earlier `e.target === document.body` test was far too strict: after clicking the persona
+// dropdown focus sits on the <select>, and SPACE then did nothing at all — the microphone
+// looked broken when it was simply never asked to open (2026-09-10). Only real controls that
+// use SPACE themselves get to keep it.
+const SPACE_BELONGS_TO = new Set(["INPUT", "TEXTAREA", "BUTTON", "SUMMARY", "SELECT", "OPTION"]);
+const spaceIsOurs = target =>
+  !target || (!SPACE_BELONGS_TO.has(target.tagName) && !target.isContentEditable);
+
 addEventListener("keydown", e => {
-  // Only from the page body: SPACE inside the rig panel belongs to whatever is focused there,
-  // and a <summary> in particular treats it as a click, which would toggle the panel mid-sentence.
-  if (e.code === "Space" && !e.repeat && e.target === document.body) { e.preventDefault(); pushToTalk(true); }
+  if (e.code !== "Space" || e.repeat) return;
+  if (!spaceIsOurs(e.target)) return;
+  e.preventDefault();
+  pushToTalk(true);
 });
 addEventListener("keyup", e => {
-  if (e.code === "Space") { e.preventDefault(); pushToTalk(false); }
+  // Release ALWAYS ends the turn, even if focus moved mid-hold — the alternative is a mic that
+  // stays open because you happened to tab away.
+  if (e.code === "Space" && talking) { e.preventDefault(); pushToTalk(false); }
 });
 // Releasing outside the window still has to end the turn, or the mic stays open forever.
 addEventListener("blur", () => pushToTalk(false));

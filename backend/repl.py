@@ -338,9 +338,16 @@ async def _listen(cfg, brain, voice, stt, hub=None) -> None:
         # see key RELEASE. `control: start`/`stop` are exactly the ptt edges (spec §8/§9), so
         # holding the key there gives real hold-to-talk instead of the toggle a TTY is limited to.
         # The terminal binding stays live as well — either can drive the same turn.
-        hub.on_control = lambda action: (
-            loop.ptt_begin() if action == "start" else
-            loop.ptt_end() if action == "stop" else None)
+        def from_browser(action: str) -> None:
+            # Visible on the console: a press that never arrives and a press that arrives but
+            # produces no audio are different problems, and they look identical otherwise.
+            print(chr(13) + DIM + "[browser: " + action + "]" + RESET + " " * 30, end="", flush=True)
+            if action == "start":
+                loop.ptt_begin()
+            elif action == "stop":
+                loop.ptt_end()
+
+        hub.on_control = from_browser
 
     device = cfg.AUDIO_INPUT_DEVICE or "system default"
     keys = _ptt_keys(loop, asyncio.get_running_loop()) if loop.ptt else None
