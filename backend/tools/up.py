@@ -1,4 +1,4 @@
-"""Start everything, in one command.
+r"""Start everything, in one command.
 
     python -m backend.tools.up          # or: make run
 
