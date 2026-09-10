@@ -234,6 +234,10 @@
   #settings .slider input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;
         background:#fff;border:3px solid var(--c)}
   #settings .slider input[type=range]:disabled{opacity:.5}
+  #settings .act{font:700 13px system-ui;padding:8px 18px;border-radius:999px;background:var(--c);
+        color:#fff;border:none;cursor:pointer;flex:none;white-space:nowrap}
+  #settings .act:hover{filter:brightness(1.07)}
+  #settings .act:disabled{background:#cfd4dc;cursor:default;filter:none}
   #settings #ssave.done{background:#22a355;box-shadow:0 4px 12px rgba(34,163,85,.35)}
   .shint{margin:0 4px 2px;font-size:12.5px}
   @media (max-width:640px){
@@ -1010,6 +1014,10 @@ const TABS = [
       { key: "BUNPRO_API_TOKEN", label: "Bunpro",
         help: "Settings → API → Account API Token on bunpro.jp. Read-only here, always." },
     ] },
+    { title: "Study data", items: [
+      { action: "resync", label: "Refresh from WaniKani and Bunpro", button: "Refresh now",
+        help: "Fetches your latest progress (read-only) and gives it to her — she carries on with it from her next answer." },
+    ] },
     { title: "Claude", items: [
       { key: "CLAUDE_CODE_OAUTH_TOKEN", label: "Sign-in token",
         help: "Optional. Leave it empty to use your normal claude login." },
@@ -1108,7 +1116,7 @@ addEventListener("keydown", e => { if (e.key === "Escape" && settingsOpen) openS
 
 function sectionsFor(tab) {
   if (!tab.advanced)
-    return tab.sections.map(sec => ({ title: sec.title, items: sec.items.filter(it => FIELD[it.key]) }))
+    return tab.sections.map(sec => ({ title: sec.title, items: sec.items.filter(it => it.action || FIELD[it.key]) }))
       .filter(sec => sec.items.length);
   return RAW_GROUPS.map(([group, title]) => ({
     title, items: SETTINGS.fields.filter(f => f.group === group && !ITEM[f.key]).map(f => ({ key: f.key, raw: true })),
@@ -1178,7 +1186,15 @@ const CONTROLS = {
   },
 };
 
+//: A button rather than a setting (e.g. Refresh from WaniKani and Bunpro): no key, nothing saved.
+function actionItem(it) {
+  return `<div class="field"><div class="ftop"><div class="flabel"><div class="fname">${esc(it.label)}</div>`
+    + `<div class="fdesc">${esc(it.help || "")}</div></div>`
+    + `<button type="button" class="act" data-action="${esc(it.action)}">${esc(it.button || "Run")}</button></div></div>`;
+}
+
 function item(it) {
+  if (it.action) return actionItem(it);
   const s = FIELD[it.key];
   const pin = SETTINGS.pinned[s.key], lock = s.locked, off = !!(pin || lock);
   const kind = it.kind || kindOf(s);
@@ -1251,6 +1267,14 @@ function bindControls(body) {
     });
   });
   body.querySelectorAll(".raw .fdesc").forEach(el => { el.onclick = () => el.classList.toggle("full"); });
+  body.querySelectorAll("[data-action]").forEach(b => {
+    b.onclick = () => {
+      if (!wire || wire.readyState !== 1) return;
+      wire.send(JSON.stringify({ type: "control", action: b.dataset.action }));
+      b.disabled = true;
+      b.textContent = "Refreshing…";
+    };
+  });
 }
 
 function change(k, v) {
@@ -1371,6 +1395,13 @@ function showService(msg) {
     $("live").textContent = msg.detail;
     if (["silent", "empty", "short", "busy", "off"].includes(msg.state))
       log('<span class="err">' + esc(msg.detail) + "</span>");
+    return;
+  }
+  if (msg.service === "resync") {                  // the Refresh button's progress (spec §5b)
+    const b = document.querySelector('[data-action="resync"]');
+    if (msg.state === "syncing") { if (b) { b.disabled = true; b.textContent = "Refreshing…"; } return; }
+    if (b) { b.disabled = false; b.textContent = msg.state === "done" ? "Refreshed ✓" : "Refresh now"; }
+    log((msg.state === "done" ? "<b>" : '<span class="err">') + esc(msg.detail) + (msg.state === "done" ? "</b>" : "</span>"));
     return;
   }
   if (msg.service === "gpu") {                     // spec §10b: only worth a word when over the cap

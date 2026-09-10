@@ -47,6 +47,8 @@ TUTOR_NUDGE = "（先生が交代しました。新しい先生として自己�
 #: How much of the lesson a rotated session inherits (ADR-032), newest kept. Sized to sit inside
 #: prompt.HANDOFF_MAX_TOKENS so the handoff is rarely cut further.
 HANDOFF_CHARS = 1500
+#: Manual Refresh (spec §5b "still rate-limited"): at most one SRS re-fetch a minute.
+RESYNC_MIN_S = 60.0
 
 
 def _emotion_tag(emotion: str) -> str:
@@ -247,6 +249,25 @@ async def run(args: argparse.Namespace) -> int:
         await new.start()
         return new
 
+    last_sync = {"at": 0.0}
+
+    async def resync() -> None:
+        """Manual Refresh from the page (spec §5b) — with launch, the ONLY time the SRS APIs are
+        called (ADR-024). Read-only as ever; tokens are re-read so a token saved in the settings
+        panel applies. The new profile reaches her through a fresh session (_listen)."""
+        nonlocal profile_text
+        if args.no_srs:
+            raise RuntimeError("study data is off for this session (--no-srs)")
+        wait = RESYNC_MIN_S - (time.monotonic() - last_sync["at"])
+        if wait > 0:
+            raise RuntimeError(f"refreshed a moment ago - try again in {wait:.0f} s")
+        last_sync["at"] = time.monotonic()
+        fresh = config.load()
+        student = await asyncio.to_thread(
+            profile_api.build, fresh.WANIKANI_TOKEN, fresh.BUNPRO_API_TOKEN, fresh.path("CACHE_DIR") / "srs",
+            fresh.SRS_CACHE_TTL_S, fresh.SRS_FETCH_BUDGET_S, registry, force=True)
+        profile_text = profile_api.render(student)
+
     def adopt(new) -> None:
         # After a rotation the replacement is THE session: the one closed at the end, and the one
         # a tutor switch replaces.
@@ -256,7 +277,7 @@ async def run(args: argparse.Namespace) -> int:
     if args.listen:
         try:
             await _listen(cfg, brain, voice, stt, hub, mem, switch_persona, account,
-                          spawn_rotation, adopt)
+                          spawn_rotation, adopt, resync)
         finally:
             if voice is not None:
                 await voice.aclose()
@@ -376,7 +397,7 @@ async def _check_microphone(cfg) -> bool:
 
 
 async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=None, account=None,
-                  spawn_rotation=None, adopt=None) -> None:
+                  spawn_rotation=None, adopt=None, resync=None) -> None:
     """Full voice loop: speak to him, he answers aloud (spec §2).
 
     Everything is already loaded by the time this runs — see the init block in `run()`.
@@ -544,6 +565,20 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
 
     vram_task = asyncio.get_running_loop().create_task(watch_vram())
 
+    async def do_resync() -> None:
+        # The page's Refresh button (spec §5b): fetch, then hand the new profile to a fresh
+        # session that takes over at her next answer — the lesson carries on (ADR-032 handoff).
+        await hub.status("resync", "syncing", "fetching your WaniKani and Bunpro progress...", remember=False)
+        try:
+            if resync is None:
+                raise RuntimeError("refresh is not available in this mode")
+            await resync()
+        except Exception as exc:  # noqa: BLE001 - say why on the page; the lesson is unaffected
+            await hub.status("resync", "failed", str(exc)[:200], remember=False)
+            return
+        await rotator.rotate_next_turn("study data refreshed")
+        await hub.status("resync", "done", "refreshed - she has it from her next answer", remember=False)
+
     async def change_tutor(name: str) -> None:
         # A different person is about to speak: stop the current one, bring up the new persona
         # and voice, then let them introduce themselves. Used to wait for the next launch, so the
@@ -629,6 +664,9 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
                 asyncio.get_running_loop().create_task(
                     hub.status("ptt", state, detail, remember=False))
 
+            if action == "resync":
+                asyncio.get_running_loop().create_task(do_resync())
+                return
             if action == "new_topic":
                 loop.ask(TOPIC_NUDGE)
                 ack("topic", "finding a new topic...")

@@ -808,6 +808,10 @@ something fresh the same way.
 fix it — it is plain markdown, and that is the correction mechanism. Delete the `memory` folder to
 start over. Set `MEMORY_ENABLED=false` to turn it off entirely.
 
+**New reviews mid-lesson?** Settings → Account → **Refresh now** fetches your latest WaniKani and
+Bunpro progress (read-only, at most once a minute) and hands it to a fresh session that takes over
+at her next answer — the lesson carries on. The status bar's service dots show the fetch.
+
 **Long lessons.** Her memory of the current conversation has a limit — the status bar's layered
 gauge shows how full it is. When it fills, Claude compacts it on its own, which is a silent pause
 of several seconds. With `CONTEXT_ROTATE_AT` set (Settings → Advanced, e.g. `0.7`) the app instead

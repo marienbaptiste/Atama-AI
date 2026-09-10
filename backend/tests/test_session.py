@@ -144,3 +144,27 @@ def test_a_long_handoff_is_cut_and_reported():
     nl = chr(10)
     p = prompt.build("x", handoff=nl.join(["STUDENT: " + "話" * 60] * 80))
     assert "handoff" in p.truncated and p.sections["handoff"] <= prompt.HANDOFF_MAX_TOKENS
+
+
+def test_a_requested_rotation_happens_even_with_automatic_rotation_off():
+    """The resync button (spec §5b): new study data reaches her through a fresh session."""
+    async def run():
+        r, spawned, _ = rotator(threshold=0)
+        await r.rotate_next_turn("study data refreshed")
+        await asyncio.sleep(0.01)
+        old = FakeBrain("old")
+        assert r.take(old) is not None and spawned
+    asyncio.run(run())
+
+
+def test_a_request_replaces_a_replacement_built_on_old_data():
+    async def run():
+        r, spawned, _ = rotator()
+        r.observe(FakeBrain("old", used=190_000))
+        r.prepare()
+        await asyncio.sleep(0.01)
+        stale = r._ready
+        await r.rotate_next_turn("study data refreshed")
+        await asyncio.sleep(0.01)
+        assert stale.closed and r.take(FakeBrain("old")) is not stale and len(spawned) == 2
+    asyncio.run(run())

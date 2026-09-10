@@ -90,6 +90,19 @@ class Rotator:
         self._ready = brain
         self.log("replacement ready - it takes over at the next turn")
 
+    async def rotate_next_turn(self, reason: str) -> None:
+        """Rotate at the next turn boundary whatever the context size — e.g. the study profile was
+        refreshed and she should have the new one (spec §5b resync). Works with automatic rotation
+        off; still built in the background, still swapped only between turns.
+
+        Not called `request`: the Golden Rule gate reads `.request(` in any module that touches
+        backend.srs as a possible HTTP write (spec §0) — and this is no request to anyone."""
+        await self.discard()             # a replacement built on the old profile would be stale
+        self.armed = True
+        self.failures = 0
+        self.log(f"{reason}: a fresh session takes over at the next turn")
+        self.prepare()
+
     def take(self, current: Any) -> Any:
         """At a turn boundary: the ready replacement (now authoritative), or None."""
         new, self._ready = self._ready, None
