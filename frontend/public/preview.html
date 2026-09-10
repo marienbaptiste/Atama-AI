@@ -96,7 +96,11 @@ const RIG = {
   neutral:   { mood:"neutral", shapes:{}, release:1200,
                gestures:["side"],                        gestureChance:0.10,
                poses:["side","straight","hip"],          poseChance:0.20 },
+  // `react` is TalkingHead's yes/no emoji animation — a nod or a head shake. On a tutor these
+  // are not decoration, they are the answer arriving before the sentence does: a nod means you
+  // got it, a shake means you did not, and a learner reads both faster than they parse Japanese.
   happy:     { mood:"happy",   shapes:{}, release:2600,
+               react:"yes", reactChance:0.75,
                gestures:["ok","thumbup","handup","namaste"], gestureChance:0.65,
                poses:["straight","side"],                poseChance:0.30 },
   // `release` matters here, not just on surprised: a pinned gaze beats avatarIdleEyeContact
@@ -113,6 +117,7 @@ const RIG = {
                shapes:{ browInnerUp:0.9, browOuterUpLeft:0.7, browOuterUpRight:0.7,
                         eyeWideLeft:0.6, eyeWideRight:0.6, jawOpen:0.18 } },
   serious:   { mood:"neutral", release:2600,
+               react:"no", reactChance:0.70,
                gestures:["index","side","handup"],       gestureChance:0.70,
                poses:["straight","wide"],                poseChance:0.25,
                shapes:{ browDownLeft:0.55, browDownRight:0.55, mouthPressLeft:0.3,
@@ -171,6 +176,18 @@ const REST_AFTER_MS   = 9000;          // posture drifts back to standing a whil
 const REST_POSES = ["straight", "side"];
 let settleTimer = null, restTimer = null;
 
+/** Actively aim the gaze at the camera.
+ *
+ *  avatarIdleEyeContact only COMPENSATES head rotation — it keeps the eyes level when the head
+ *  turns, which is nearly invisible when the head is already forward. lookAtCamera() is the call
+ *  that actually points her at you (avatarIgnoreCamera defaults to false, so it resolves to
+ *  lookAt(null, null, t)). Verified 2026-09-10.
+ */
+function meetEye(ms = 600) { try { head.lookAtCamera(ms); } catch (e) {} }
+
+//: Keep finding the camera again between turns, or she drifts off during long silences.
+setInterval(() => { if (Math.random() < 0.7) meetEye(900); }, 4000);
+
 function settleSoon() {
   clearTimeout(settleTimer);
   clearTimeout(restTimer);
@@ -213,7 +230,13 @@ function applyRig(name) {
   // Every emotion releases. An expression with no timer is an expression she is stuck in.
   setTimeout(clearShapes, r.release ?? 2500);
 
-  lastMotion = { pose: null, gesture: null };
+  lastMotion = { pose: null, gesture: null, react: null };
+  meetEye(500);              // look at the student first, then react
+
+  if (r.react && Math.random() < (r.reactChance ?? 0)) {
+    head.playGesture(r.react, 2, false, 400);
+    lastMotion.react = r.react === "yes" ? "nod" : "shake";
+  }
 
   if (Math.random() < (r.poseChance ?? 0)) {
     const pose = draw(name + ":pose", r.poses);
@@ -250,7 +273,8 @@ async function speak(tag) {
   head.speakAudio({ audio: buf, words: [p.text], wtimes: [0], wdurations: [buf.duration * 1000],
                     visemes: p.visemes, vtimes: p.vtimes, vdurations: p.vdurations });
   log("<b>" + tag + "</b> — " + p.visemes.length + " visemes over "
-      + Math.round(buf.duration * 1000) + " ms<br>gesture: <b>"
+      + Math.round(buf.duration * 1000) + " ms<br>react: <b>"
+      + (lastMotion.react || "none") + "</b> · gesture: <b>"
       + (lastMotion.gesture || "none") + "</b> · posture: <b>"
       + (lastMotion.pose || "unchanged") + "</b>");
 }
