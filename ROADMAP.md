@@ -22,6 +22,9 @@ Two rules run through everything:
 1. **Never fabricate an external interface.** Verify against `claude --help`, VOICEVOX's live
    `/docs` OpenAPI, the TalkingHead README, and the WaniKani docs. Pin the finding in a dated
    code comment and in `backend/constants.py`. This is what **V0** below exists for.
+1b. **Milestone order, 2026-09-10 (user, ADR-034):** M2 declared done — M2a, M2b's 2-minute silence
+   check and M2c's overlap and five-emotion checks are **deferred to the end of the project, not met**.
+   **M4 is built before M3.**
 2. **The two hard numbers are gates, not aspirations** — voice→voice p90 ≤ 5.0 s (was 3.0 s until 2026-09-10, ADR-033), VRAM ≤ 10 GB.
    They are measured from M2 onward, not discovered at M5.
 

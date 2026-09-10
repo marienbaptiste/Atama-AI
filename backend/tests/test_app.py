@@ -153,3 +153,35 @@ def test_meters_merge_sources_and_replay_to_a_late_page():
             assert meters["type"] == "meters" and meters["month_turns"] == 2 and meters["vram_total_mib"] == 16376
     finally:
         app.settings_view.snapshot = original
+
+
+def test_service_changes_reach_the_pages_from_any_thread_and_on_a_heartbeat():
+    """Spec §5b / ROADMAP 16: on every change — reported from whatever thread noticed — and at
+    least every STATUS_HEARTBEAT_S, changed or not."""
+    import threading
+    from backend.status import StatusRegistry
+
+    reg = StatusRegistry()
+    reg.report("voicevox", "warm", "engine 0.25.2")
+    hub, sent = app.Hub(), []
+
+    async def capture(message, to=None):
+        sent.append((message["service"], message["state"]) if message.get("type") == "service_status" else None)
+
+    hub.send = capture
+
+    async def run():
+        loop = asyncio.get_running_loop()
+        hub.follow(reg, loop)                                   # replays what is known now
+        await asyncio.sleep(0.01)
+        t = threading.Thread(target=lambda: reg.report("wanikani", "stale", "serving cache"))
+        t.start(); t.join()                                     # a report from another thread
+        await asyncio.sleep(0.05)
+        beat = asyncio.create_task(hub.status_heartbeat(reg, 0.02))
+        await asyncio.sleep(0.05)
+        beat.cancel()
+
+    asyncio.run(run())
+    assert ("voicevox", "warm") in sent and ("wanikani", "stale") in sent
+    assert sent.count(("voicevox", "warm")) >= 2                # the heartbeat re-sent it unchanged
+    assert hub.last_status["wanikani"]["state"] == "stale"      # and a late page will see it

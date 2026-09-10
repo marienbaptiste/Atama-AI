@@ -117,7 +117,7 @@ async def run(args: argparse.Namespace) -> int:
     if args.browser:
         from backend import app as web
         hub = web.Hub()
-        server_task, url = await web.serve(hub, cfg)
+        server_task, url = await web.serve(hub, cfg, registry)   # status chips follow the registry
         print(f"{BOLD}avatar:{RESET} {url}")
         if getattr(args, "show", False):
             import webbrowser

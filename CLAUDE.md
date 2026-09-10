@@ -18,22 +18,24 @@ other documents to open, when, and what each one is authoritative for.
 **Project in one line:** a local-first, real-time voice Japanese tutor with a 3D avatar, whose
 brain is the `claude` CLI running headless as a persistent subprocess.
 
-**Current state: M0 done, M1 done.** The read-only gate, config/settings store, status registry,
+**Current state: M0 done, M1 done, M2 declared done by the user (2026-09-10, ADR-034). Next: M4, then M3 (user directive).** The read-only gate, config/settings store, status registry,
 GET-only SRS client, WaniKani + Bunpro fetchers, profile renderer, Bunpro MCP server, sentence
 chunker, prompt assembly, the `Brain` interface with its Claude CLI provider, and the text REPL
 all exist with tests (`make test`). Verified live: Sensei answers in character, uses the MCP
 tools, and weaves in the student's ghost reviews.
 
-**M2 is code-complete but gate-incomplete.** `vad.py`, `stt.py`, `tts_voicevox.py`,
+**M2: declared done by the user (ADR-034) — code-complete, some checks deferred to the end.** `vad.py`, `stt.py`, `tts_voicevox.py`,
 `visemes.py`, `audio.py` and `voice_loop.py` all exist with hermetic tests, and the voice loop
 runs. What is NOT done is M2's four gates, every one of which is a live measurement on real
 hardware: **M2a** (no false end-of-turn in 3 min of speech), **M2b** (warm STT p90 ≤ 0.35 s,
 zero hallucinations over 2 min of silence), **M2c** (first-chunk audio ≤ 0.40 s p90, synthesis
 of sentence N overlapping generation of N+1, five emotions audibly distinct), **M2d** (viseme
-timeline within one frame of the WAV at every emotion speed). Also still missing and due
-"M2 onward": VRAM instrumentation (only the `VRAM_WARN_GB` key exists) and rolling p50/p90
-latency (the REPL prints per-turn timings but there is no 20-turn harness). A milestone is done
-when its gate is met, not when its code runs — do not call M2 done, and do not start M3.
+timeline within one frame of the WAV at every emotion speed). Due "M2 onward" and now built:
+VRAM instrumentation (`backend/vram.py`) and rolling p50/p90 with a 20-turn harness
+(`backend/tools/latency_run.py`). A milestone is done
+when its gate is met, not when its code runs — **except by the user's declaration**: on 2026-09-10
+the user declared M2 done with M2a, M2b's silence check and M2c's overlap and emotion checks
+**deferred to the end of the project, not met** (ADR-034). Do not describe them as met.
 
 Run the tutor: `.venv/Scripts/python -m backend.repl` (`--refresh` to re-sync SRS, `--no-srs`
 offline, `--speak` for the tutor voice, `--listen` for the mic — `--listen` implies `--speak`).
@@ -132,7 +134,8 @@ VOICEVOX. Each is an ADR with reasoning; if you think one is wrong, propose supe
 fixtures holding personal SRS data beyond the sanitised golden files. `make check-secrets` is
 part of `make test`.
 
-**Build milestones strictly in order.** M0 → M1 → M2 → M3 → M4 → M5. Do not skip; do not start the
+**Build milestones strictly in order.** M0 → M1 → M2 → M3 → M4 → M5. One exception, by user directive:
+M4 is built before M3 (ADR-034). Do not skip; do not start the
 next one while the previous gate is unmet.
 
 **The two hard numbers are gates, not aspirations.** Voice→voice p90 ≤ 5.0 s (relaxed from 3.0 s by the user on 2026-09-10 — answer

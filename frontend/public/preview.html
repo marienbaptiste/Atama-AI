@@ -88,6 +88,21 @@
   #m-ctx .bar u{background:#3b82f6}  #m-mic .bar u{background:#14b8c4}  #m-gpu .bar u{background:#8b5cf6}
   #meters .bar.warn u{background:#f2a33a}  #meters .bar.bad u{background:#e8453c}
   #meters .dot{width:8px;height:8px;border-radius:50%;background:#c9ced6;flex:none}
+  #m-svc{cursor:pointer}
+  #m-svc .dots{display:flex;gap:3px}
+  #m-svc .dots i{width:7px;height:7px;border-radius:50%;background:#c9ced6}
+  /* The service card (spec §5b: "chips, collapsible into the debug panel"). */
+  #svc-pop{position:fixed;top:62px;left:50%;transform:translateX(-50%);z-index:13;min-width:320px;
+           padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.9);
+           border:1px solid rgba(255,255,255,.95);box-shadow:0 10px 30px rgba(0,0,0,.3);
+           backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:#2b2f36;
+           font:12px system-ui;display:grid;gap:6px}
+  #svc-pop[hidden]{display:none}
+  #svc-pop .row{display:grid;grid-template-columns:10px 92px 88px 1fr;gap:8px;align-items:center}
+  #svc-pop .row i{width:8px;height:8px;border-radius:50%}
+  #svc-pop .row b{font-weight:700}
+  #svc-pop .row span{color:#6b7380;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #svc-pop .err{grid-column:2/-1;color:#d63a31;white-space:normal}
   @media (max-width:820px){#meters{top:auto;bottom:12px}}
   #cog svg{width:26px;height:26px}
   #scrim{position:fixed;inset:0;z-index:30;overflow:hidden;background:rgba(236,239,244,.30);
@@ -289,10 +304,15 @@
   <span class="chip" id="m-mic" title="Microphone">
     <svg viewBox="0 0 24 24" fill="none" stroke="#14b8c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>
     <i class="bar"><u></u></i><em class="dot"></em></span>
+  <span class="chip" id="m-svc" title="Services — click for details" role="button" tabindex="0">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#22a355" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>
+    <span class="dots"></span></span>
   <span class="chip" id="m-gpu" title="GPU memory — sampled every 30 s">
     <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
     <b>–</b><i class="bar"><u></u></i></span>
 </div>
+
+<div id="svc-pop" hidden aria-label="Service status"></div>
 
 <button id="cog" title="Settings" aria-label="Settings">
   <svg viewBox="0 0 24 24" fill="none" stroke="#6b7380" stroke-width="2" stroke-linecap="round">
@@ -1318,7 +1338,33 @@ function showTiming(msg) {
 
 //: Unplugged, missing, back, or on the default instead of the chosen one (spec §9).
 const DOT = { ok: "#8fd18f", fallback: "#f2b84b", missing: "#ff8a80", lost: "#ff8a80" };
+//: Spec §5b: every external dependency, working or not — not merely configured. One dot each.
+const SVC_NAMES = { wanikani: "WaniKani", bunpro: "Bunpro", bunpro_mcp: "Bunpro tools", brain: "Brain",
+                    search: "Search", voicevox: "Voice", stt: "Listening" };
+const G = "#22a355", B = "#3b82f6", A = "#f2a33a", R = "#e8453c", OFF = "#c9ced6";
+const SVC_COLOR = { ok: G, warm: G, ready: G, connected: G, used: G,
+                    syncing: B, starting: B, loading: B, thinking: B, restarting: B,
+                    stale: A, fallback: A, rate_limited: A, disabled: OFF, error: R, failed: R, down: R };
+const svcState = {};
+function renderServices() {
+  const known = Object.keys(SVC_NAMES).filter(k => svcState[k]);
+  $("m-svc").querySelector(".dots").innerHTML = known.map(k =>
+    `<i style="background:${SVC_COLOR[svcState[k].state] || OFF}"></i>`).join("");
+  const bad = known.filter(k => [R, A].includes(SVC_COLOR[svcState[k].state]));
+  $("m-svc").title = bad.length
+    ? bad.map(k => `${SVC_NAMES[k]}: ${svcState[k].state}`).join(" · ") + " — click for details"
+    : "All services working — click for details";
+  $("svc-pop").innerHTML = known.map(k => {
+    const s = svcState[k];
+    return `<div class="row"><i style="background:${SVC_COLOR[s.state] || OFF}"></i><b>${esc(SVC_NAMES[k])}</b>`
+      + `<span>${esc(s.state)}</span><span title="${esc(s.detail)}">${esc(s.detail)}</span>`
+      + (s.last_error ? `<div class="err">${esc(s.last_error)}</div>` : "") + "</div>";
+  }).join("") || '<div class="row"><span>No service has reported yet.</span></div>';
+}
+$("m-svc").onclick = () => { $("svc-pop").hidden = !$("svc-pop").hidden; $("m-svc").blur(); };
+
 function showService(msg) {
+  if (SVC_NAMES[msg.service]) { svcState[msg.service] = msg; renderServices(); return; }
   if (msg.service === "ptt") {                     // what the last press actually did
     clearTimeout(pttAck);
     serverAcks = true;

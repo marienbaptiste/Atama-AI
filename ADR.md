@@ -1238,3 +1238,30 @@ while N+1 generates; five emotions audibly distinct), and their timing is report
 
 **Reversed if:** 4–5 s pauses turn out to break real lessons, or a model or provider keeps the
 quality at a lower thinking cost — then measure with the harness and decide again.
+
+---
+
+## ADR-034 — M2 declared done by the user; M4 is built before M3
+
+**Status:** Accepted — user directive, 2026-09-10: "declare M2 done, build M4 then M3". Amends
+the strict milestone order of spec §12 and CLAUDE.md for these two milestones only.
+
+**Context.** M2's code has been in daily use (voice loop, push-to-talk, device recovery, the
+start screen, live tutor switching). Of its gates: **M2d met** (0.0 ms at every emotion speed);
+**M2b and M2c timing accepted** at their measured values (ADR-033). **Not formally measured**:
+M2a (no false end-of-turn in 3 minutes of hands-free speech — push-to-talk is the default and
+hands-free tuning was deferred by the user), M2b's 2-minute silence hallucination check, M2c's
+overlap evidence from the timing log, and M2c's five-emotion listening test. VRAM
+instrumentation and rolling p50/p90, due "M2 onward", now exist.
+
+**Decision.** M2 is done by the user's declaration, with those four checks **deferred to the
+end of the project** (user, same day: "we will do M2 at the end, there is no blocker there") —
+not met until they are run. M4 (memory and rotation, status indicators from real signals, resync,
+prompt tuning) is built next, then M3 (the Vite/TypeScript frontend, ADR-009).
+
+**Consequences.** During M4 the avatar page is still the prototype (frontend/public/preview.html);
+M4's UI pieces — status chips, the resync button — land there and are ported in M3. The deferred
+checks run at the end of the project; a failure there reopens that subsystem, not the milestone.
+
+**Reversed if:** a deferred check fails in real use badly enough that M3 or M4 work is built on
+a broken base.

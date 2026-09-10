@@ -144,6 +144,30 @@ class Hub:
         """One turn's stage breakdown, plus the session's rolling p50/p90 (spec §10)."""
         await self.send(models.Timing(**fields).model_dump())
 
+    def follow(self, registry, loop: asyncio.AbstractEventLoop) -> None:
+        """Forward every service change (spec §5b) to the pages, starting with what is known now.
+
+        The registry reports from whichever thread noticed — the brain's reader thread, a fetch
+        worker — so each change is handed to the event loop rather than sent from that thread.
+        """
+        def on_change(st) -> None:
+            try:
+                loop.call_soon_threadsafe(lambda: loop.create_task(
+                    self.status(st.service, st.state, st.detail, st.last_error)))
+            except RuntimeError:
+                pass                                  # the loop has closed: shutting down
+
+        registry.subscribe(on_change)
+        for msg in registry.snapshot().values():
+            loop.create_task(self.status(msg["service"], msg["state"], msg["detail"], msg["last_error"]))
+
+    async def status_heartbeat(self, registry, every_s: float) -> None:
+        """Every service at least every `every_s`, changed or not (spec §5b: "at least every 30 s")."""
+        while True:
+            await asyncio.sleep(every_s)
+            for msg in registry.snapshot().values():
+                await self.status(msg["service"], msg["state"], msg["detail"], msg["last_error"])
+
     async def meters(self, **fields: Any) -> None:
         """Update some gauges and send them all: sources report at different times."""
         self.last_meters.update({k: v for k, v in fields.items() if v is not None})
@@ -220,8 +244,11 @@ def build(hub: Hub) -> Starlette:
     ])
 
 
-async def serve(hub: Hub, cfg) -> tuple[asyncio.Task, str]:
-    """Run the server on the configured loopback address. Returns (task, url)."""
+async def serve(hub: Hub, cfg, registry=None) -> tuple[asyncio.Task, str]:
+    """Run the server on the configured loopback address. Returns (task, url).
+
+    With a `registry`, every service's status reaches the pages on each change and on the
+    STATUS_HEARTBEAT_S heartbeat (spec §5b, ROADMAP 16)."""
     host, port = str(cfg.HOST), int(cfg.PORT)
     # timeout_graceful_shutdown matters: uvicorn otherwise waits indefinitely for open
     # connections to close, and the browser's WebSocket is exactly such a connection.
@@ -231,6 +258,10 @@ async def serve(hub: Hub, cfg) -> tuple[asyncio.Task, str]:
     task = asyncio.create_task(server.serve())
     task.server = server  # type: ignore[attr-defined]  - shutdown() needs it to exit gracefully
     task.beat = asyncio.create_task(hub.heartbeat())  # type: ignore[attr-defined]
+    if registry is not None:
+        hub.follow(registry, asyncio.get_running_loop())
+        task.status_beat = asyncio.create_task(  # type: ignore[attr-defined]
+            hub.status_heartbeat(registry, float(cfg.STATUS_HEARTBEAT_S)))
     # uvicorn sets `started` once the socket is bound; waiting on it means the URL we print is
     # true rather than hopeful, and a port clash surfaces here instead of as a blank browser tab.
     for _ in range(200):
@@ -248,9 +279,10 @@ async def shutdown(task: asyncio.Task) -> None:
     exception, so every stop would end in a traceback. Asking uvicorn to exit closes sockets and
     finishes handlers instead; cancellation remains for a server that will not go quietly.
     """
-    beat = getattr(task, "beat", None)
-    if beat is not None:
-        beat.cancel()
+    for name in ("beat", "status_beat"):
+        beat = getattr(task, name, None)
+        if beat is not None:
+            beat.cancel()
     server = getattr(task, "server", None)
     if server is not None:
         server.should_exit = True
