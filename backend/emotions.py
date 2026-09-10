@@ -61,15 +61,19 @@ class VoiceParams:
 #: emotion -> (preferred style names, speed x, pitch +, intonation x). Tuned by ear at M3.
 DEFAULT_TABLE: dict[str, tuple[tuple[str, ...], float, float, float]] = {
     NEUTRAL:     ((),                          1.00,  0.00, 1.00),
-    "happy":     (("読み聞かせ", "明るい", "喜び", "うきうき", "あまあま"), 1.05,  0.02, 1.15),
+    # NOT 読み聞かせ. It is a read-aloud/narration style — slow and warm by design — so picking
+    # it for happy made her both mellower AND audibly a different person than her own ノーマル,
+    # which is jarring rather than cheerful (reported by ear 2026-09-10). A style must sound like
+    # the SAME character in a different mood, or the scalars are the better tool.
+    "happy":     (("明るい", "喜び", "うきうき"), 1.10,  0.05, 1.28),
     "thinking":  (("おちつき", "ノーマル"),      0.95, -0.01, 0.90),
-    "surprised": (("おどろき", "ノーマル"),      1.10,  0.04, 1.30),
+    "surprised": (("おどろき",),                 1.18,  0.09, 1.45),
     "serious":   (("アナウンス", "シリアス", "つよつよ", "ノーマル"), 0.95, -0.03, 0.85),
     # Warm and forward-leaning: "go on, try it" — slightly faster and brighter than happy, because
     # encouragement pushes where praise settles.
     "encouraging": (("元気", "明るい", "喜び", "ノーマル"), 1.08,  0.03, 1.20),
     # Praise that has weight: slower than happy, not faster. Rushing a compliment kills it.
-    "proud":     (("喜び", "うれしい", "読み聞かせ", "ノーマル"), 0.98,  0.03, 1.20),
+    "proud":     (("喜び", "うれしい"),          1.00,  0.04, 1.25),
     # Genuine puzzlement, not disapproval: near-neutral pitch, flatter, a touch slower.
     "confused":  (("ノーマル", "おちつき"),      0.96,  0.01, 0.95),
 }

@@ -24,12 +24,16 @@ def cfg(tmp_path, **env):
 
 # ------------------------------------------------------------------ emotions
 def test_styles_are_resolved_by_name_from_the_live_catalogue(tmp_path):
-    """No.7 (29) also owns アナウンス=30 and 読み聞かせ=31 — verified against VOICEVOX 0.25.2."""
+    """No.7 (29) also owns アナウンス=30 and 読み聞かせ=31 — verified against VOICEVOX 0.25.2.
+
+    アナウンス for `serious` is the case a style switch is FOR: same person, different register.
+    `happy` deliberately does not take 読み聞かせ even though it is available — see DEFAULT_TABLE.
+    """
     table, warnings = emotions.resolve(cfg(tmp_path), SPEAKERS)
     assert warnings == []
-    assert table["happy"].style_id == 31 and table["happy"].style_name == "読み聞かせ"
     assert table["serious"].style_id == 30 and table["serious"].style_name == "アナウンス"
     assert table[NEUTRAL].style_id == 29
+    assert table["happy"].style_id == 29, "happy must not borrow the read-aloud narration voice"
 
 
 def test_every_emotion_is_present_and_distinct_in_voice(tmp_path):
@@ -107,13 +111,13 @@ def client(tmp_path, handler=engine, **env):
 def test_say_uses_the_emotions_style_and_returns_a_timeline(tmp_path):
     c, calls = client(tmp_path)
     speech = c.say("こんにちは。", "happy")
-    assert speech.style_id == 31 and speech.emotion == "happy"
+    assert speech.style_id == 29 and speech.emotion == "happy"   # base style, brightened by scalars
     assert speech.wav.startswith(b"RIFF") and len(speech.timeline) > 0
     query = [r for r in calls if r.url.path == "/audio_query"][-1]
-    assert query.url.params["speaker"] == "31"
+    assert query.url.params["speaker"] == "29"
     body = json.loads([r for r in calls if r.url.path == "/synthesis"][-1].content)
-    assert body["speedScale"] == pytest.approx(0.9 * 1.05)   # learner baseline x emotion
-    assert body["intonationScale"] == pytest.approx(1.15)
+    assert body["speedScale"] == pytest.approx(0.9 * 1.10)   # learner baseline x emotion
+    assert body["intonationScale"] == pytest.approx(1.28)
 
 
 def test_neutral_uses_the_base_style(tmp_path):
@@ -152,7 +156,7 @@ def test_a_single_style_speaker_widens_pitch_but_never_intonation(tmp_path):
     table, _ = emotions.resolve(cfg(tmp_path, VOICEVOX_SPEAKER="53"), SPEAKERS)
     assert {p.style_id for p in table.values()} == {53}
     assert abs(table["serious"].pitch) > 0.05                       # widened from -0.03
-    assert table["surprised"].intonation == pytest.approx(1.30)     # NOT widened
+    assert table["surprised"].intonation == pytest.approx(1.45)     # NOT widened
     assert table["serious"].intonation == pytest.approx(0.85)       # NOT widened
     assert table[NEUTRAL].pitch == 0.0 and table[NEUTRAL].intonation == 1.0   # neutral is the anchor
 
@@ -161,7 +165,7 @@ def test_a_multi_style_speaker_is_left_alone(tmp_path):
     """No.7 expresses emotion by switching style, so the scalars stay as tuned."""
     table, _ = emotions.resolve(cfg(tmp_path, VOICEVOX_SPEAKER="29"), SPEAKERS)
     assert len({p.style_id for p in table.values()}) > 1
-    assert table["surprised"].intonation == pytest.approx(1.30)
+    assert table["surprised"].intonation == pytest.approx(1.45)
 
 
 def test_an_explicit_override_is_never_widened(tmp_path):
