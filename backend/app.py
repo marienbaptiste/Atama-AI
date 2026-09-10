@@ -56,6 +56,8 @@ class Hub:
         self.last_status: dict[str, dict[str, Any]] = {}
         #: Called with the keys a settings save wrote, so live keys can take effect at once.
         self.on_settings: Callable[[list[str]], None] | None = None
+        #: The status bar's latest gauges, merged, replayed to a page that connects later.
+        self.last_meters: dict[str, Any] = {}
 
     async def join(self, ws: WebSocket) -> None:
         await ws.accept()
@@ -142,6 +144,11 @@ class Hub:
         """One turn's stage breakdown, plus the session's rolling p50/p90 (spec §10)."""
         await self.send(models.Timing(**fields).model_dump())
 
+    async def meters(self, **fields: Any) -> None:
+        """Update some gauges and send them all: sources report at different times."""
+        self.last_meters.update({k: v for k, v in fields.items() if v is not None})
+        await self.send(models.Meters(**self.last_meters).model_dump())
+
     async def push_settings(self) -> None:
         """Send every page a fresh settings echo — e.g. the device list just changed."""
         echo = await asyncio.to_thread(settings_view.snapshot)
@@ -169,6 +176,8 @@ def build(hub: Hub) -> Starlette:
             await ws.send_json(models.Settings(**settings_view.snapshot()).model_dump())
             for status in list(hub.last_status.values()):
                 await ws.send_json(status)
+            if hub.last_meters:
+                await ws.send_json(models.Meters(**hub.last_meters).model_dump())
             while True:
                 raw = await ws.receive_json()
                 try:

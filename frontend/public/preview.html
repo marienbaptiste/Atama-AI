@@ -74,6 +74,21 @@
        border:1px solid rgba(255,255,255,.9);box-shadow:0 4px 14px rgba(0,0,0,.28);
        backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:transform .3s}
   #cog:hover{background:#fff;transform:rotate(45deg)}
+  /* The status bar: one white glass pill, four gauges, each with its own flat single-colour icon. */
+  #meters{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:12;display:flex;gap:2px;
+          padding:5px 8px;border-radius:999px;background:rgba(255,255,255,.82);
+          border:1px solid rgba(255,255,255,.9);box-shadow:0 4px 14px rgba(0,0,0,.28);
+          backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);font:600 11.5px system-ui;color:#2b2f36}
+  #meters .chip{display:flex;align-items:center;gap:6px;padding:3px 9px;border-radius:999px;cursor:default}
+  #meters .chip:hover{background:rgba(0,0,0,.05)}
+  #meters svg{width:16px;height:16px;flex:none}
+  #meters b{font-weight:700;white-space:nowrap}
+  #meters .bar{display:block;width:40px;height:6px;border-radius:999px;background:#e3e6eb;overflow:hidden}
+  #meters .bar u{display:block;height:100%;width:0;border-radius:999px;background:#9aa7ff;transition:width .3s}
+  #m-ctx .bar u{background:#3b82f6}  #m-mic .bar u{background:#14b8c4}  #m-gpu .bar u{background:#8b5cf6}
+  #meters .bar.warn u{background:#f2a33a}  #meters .bar.bad u{background:#e8453c}
+  #meters .dot{width:8px;height:8px;border-radius:50%;background:#c9ced6;flex:none}
+  @media (max-width:820px){#meters{top:auto;bottom:12px}}
   #cog svg{width:26px;height:26px}
   #scrim{position:fixed;inset:0;z-index:30;overflow:hidden;background:rgba(236,239,244,.30);
          backdrop-filter:blur(18px) saturate(1.1);-webkit-backdrop-filter:blur(18px) saturate(1.1);
@@ -262,6 +277,21 @@
   </details>
 
   <div id="log">loading…</div>
+</div>
+
+<div id="meters" aria-label="Status">
+  <span class="chip" id="m-ctx" title="Her memory of this conversation — appears after her first answer">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>
+    <b>–</b><i class="bar"><u></u></i></span>
+  <span class="chip" id="m-use" title="This month's use — appears after her first answer">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/></svg>
+    <b>–</b><em class="dot"></em></span>
+  <span class="chip" id="m-mic" title="Microphone">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#14b8c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>
+    <i class="bar"><u></u></i><em class="dot"></em></span>
+  <span class="chip" id="m-gpu" title="GPU memory — sampled every 30 s">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+    <b>–</b><i class="bar"><u></u></i></span>
 </div>
 
 <button id="cog" title="Settings" aria-label="Settings">
@@ -928,6 +958,7 @@ function connect() {
       case "settings":    onSettings(msg); break;
       case "mic_level":   showLevel(msg); break;
       case "timing":      showTiming(msg); break;
+      case "meters":      onMeters(msg); break;
       case "error":       log('<span class="err">' + msg.message + "</span>"); break;
     }
   };
@@ -1225,6 +1256,48 @@ $("ssave").onclick = () => {
   $("sstate").textContent = "saving…";
 };
 
+//: The status bar (user request 2026-09-10): how full her context is, this month's use and the
+//: five-hour window, the microphone, and GPU memory. Each gauge fills in when its source reports.
+const LIMIT_DOT = { allowed: "#22a355", allowed_warning: "#f2a33a", rejected: "#e8453c" };
+const kTok = n => (n >= 1000 ? Math.round(n / 1000) + "k" : String(n));
+function gauge(id, fraction, text, title) {
+  const chip = $(id);
+  if (!chip) return;
+  const bar = chip.querySelector(".bar");
+  if (bar && fraction != null) {
+    const f = Math.max(0, Math.min(1, fraction));
+    bar.querySelector("u").style.width = Math.round(f * 100) + "%";
+    bar.classList.toggle("warn", f >= 0.7 && f < 0.9);
+    bar.classList.toggle("bad", f >= 0.9);
+  }
+  const b = chip.querySelector("b");
+  if (b && text != null) b.textContent = text;
+  if (title) chip.title = title;
+}
+function onMeters(m) {
+  if (m.context_tokens != null && m.context_window) {
+    const f = m.context_tokens / m.context_window;
+    gauge("m-ctx", f, Math.round(f * 100) + "%",
+      `Her memory of this conversation: ${kTok(m.context_tokens)} of ${kTok(m.context_window)} tokens. `
+      + "When it is full, the oldest part of the conversation has to go.");
+  }
+  if (m.month_cost_usd != null) {
+    const reset = m.limit_resets_at
+      ? new Date(m.limit_resets_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
+    gauge("m-use", null, "$" + m.month_cost_usd.toFixed(2),
+      `This month: ${m.month_turns} turns, $${m.month_cost_usd.toFixed(2)} at API prices — your `
+      + "subscription is not billed per turn; this shows how much the app uses."
+      + (m.limit_status ? ` Five-hour window: ${m.limit_status}${reset ? ", resets at " + reset : ""}.` : ""));
+    $("m-use").querySelector(".dot").style.background = LIMIT_DOT[m.limit_status] || "#c9ced6";
+  }
+  if (m.vram_used_mib != null && m.vram_total_mib) {
+    const cap = (SETTINGS && SETTINGS.values && SETTINGS.values.VRAM_WARN_GB) || 10;
+    gauge("m-gpu", m.vram_used_mib / (cap * 1024), (m.vram_used_mib / 1024).toFixed(1) + " GB",
+      `GPU memory: ${(m.vram_used_mib / 1024).toFixed(1)} of ${(m.vram_total_mib / 1024).toFixed(0)} GB `
+      + `(cap ${cap} GB). Sampled every 30 s.`);
+  }
+}
+
 //: Spec §10: the last turn's breakdown, and where this session's p90 stands against the gate.
 function showTiming(msg) {
   const s = v => (v == null ? "-" : (v / 1000).toFixed(1) + " s");
@@ -1259,12 +1332,16 @@ function showService(msg) {
   const el = $("mic");
   el.hidden = false;
   el.style.setProperty("--dot", DOT[msg.state] || "#8b939d");
+  $("m-mic").querySelector(".dot").style.background = DOT[msg.state] || "#c9ced6";
+  $("m-mic").title = "Microphone: " + (msg.detail || msg.state);
   el.textContent = "mic: " + (msg.detail || msg.state);
   if (msg.state !== "ok") log('<span class="err">microphone ' + esc(msg.state) + "</span> — " + esc(msg.detail));
 }
 
 //: The Sound tab's meter: seeing the bar move is the fastest proof the right mic is live.
 function showLevel(msg) {
+  const mini = $("m-mic") && $("m-mic").querySelector(".bar u");      // the status bar, always
+  if (mini) mini.style.width = Math.round(Math.min(1, Math.sqrt(msg.level * 30)) * 100) + "%";
   const bar = settingsOpen ? $("lvl") : null;
   if (!bar) return;
   bar.style.width = Math.round(Math.min(1, Math.sqrt(msg.level * 30)) * 100) + "%";

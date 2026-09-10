@@ -70,6 +70,9 @@ class ClaudeCliBrain:
         self._started = False
         self._prompt_file: Path | None = None
         self.last_init: dict[str, Any] = {}
+        #: The status bar's numbers, as of the last `result` / `rate_limit_event` (see _meters).
+        self.meters: dict[str, Any] = {}
+        self.rate_limit: dict[str, Any] = {}
 
     # ------------------------------------------------------------------ public
     @property
@@ -369,6 +372,7 @@ class ClaudeCliBrain:
 
         if etype == constants.CLAUDE_EVENT_RATE_LIMIT:
             info = ev.get("rate_limit_info") or {}
+            self.rate_limit = dict(info)          # kept even when "allowed": the status bar shows it
             status = str(info.get("status", ""))
             if status and status != "allowed":
                 return [RateLimited(f"{info.get('rateLimitType', '')} {status}".strip())]
@@ -380,6 +384,8 @@ class ClaudeCliBrain:
                     BrainError(str(ev.get("result") or ev.get("api_error_status") or "turn failed")),
                     TurnComplete(duration_ms=ev.get("duration_ms")),
                 ]
+            self.meters = self._meters(dict(ev.get("usage") or {}), ev.get("modelUsage") or {},
+                                       ev.get("total_cost_usd"))
             return [
                 TurnComplete(
                     text=str(ev.get("result") or ""),
@@ -390,6 +396,27 @@ class ClaudeCliBrain:
             ]
 
         return []  # unknown event types are skipped, never fatal (spec §4)
+
+    @staticmethod
+    def _meters(usage: dict, model_usage: dict, total_cost) -> dict[str, Any]:
+        """Context fill and session cost from one `result` (fields verified 2026-09-10, constants.py).
+
+        Context is what the LAST API call of the turn read — fresh input + cache read + cache
+        written — so a turn with a tool call counts its final request, not the sum of both.
+        The window comes from the main model's modelUsage entry (the one that read the most; a
+        small helper model appears there too). `total_cost_usd` is CUMULATIVE for the session:
+        a two-turn probe showed the Haiku entry repeated unchanged while Sonnet's grew — so the
+        month ledger adds differences, never totals (backend/usage.py).
+        """
+        last = (usage.get("iterations") or [usage])[-1] or {}
+        context = sum(int(last.get(k) or 0) for k in
+                      ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+        entries = [m for m in model_usage.values() if isinstance(m, dict)] if isinstance(model_usage, dict) else []
+        main = max(entries, default={}, key=lambda m: sum(int(m.get(k) or 0) for k in
+                   ("inputTokens", "cacheReadInputTokens", "cacheCreationInputTokens")))
+        return {"context_tokens": context or None,
+                "context_window": main.get("contextWindow"),
+                "cost_total_usd": float(total_cost) if total_cost is not None else None}
 
     # ----------------------------------------------------------------- recovery
     async def _restart_and_fail(self, reason: str) -> AsyncIterator:

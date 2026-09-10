@@ -131,3 +131,25 @@ def test_timing_carries_the_claude_stage_and_the_rolling_p90():
                            ttft_ms=2400, thinking_chars=306, p50_ms=3490, p90_ms=5300, turns=20))
     assert sent[0]["type"] == "timing" and sent[0]["thinking_chars"] == 306 and sent[0]["p90_ms"] == 5300
     assert "timing" in models.SERVER_TYPES
+
+
+def test_meters_merge_sources_and_replay_to_a_late_page():
+    """Context and use arrive after a turn, GPU on the heartbeat: a page gets the latest of each."""
+    from starlette.testclient import TestClient
+    from backend import models
+
+    hub = app.Hub()
+    asyncio.run(hub.meters(context_tokens=6204, context_window=200000, month_cost_usd=0.33, month_turns=2))
+    asyncio.run(hub.meters(vram_used_mib=5700, vram_total_mib=16376))
+    assert hub.last_meters["context_tokens"] == 6204 and hub.last_meters["vram_used_mib"] == 5700
+    assert "meters" in models.SERVER_TYPES
+
+    original = app.settings_view.snapshot
+    app.settings_view.snapshot = lambda *a, **k: {"values": {}, "fields": [], "pinned": {}}
+    try:
+        with TestClient(app.build(hub)) as client, client.websocket_connect("/ws") as ws:
+            assert ws.receive_json()["type"] == "settings"
+            meters = ws.receive_json()
+            assert meters["type"] == "meters" and meters["month_turns"] == 2 and meters["vram_total_mib"] == 16376
+    finally:
+        app.settings_view.snapshot = original

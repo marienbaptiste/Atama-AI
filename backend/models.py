@@ -188,6 +188,26 @@ class MicLevel(_Msg):
     speech: float = 0.0
 
 
+class Meters(_Msg):
+    """The status bar's gauges (user request, 2026-09-10). Every field is optional: each arrives
+    when its source reports — context and use after a turn, GPU memory on the heartbeat — and the
+    server merges them, so a page always receives the latest of each."""
+
+    type: Literal["meters"] = "meters"
+    #: How full her context is: tokens the last request read, of the model's window.
+    context_tokens: int | None = None
+    context_window: int | None = None
+    #: This calendar month, API-equivalent dollars (a subscription is not billed per turn).
+    month_cost_usd: float | None = None
+    month_turns: int | None = None
+    #: The CLI's rate-limit window: status ("allowed", ...), kind ("five_hour"), reset (epoch s).
+    limit_status: str | None = None
+    limit_type: str | None = None
+    limit_resets_at: float | None = None
+    vram_used_mib: int | None = None
+    vram_total_mib: int | None = None
+
+
 class Timing(_Msg):
     """Per-turn stage breakdown (§10), so p50/p90 are measurable rather than anecdotal."""
 
@@ -223,7 +243,7 @@ ClientMessage = Annotated[
 
 ServerMessage = Annotated[
     Union[State, SttPartial, SttFinal, AssistantText, Speak, Emotion, BargeIn,
-          SrsProfile, ServiceStatus, Settings, MicLevel, Timing, Error],
+          SrsProfile, ServiceStatus, Settings, MicLevel, Meters, Timing, Error],
     Field(discriminator="type"),
 ]
 

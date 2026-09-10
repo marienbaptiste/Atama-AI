@@ -25,6 +25,7 @@ from backend import brain as brain_api
 from backend import config, prompt
 from backend import memory as memory_api
 from backend import vram as vram_mod
+from backend import usage as usage_api
 from backend.chunker import SentenceChunker
 from backend.brain import BrainError, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome, TurnComplete
 from backend.speaker import SpeechQueue
@@ -181,8 +182,23 @@ async def run(args: argparse.Namespace) -> int:
 
     # Sensei speaks first (spec §5c): she finds a subject and opens on it, rather than waiting
     # for the student to produce one. This is the turn that pays for the search.
+    # The status bar (user request 2026-09-10): how full her context is, this month's use and the
+    # rate-limit window — read after every turn from the brain's own last `result`.
+    ledger = usage_api.Ledger(cfg.path("CACHE_DIR") / "usage")
+
+    async def account(b) -> None:
+        m = dict(getattr(b, "meters", {}) or {})
+        month = await asyncio.to_thread(ledger.add_session_total, m.get("cost_total_usd"))
+        rl = dict(getattr(b, "rate_limit", {}) or {})
+        if hub is not None:
+            await hub.meters(context_tokens=m.get("context_tokens"), context_window=m.get("context_window"),
+                             month_cost_usd=month["cost_usd"], month_turns=month["turns"],
+                             limit_status=rl.get("status"), limit_type=rl.get("rateLimitType"),
+                             limit_resets_at=rl.get("resetsAt"))
+
     if not args.no_open:
         await _one_turn(brain, OPENING_NUDGE, voice, mem=mem, opening=True)
+        await account(brain)
 
     async def switch_persona(name: str):
         """Live tutor change (settings panel): a fresh session with the new persona, speaking in
@@ -203,6 +219,7 @@ async def run(args: argparse.Namespace) -> int:
                 pass                  # the first sentence pays for loading the style instead
             voice.tts = tts_new
         old, brain = brain, new
+        ledger.new_session()          # the new session's first cost total counts in full
         if mem is not None:
             mem.session_id = new.session_id
         await old.aclose()
@@ -210,7 +227,7 @@ async def run(args: argparse.Namespace) -> int:
 
     if args.listen:
         try:
-            await _listen(cfg, brain, voice, stt, hub, mem, switch_persona)
+            await _listen(cfg, brain, voice, stt, hub, mem, switch_persona, account)
         finally:
             if voice is not None:
                 await voice.aclose()
@@ -329,7 +346,7 @@ async def _check_microphone(cfg) -> bool:
     return True
 
 
-async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=None) -> None:
+async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=None, account=None) -> None:
     """Full voice loop: speak to him, he answers aloud (spec §2).
 
     Everything is already loaded by the time this runs — see the init block in `run()`.
@@ -401,6 +418,8 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
                 total_ms=t.total_ms, barged_in=t.barged_in, ttft_ms=t.ttft_ms,
                 thinking_chars=t.thinking_chars, p50_ms=t.session_p50_ms, p90_ms=t.session_p90_ms,
                 turns=len(done)))
+        if account is not None:
+            asyncio.get_running_loop().create_task(account(loop.brain))
 
     loop = VoiceLoop(
         turn_mode=cfg.TURN_MODE,
@@ -456,6 +475,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
                 if hub is not None:
                     await hub.status("gpu", "over" if too_much else "ok",
                                      f"{reading.used_gb:.1f} of {reading.total_gb:.0f} GB")
+                    await hub.meters(vram_used_mib=reading.used_mib, vram_total_mib=reading.total_mib)
             await asyncio.sleep(float(cfg.STATUS_HEARTBEAT_S))
 
     vram_task = asyncio.get_running_loop().create_task(watch_vram())

@@ -61,6 +61,19 @@ CLAUDE_INIT_TIMEOUT_S = 30.0
 # `MAX_THINKING_TOKENS` is mentioned but NOT in the env-vars reference, so it is not relied on.
 # `claude --help` (2.1.159) exposes only --effort. Measured the same day at medium, 20 turns:
 # thinking p50 306 chars and the Claude stage tracks it (~+0.5 s per 100 chars) — see ROADMAP 10.
+# CORRECTION, same day: the `sonnet` alias resolves to **claude-sonnet-4-6** on this account
+# (result.modelUsage keys, CLI 2.1.159), not Sonnet 5 — so the Sonnet 5 wording above may not
+# describe it. Moot while the user rules out any thinking change (ADR-033); re-verify before one.
+#
+# Usage fields, verified 2026-09-10 (CLI 2.1.159, one live `-p` stream-json call):
+#   result.usage = {input_tokens, cache_creation_input_tokens, cache_read_input_tokens,
+#                   output_tokens, iterations: [...per API call...], ...}
+#   result.modelUsage = {<model id>: {inputTokens, outputTokens, cacheReadInputTokens,
+#                   cacheCreationInputTokens, costUSD, contextWindow: 200000, maxOutputTokens}}
+#   result.total_cost_usd — API-equivalent dollars (the account is a subscription: not a bill)
+#   rate_limit_event.rate_limit_info = {status: "allowed", resetsAt: <epoch s>,
+#                   rateLimitType: "five_hour", overageStatus, overageDisabledReason, isUsingOverage}
+# No utilisation percentage and nothing monthly is reported.
 # Even with the marker, keep --allowedTools on the three MCP names (ADR-021 belt-and-braces).
 # Observed stream types: system/init, system/status ({"status":"requesting"} before each API
 # call), rate_limit_event ({"rate_limit_info": {status, resetsAt, rateLimitType: "five_hour",
