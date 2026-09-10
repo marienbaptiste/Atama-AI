@@ -36,7 +36,7 @@
 
   <h2>gesture</h2>
   <div class="row" id="gestures"></div>
-  <label><input type="checkbox" id="mirror" checked> right hand</label>
+  <label><input type="checkbox" id="mirror" checked> vary hands (80% right)</label>
   <label>hold <input type="range" id="dur" min="1" max="8" step="1" value="3"><span id="durv">3s</span></label>
 
   <h2>posture</h2>
@@ -163,6 +163,22 @@ function buttons(host, names, fn) {
 
 function clearShapes() { held.forEach(s => head.setFixedValue(s, null)); held = []; }
 
+//: Which hand last gestured. TalkingHead's `mirror` argument is false for the LEFT hand and
+//: true for the RIGHT, so this tracks the boolean it was given.
+let lastRight = true;
+
+/** Right hand 80% of the time, and never the left twice running.
+ *
+ *  A plain 80/20 draw produces runs, and two left-handed gestures in a row on a right-handed
+ *  person reads as a glitch rather than as variation. Forcing a right after any left keeps the
+ *  left hand as the occasional accent it is meant to be, at close to the intended ratio.
+ */
+function rightHand() {
+  const right = lastRight ? Math.random() < 0.8 : true;
+  lastRight = right;
+  return right;
+}
+
 //: What the last draw actually produced, so the log can show it rather than the pool.
 let lastMotion = { pose: null, gesture: null };
 
@@ -188,9 +204,9 @@ function applyRig(name) {
       // Jitter the hold and the hand as well: identical timing is its own kind of robotic, and a
       // right-handed person still reaches with the other hand now and then.
       const hold = Math.max(1, +$("dur").value + (Math.random() * 1.4 - 0.7));
-      const right = $("mirror").checked ? Math.random() > 0.15 : false;
+      const right = $("mirror").checked ? rightHand() : false;
       head.playGesture(gesture, hold, right, 600 + Math.random() * 500);
-      lastMotion.gesture = gesture + (right ? "" : " (left)");
+      lastMotion.gesture = gesture + (right ? " (right)" : " (left)");
     }
   }
 }
@@ -223,9 +239,10 @@ buttons("gestures", GESTURES.concat(["stop"]), g => {
     log("gesture cleared — arms return to the idle pose");
     return;
   }
-  head.playGesture(g, +$("dur").value, $("mirror").checked, 800);
+  const right = $("mirror").checked ? rightHand() : false;
+  head.playGesture(g, +$("dur").value, right, 800);
   log("gesture <b>" + g + "</b> · " + $("dur").value + "s · "
-      + ($("mirror").checked ? "right" : "left") + " hand");
+      + (right ? "right" : "left") + " hand");
 });
 
 buttons("poses", POSES, p => {
