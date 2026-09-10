@@ -43,7 +43,7 @@ A desktop web app where the user has real-time spoken Japanese conversations wit
 
 Target machine: single laptop, RTX 4090 mobile (16 GB VRAM), Linux or Windows/WSL2. Everything runs locally except Claude inference.
 
-**Two hard, non-negotiable performance requirements (details in §10/§10b):** voice→voice latency ≤ 3.0 s at p90, and total GPU memory use within an 8–10 GB budget. Every design decision must be checked against these; both are instrumented and enforced in milestone acceptance criteria.
+**Two hard, non-negotiable performance requirements (details in §10/§10b):** voice→voice latency ≤ 5.0 s at p90 (relaxed from 3.0 s by the user on 2026-09-10: answer quality over the last seconds, ADR-033), and total GPU memory use within an 8–10 GB budget. Every design decision must be checked against these; both are instrumented and enforced in milestone acceptance criteria.
 
 ## 2. ARCHITECTURE (FIXED — do not redesign)
 
@@ -240,7 +240,7 @@ Boundaries:
 
 - **A separate MCP server** — `backend/search_mcp.py`, exposing one read tool, `search`. It is **never** a fourth tool on the Bunpro server, whose exact three-tool surface the Golden Rule gate asserts (§0 rule 5).
 - **Rationed by the prompt (§6):** search at the start of a session to find something worth discussing, and later only when the conversation genuinely needs a fact. Not every turn.
-- **The cost lands where it is affordable.** The opening search happens before the student has spoken, where a second or two is invisible. The 3.0 s voice→voice budget (§10) governs conversational turns; any turn containing a tool call logs its tool time separately so the p90 measurement stays honest.
+- **The cost lands where it is affordable.** The opening search happens before the student has spoken, where a second or two is invisible. The 5.0 s voice→voice budget (§10) governs conversational turns; any turn containing a tool call logs its tool time separately so the p90 measurement stays honest.
 - **Results are untrusted text.** Titles and short snippets only, never full pages: control characters and `[`/`]` stripped (they would collide with the emotion tags of ADR-020), length-capped, count-capped. The tutor holds no built-in tools (§4), so a hostile result can at worst make her say something odd.
 - **Optional, degrades cleanly.** No SearxNG reachable → the tool says so, the `search` chip reads `down`, and Sensei opens from the student's profile and the previous session instead. Startup never blocks on it. There is deliberately **no static topic list** — the fallback is her own curiosity, not a canned menu.
 
@@ -522,22 +522,27 @@ the session, and neither may need a relaunch.
 - Verified with a fake PortAudio (hermetic tests). **Not yet observed live:** an actual unplug and
   replug, and whether an open Sound Mapper stream follows a change of the OS default.
 
-## 10. LATENCY BUDGET — HARD REQUIREMENT: ≤ 3.0 s voice→voice (instrument it — log per-turn timings as structured JSON)
+## 10. LATENCY BUDGET — HARD REQUIREMENT: ≤ 5.0 s voice→voice (instrument it — log per-turn timings as structured JSON)
 
 | stage | budget |
 |---|---|
 | end-of-speech detect (VAD window) | 0.50 s |
 | STT (whisper, warm) | 0.35 s |
-| Claude first complete sentence | 1.60 s |
+| Claude first complete sentence (thinking included) | 3.60 s |
 | VOICEVOX first chunk + WS delivery | 0.40 s |
 | playback start slack | 0.15 s |
-| **voice→voice total** | **≤ 3.0 s (p90)** |
+| **voice→voice total** | **≤ 5.0 s (p90)** |
+
+**Changed 2026-09-10 by the user (ADR-033): the gate was ≤ 3.0 s.** The first 20-turn run
+measured p50 3.49 s / p90 5.30 s, the Claude stage tracks the model's thinking, and thinking
+cannot be turned off on Sonnet (constants.py). Every route under 3.0 s cost answer quality, and
+the user chose quality: "5 s instead of 3 s for a high-quality answer is good".
 
 Engineering this budget is a first-class requirement, not an afterthought:
-- Claude stage is the variable one — enforce its allies: extended thinking OFF, compact system prompt (profile ≤ 600 tokens), tools stripped (§4), MCP tool use rationed (§6). Expose `--model` so the user can drop to a faster model if p90 drifts.
+- Claude stage is the variable one — enforce its allies: thinking kept down with `--effort medium` (it cannot be turned off on Sonnet, and lowering effort further trades away quality — ADR-033), compact system prompt (profile ≤ 600 tokens), tools stripped (§4), MCP tool use rationed (§6). Expose `--model` so the user can drop to a faster model if p90 drifts.
 - Pipeline the stages: STT may start on VAD-provisional end-of-speech; TTS synthesis of sentence N overlaps Claude generating sentence N+1; ship the first sentence the instant it closes.
 - If the first sentence hasn't closed by 1.2 s of streaming, emit a short filler (うーん、そうですね…) from a pre-synthesized filler pool while generation continues. Fillers count as masking, not as meeting the budget — log true first-content latency separately.
-- `--profile` flag / debug overlay shows last-turn stage timings; log a warning with full breakdown whenever a turn exceeds 3.0 s, and track rolling p50/p90 in the session log. M3 acceptance includes: p90 ≤ 3.0 s over a 20-turn conversation.
+- `--profile` flag / debug overlay shows last-turn stage timings; log a warning with full breakdown whenever a turn exceeds 5.0 s (`LATENCY_WARN_S`), and track rolling p50/p90 in the session log. M3 acceptance includes: p90 ≤ 5.0 s over a 20-turn conversation, measured with `python -m backend.tools.latency_run`.
 
 ## 10b. VRAM BUDGET — HARD CAP: 8–10 GB on the RTX 4090 mobile (16 GB card)
 
@@ -577,7 +582,7 @@ Rules:
 
 **M2 — Ears & mouth (no avatar).** Mic → VAD → whisper → M1 loop → VOICEVOX → speaker playback in terminal/minimal page. Emotion → voice tone table live (§7). Tests: mora→viseme mapper golden tests against 3 recorded `audio_query` fixtures (commit fixtures); hallucination filter tests; emotion→VOICEVOX params test (each tag produces the configured style/pitch/speed/intonation; unknown style id degrades to base + scalars); VAD gating test (speech during `speaking` needs the higher threshold). Latency and VRAM instrumentation live from here.
 
-**M3 — Face.** Full frontend with TalkingHead, viseme-synced speech, subtitles, emotions (face + voice, set at sentence playback start), listening reactions, idle life, status bar, settings drawer, barge-in end-to-end. Acceptance: 10-turn conversation on headphones where lip-sync looks tight and barge-in cuts speech < 300 ms; **10-turn conversation on laptop speakers with zero self-interruptions**; each of the four emotion tags visibly and audibly distinct in a scripted 4-sentence turn; p90 voice→voice ≤ 3.0 s over 20 turns; VRAM ≤ 10 GB steady state.
+**M3 — Face.** Full frontend with TalkingHead, viseme-synced speech, subtitles, emotions (face + voice, set at sentence playback start), listening reactions, idle life, status bar, settings drawer, barge-in end-to-end. Acceptance: 10-turn conversation on headphones where lip-sync looks tight and barge-in cuts speech < 300 ms; **10-turn conversation on laptop speakers with zero self-interruptions**; each of the four emotion tags visibly and audibly distinct in a scripted 4-sentence turn; p90 voice→voice ≤ 5.0 s over 20 turns (3.0 s until 2026-09-10, ADR-033); VRAM ≤ 10 GB steady state.
 
 **M4 — Sensei brain.** Memory and context (§6b, ADR-031/032) — the turn log, the start-of-session read, the end-of-session summariser, and *last* the pre-emptive session rotation, which is the only piece here that can break a working conversation and so ships after several real lessons on the rest. `CONTEXT_ROTATE_AT` unset means never rotate, and that stays a supported configuration. Then: tutor prompt tuning with the real profile, Bunpro MCP (found or written per §5 — read tools only, on the same GET-only client), §5b status indicators wired to real state, `control: resync` from the UI. The fetchers and profile renderer already exist from M1; M4 is about the tutor *using* them well and the user *seeing* that it does. Acceptance: with a real WaniKani token, the tutor demonstrably uses ≥ 3 recent unlocks in a 5-minute conversation (visible in logs); Bunpro absent → clean degradation with the chip reading `disabled`; Bunpro MCP deliberately broken (bad credential) → chip reads `failed`, conversation unaffected; WaniKani offline with a warm cache → chip reads `stale`, profile still present.
 

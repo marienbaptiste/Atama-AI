@@ -22,7 +22,7 @@ Two rules run through everything:
 1. **Never fabricate an external interface.** Verify against `claude --help`, VOICEVOX's live
    `/docs` OpenAPI, the TalkingHead README, and the WaniKani docs. Pin the finding in a dated
    code comment and in `backend/constants.py`. This is what **V0** below exists for.
-2. **The two hard numbers are gates, not aspirations** — voice→voice p90 ≤ 3.0 s, VRAM ≤ 10 GB.
+2. **The two hard numbers are gates, not aspirations** — voice→voice p90 ≤ 5.0 s (was 3.0 s until 2026-09-10, ADR-033), VRAM ≤ 10 GB.
    They are measured from M2 onward, not discovered at M5.
 
 ---
@@ -780,13 +780,14 @@ the same record is sent to the client as `timing`.
   turns log **true first-content latency separately** from perceived latency.
 - **Validate** — A scripted 20-turn conversation produces the p50/p90 report.
 - **Integrate** — `--profile` overlay and the session JSONL.
-- **Gate M3d (hard)** — **voice→voice p90 ≤ 3.0 s over 20 turns.** Fillers do not count toward
+- **Gate M3d (hard)** — **voice→voice p90 ≤ 5.0 s over 20 turns** (3.0 s until 2026-09-10, ADR-033). Fillers do not count toward
   meeting it. Missing this gate blocks M4.
 - **Harness: built 2026-09-10** — `python -m backend.tools.latency_run` (recorded clips → warm
   Whisper → scripted line to a real session → first complete sentence → its synthesis, + 0.15 s
   slack; opening turn reported separately). Still missing from the contract: the live `timing`
   message, rolling p50/p90 in the session log, and ttft/thinking on voice turns.
-- **Baseline 2026-09-10 — FAIL.** sonnet, effort medium, tools on, 20 turns, app running alongside
+- **Baseline 2026-09-10 — FAIL** (over the 3.0 s gate of the time, and 0.30 s over the 5.0 s gate
+  the user set the same day, ADR-033). sonnet, effort medium, tools on, 20 turns, app running alongside
   (shared GPU): voice→voice **p50 3.49 s, p90 5.30 s**; stt p50/p90 0.51/0.61 s; Claude first
   sentence **2.61/3.99 s**; tts 0.30/0.61 s; opening 3.98 s. The Claude stage tracks the model's
   **thinking**: thinking p50 306 chars; the five turns with zero thinking ran 1.70–2.56 s
@@ -1097,7 +1098,7 @@ Runs from M2 onward, every milestone, before any gate is called met:
    `apiKeySource`, `.env.example`-vs-`config.py` inventory, and protocol contract tests.
 3. `make check-secrets` — no token-shaped strings and no current `.env` value in the tracked
    tree.
-4. **20-turn latency run** — p50/p90 reported; p90 ≤ 3.0 s.
+4. **20-turn latency run** — p50/p90 reported; p90 ≤ 5.0 s (`python -m backend.tools.latency_run`).
 5. **VRAM check** — steady state ≤ 10 GB with the browser open.
 6. **Speakers run** — 10 turns on laptop speakers, zero self-interruptions.
 7. **Degradation matrix** — the app starts, holds a conversation, and shows the right chips

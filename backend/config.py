@@ -41,7 +41,7 @@ SCHEMA: tuple[Setting, ...] = (
     # Model
     Setting("BRAIN_PROVIDER", "claude-cli", str, "model", "Which brain implementation to use (ADR-027). Implemented: claude-cli. An OpenAI headless provider is planned (ROADMAP subsystem 20)"),
     Setting("CLAUDE_MODEL", "sonnet", str, "model", "Model alias for the tutor subprocess"),
-    Setting("CLAUDE_EFFORT", "medium", str, "model", "CLI effort level (low|medium|high|xhigh|max). Measured 2026-09-09, median first-token BETWEEN turns / opening turn: low 2.75s/8.6s, medium 2.14s/5.8s, high 3.75s/19.2s. Medium is the floor, not a compromise: it is the fastest of the three on BOTH numbers, so dropping to low would buy nothing. The first lever pulled against the 1.60s Claude stage budget (spec S10)"),
+    Setting("CLAUDE_EFFORT", "medium", str, "model", "CLI effort level (low|medium|high|xhigh|max). Measured 2026-09-09, median first-token BETWEEN turns / opening turn: low 2.75s/8.6s, medium 2.14s/5.8s, high 3.75s/19.2s. Medium is the floor, not a compromise: it is the fastest of the three on BOTH numbers, so dropping to low would buy nothing. Sonnet cannot turn thinking off at any level (docs, 2026-09-10); the Claude stage budget is 3.60s since ADR-033 (spec S10)"),
     Setting("CLAUDE_FALLBACK_MODEL", "haiku", str, "model", "Fallback when the model is overloaded / rate limited"),
     Setting("CLAUDE_REPLACE_SYSTEM_PROMPT", True, bool, "model", "true: --system-prompt (Sensei only). false: --append-system-prompt, which leaves Claude Code's coding-agent prompt in front and breaks the persona"),
     Setting("CLAUDE_TURN_TIMEOUT_S", 60, int, "model", "Per-turn timeout before SIGINT + apology"),
@@ -70,14 +70,14 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("WHISPER_MODEL", "large-v3", str, "speech", "faster-whisper model (fallback: medium)"),
     Setting("WHISPER_COMPUTE_TYPE", "float16", str, "speech", "CTranslate2 compute type. float16 is the default because int8 buys nothing on a GPU that does fp16 natively: measured 2026-09-09, same median latency (287 vs 290 ms) and better transcripts, for 1.7 GB of headroom we were not spending. int8_float16 is the fallback if VRAM ever gets tight"),
     Setting("TURN_MODE", "ptt", str, "speech", "How a turn ends: ptt (you press a key - reliable, and the tutor's own voice can never end your turn) or vad (silence ends it - hands-free, but see VAD_SILENCE_MS)"),
-    Setting("VAD_SILENCE_MS", 900, int, "speech", "Silence that ends an utterance. Raised 600 -> 900 on 2026-09-10: 600 ms cut the student off mid-thought. It is spent DIRECTLY from the 3.0 s voice->voice budget (spec S10 allots 0.50 s to this stage), so raising it buys patience with latency"),
+    Setting("VAD_SILENCE_MS", 900, int, "speech", "Silence that ends an utterance. Raised 600 -> 900 on 2026-09-10: 600 ms cut the student off mid-thought. It is spent DIRECTLY from the 5.0 s voice->voice budget (spec S10 allots 0.50 s to this stage), so raising it buys patience with latency"),
     Setting("VAD_MIN_SPEECH_MS", 300, int, "speech", "Minimum speech before an utterance counts"),
     Setting("BARGEIN_THRESHOLD_FACTOR", 2.0, float, "speech", "VAD threshold multiplier while the avatar speaks"),
     Setting("BARGEIN_MIN_SPEECH_MS", 250, int, "speech", "Sustained speech required to barge in"),
     Setting("PLAYBACK_ONSET_IGNORE_MS", 150, int, "speech", "Ignore VAD at playback onset"),
     # Latency / VRAM guards
     Setting("FILLER_AFTER_MS", 1200, int, "advanced", "Play a filler if the first sentence has not closed"),
-    Setting("LATENCY_WARN_S", 3.0, float, "advanced", "Warn when a turn exceeds this"),
+    Setting("LATENCY_WARN_S", 5.0, float, "advanced", "Warn when a turn exceeds this. 5.0 since 2026-09-10 (ADR-033): the gate is voice->voice p90 <= 5.0 s"),
     Setting("VRAM_WARN_GB", 10, int, "advanced", "Warn above this GPU memory use"),
     # Display
     Setting("TUTOR_PERSONA", "minami", str, "voice", "Which tutor: a name in prompts/ (tanaka, hayashi, minami, mori) or a path. The persona declares its own voice AND its avatar, so this one setting switches character, voice and face together (ADR-026/030). Default is minami because she is the one with a shipped avatar"),

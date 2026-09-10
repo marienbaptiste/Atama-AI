@@ -225,7 +225,8 @@ has not closed by 1.2 s, play a pre-synthesised filler (うーん、そうです
 
 **The filler rule:** fillers are **masking, not budget compliance**. True first-content latency
 is logged separately from perceived latency, and only the true number is measured against the
-p90 ≤ 3.0 s gate. A design that hits the budget only with fillers has not hit the budget.
+p90 gate (≤ 3.0 s when this was written; ≤ 5.0 s since ADR-033). A design that hits the budget
+only with fillers has not hit the budget.
 
 **Consequences.** The chunker must never split mid-sentence across delta boundaries — it gets
 property tests. The pipeline is concurrent rather than sequential, which is more complex and is
@@ -1194,3 +1195,32 @@ To change something here:
 4. Then change the code.
 
 In that order.
+
+---
+
+## ADR-033 — Latency gate relaxed to p90 ≤ 5.0 s: answer quality over the last seconds
+
+**Status:** Accepted — user directive, 2026-09-10. Supersedes the 3.0 s figure of spec §10 and
+the gate it set (named in ADR-008, ROADMAP M3d).
+
+**Context.** The first 20-turn run of the latency harness (ROADMAP 10,
+`backend/tools/latency_run.py`) measured voice→voice **p50 3.49 s, p90 5.30 s** on sonnet at
+effort medium. The Claude stage tracks the model's thinking — roughly +0.5 s per 100 characters;
+the turns with none ran 1.7–2.6 s end to end. Thinking cannot be switched off on Sonnet 5: the
+toggle, `alwaysThinkingEnabled` and `MAX_THINKING_TOKENS=0` have no effect there (constants.py,
+docs read 2026-09-10). Every route under 3.0 s — lower effort, a smaller model, another provider
+— trades away answer quality: the corrections and explanations that are the point of a tutor.
+
+**Decision.** The user chose quality: "5 s instead of 3 s for a high-quality answer is good."
+The hard gate becomes **voice→voice p90 ≤ 5.0 s over 20 turns** (M3d). The stage budgets keep
+their shape; the Claude first-sentence budget grows from 1.60 s to 3.60 s, thinking included.
+Effort stays `medium`, the model stays Sonnet. It is still a hard gate measured by the harness,
+not an aspiration, and fillers still do not count toward it (ADR-008). `LATENCY_WARN_S` 5.0.
+
+**Consequences.** Latency work now targets what costs no quality: STT and TTS (each slightly
+over their stage budgets, partly from sharing the GPU), prompt size, the length of her first
+sentence, and perceived latency (a visible thinking cue; fillers as masking). The baseline is
+0.30 s over the new gate.
+
+**Reversed if:** 4–5 s pauses turn out to break real lessons, or a model or provider keeps the
+quality at a lower thinking cost — then measure with the harness and decide again.

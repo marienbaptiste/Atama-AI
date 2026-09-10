@@ -135,7 +135,8 @@ part of `make test`.
 **Build milestones strictly in order.** M0 → M1 → M2 → M3 → M4 → M5. Do not skip; do not start the
 next one while the previous gate is unmet.
 
-**The two hard numbers are gates, not aspirations.** Voice→voice p90 ≤ 3.0 s, VRAM ≤ 10 GB. They
+**The two hard numbers are gates, not aspirations.** Voice→voice p90 ≤ 5.0 s (relaxed from 3.0 s by the user on 2026-09-10 — answer
+quality over the last seconds, ADR-033), VRAM ≤ 10 GB. They
 are measured from M2 onward. Fillers mask latency, they do not meet the budget — log true
 first-content latency separately (ADR-008).
 

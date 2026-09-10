@@ -172,25 +172,28 @@ gets the host GPU.
 
 Two numbers are non-negotiable. Both are instrumented and both gate milestone acceptance.
 
-### Latency: ≤ 3.0 s voice→voice at p90
+### Latency: ≤ 5.0 s voice→voice at p90
 
 | Stage                              | Budget            |
 |------------------------------------|-------------------|
 | End-of-speech detect (VAD window)  | 0.50 s            |
 | STT (Whisper, warm)                | 0.35 s            |
-| Claude first complete sentence     | 1.60 s            |
+| Claude first complete sentence     | 3.60 s            |
 | VOICEVOX first chunk + WS delivery | 0.40 s            |
 | Playback start slack               | 0.15 s            |
-| **Voice→voice total**              | **≤ 3.0 s (p90)** |
+| **Voice→voice total**              | **≤ 5.0 s (p90)** |
 
-Claude is the variable stage, so its allies are enforced: extended thinking off, system prompt
+**Was 3.0 s until 2026-09-10.** Sonnet always thinks a little before answering and it cannot be
+switched off; getting under 3 s meant a weaker answer, and a considered answer is worth two more
+seconds (ADR-033). Claude is still the variable stage, so its allies are enforced: effort
+`medium` (thinking kept down, not off), system prompt
 compact (profile ≤ 600 tokens), **every built-in tool removed** (`--tools ""`), MCP tool use
 rationed. `model` and `fallback model` are settings, so you can drop to a faster model if p90
 drifts.
 
 If the first sentence hasn't closed by 1.2 s, a pre-synthesized filler (うーん、そうですね…)
 masks the gap — **fillers are masking, not budget compliance**; true first-content latency is
-logged separately. Any turn over 3.0 s logs a warning with the full stage breakdown, and
+logged separately. Any turn over 5.0 s logs a warning with the full stage breakdown, and
 rolling p50/p90 go into the session log.
 
 ### VRAM: 8–10 GB cap on a 16 GB RTX 4090 mobile
@@ -632,7 +635,7 @@ validation and integration plan behind these lives in [ROADMAP.md](ROADMAP.md).
 | **M0** | Skeleton & environment doctor               | **Read-only gate first**, then repo layout, `.gitignore`, config resolution, GET-only SRS client, verified CLI constants, `make doctor`, `make hooks` | Gate catches every violation fixture and passes a clean tree; actionable errors for every missing prerequisite; `apiKeySource == "none"`; loopback-only; every ignored path actually ignored |
 | **M1** | SRS fetchers (read-only) + text brain loop  | WaniKani + Bunpro fetchers, profile renderer, persistent claude subprocess, CLI REPL with the real profile in the prompt     | Read-only recording test green; env allowlist; restart/`--resume`; chunker + emotion tests; no built-in tools in `init.tools[]`                |
 | **M2** | Ears & mouth (no avatar)                    | Mic → VAD → Whisper → M1 → VOICEVOX → playback; emotion → voice live; latency + VRAM instrumentation                        | Viseme golden tests; hallucination filter; five emotions audibly distinct; VAD gating test                                                     |
-| **M3** | Face                                        | Full frontend: TalkingHead, lip-sync, emotions (face + voice), listening reactions, status bar, settings drawer, barge-in    | 10 turns on headphones, barge-in < 300 ms; **10 turns on speakers, zero self-interruptions**; 4 emotions distinct; **p90 ≤ 3.0 s**; VRAM ≤ 10 GB |
+| **M3** | Face                                        | Full frontend: TalkingHead, lip-sync, emotions (face + voice), listening reactions, status bar, settings drawer, barge-in    | 10 turns on headphones, barge-in < 300 ms; **10 turns on speakers, zero self-interruptions**; 4 emotions distinct; **p90 ≤ 5.0 s**; VRAM ≤ 10 GB |
 | **M4** | Sensei brain                                | Prompt tuning, Bunpro MCP (read tools only), status chips on real signals, resync                                            | ≥ 3 recent unlocks used in 5 minutes; Bunpro absent → `disabled`; broken → `failed`, conversation unaffected; WK offline → `stale`             |
 | **M5** | Polish                                      | Full settings page, session summary, `--profile` overlay, fresh-machine docs (Linux + WSL2), `make check-secrets`            | Clone → first conversation **without creating a `.env`**; redaction and read-only tests green                                                 |
 
@@ -689,7 +692,7 @@ The rules that shape this codebase. Most were expensive to learn; they are docum
 
 ## Measuring latency
 
-The hard number is **voice→voice p90 ≤ 3.0 s** (spec §10). Measure it without talking:
+The hard number is **voice→voice p90 ≤ 5.0 s** (spec §10). Measure it without talking:
 
 ```bash
 python -m backend.tools.latency_run                 # 20 turns with your current settings
@@ -745,7 +748,7 @@ TalkingHead expects (ms vs s — pinned in code).
 **The face changes before the voice does.** The emotion is being applied on message receipt
 instead of at audio start. It must come from the playback-start callback.
 
-**p90 latency creeping past 3.0 s.** Check the `--profile` overlay for which stage is blowing
+**p90 latency creeping past 5.0 s.** Check the `--profile` overlay for which stage is blowing
 its budget. If it is Claude, drop to a faster model, shrink the profile, or ration MCP tool use
 further.
 

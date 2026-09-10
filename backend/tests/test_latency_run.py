@@ -24,7 +24,7 @@ def test_missing_values_are_skipped_and_nothing_is_none():
 def test_the_gate_passes_only_when_p90_is_inside_the_budget():
     inside = [row(2350)] * 20
     assert lr.summarise(inside)["pass"]
-    slow_tail = [row(2350)] * 17 + [row(5000)] * 3      # the 18th sorted value is 5000
+    slow_tail = [row(2350)] * 17 + [row(6000)] * 3      # the 18th sorted value is 6000
     assert not lr.summarise(slow_tail)["pass"]
     assert lr.summarise(slow_tail)["v2v_ms"]["p50"] == 2350
 
@@ -34,7 +34,7 @@ def test_a_run_with_no_complete_turns_fails_rather_than_passing_empty():
 
 
 def test_the_report_names_every_stage_and_the_verdict():
-    text = lr.format_report(lr.summarise([row(3400, claude=2600)] * 20), {"claude_ms": 8800, "v2v_ms": 9700})
+    text = lr.format_report(lr.summarise([row(6000, claude=4000)] * 20), {"claude_ms": 8800, "v2v_ms": 9700})
     for word in ("stt", "claude first sentence", "tts first audio", "VOICE->VOICE", "OVER",
                  "opening turn", "GATE M3d", "FAIL"):
         assert word in text

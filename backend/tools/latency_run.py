@@ -53,8 +53,9 @@ from backend.tools import mcp_config
 from backend.tts_voicevox import VoicevoxClient
 
 #: Spec §10 stage budgets, ms. VAD is 0 under push-to-talk, and slack is the spec's constant.
-BUDGET_MS = {"stt_ms": 350, "claude_ms": 1600, "tts_ms": 400}
-TOTAL_BUDGET_MS = 3000
+#: The gate was 3.0 s (Claude 1.60 s) until 2026-09-10; the user chose answer quality (ADR-033).
+BUDGET_MS = {"stt_ms": 350, "claude_ms": 3600, "tts_ms": 400}
+TOTAL_BUDGET_MS = 5000
 PLAYBACK_SLACK_MS = 150
 OPENING = "（セッション開始。あいさつして、始めてください。）"
 
@@ -123,7 +124,7 @@ def format_report(summary: dict[str, Any], opening: dict[str, Any] | None = None
     if opening:
         lines.append(f"  opening turn (not in p90): claude {ms(opening.get('claude_ms'))}, "
                      f"v2v {ms(opening.get('v2v_ms'))}")
-    lines.append("\nGATE M3d (p90 voice->voice <= 3.0 s): " + ("PASS" if summary["pass"] else "FAIL"))
+    lines.append("\nGATE M3d (p90 voice->voice <= 5.0 s): " + ("PASS" if summary["pass"] else "FAIL"))
     return "\n".join(lines)
 
 

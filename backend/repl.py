@@ -566,7 +566,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
             if v2v:
                 p90 = v2v[max(0, int(len(v2v) * 0.9) - 1)]
                 print(f"\n{DIM}{len(v2v)} turns · voice→voice median {v2v[len(v2v) // 2] / 1000:.2f}s · "
-                      f"p90 {p90 / 1000:.2f}s (budget 3.0s){RESET}")
+                      f"p90 {p90 / 1000:.2f}s (budget 5.0s){RESET}")
 
 
 async def _summarise(cfg, mem) -> int:

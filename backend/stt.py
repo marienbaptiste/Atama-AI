@@ -1,6 +1,6 @@
 """Speech to text: faster-whisper, Japanese, local (spec §9, ADR-004).
 
-Local on purpose: a cloud round-trip does not fit the 3.0 s budget, and the student's voice never
+Local on purpose: a cloud round-trip does not fit the voice->voice budget, and the student's voice never
 leaves the machine.
 
 Verified 2026-09-09 on the target box (RTX 4090 mobile, CTranslate2 4.8.2, faster-whisper 1.2.1):
