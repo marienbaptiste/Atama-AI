@@ -129,9 +129,13 @@ def build(hub: Hub) -> Starlette:
 async def serve(hub: Hub, cfg) -> tuple[asyncio.Task, str]:
     """Run the server on the configured loopback address. Returns (task, url)."""
     host, port = str(cfg.HOST), int(cfg.PORT)
+    # timeout_graceful_shutdown matters: uvicorn otherwise waits indefinitely for open
+    # connections to close, and the browser's WebSocket is exactly such a connection.
     server = uvicorn.Server(uvicorn.Config(build(hub), host=host, port=port,
-                                           log_level="warning", ws="websockets"))
+                                           log_level="warning", ws="websockets",
+                                           timeout_graceful_shutdown=2))
     task = asyncio.create_task(server.serve())
+    task.server = server  # type: ignore[attr-defined]  - shutdown() needs it to exit gracefully
     # uvicorn sets `started` once the socket is bound; waiting on it means the URL we print is
     # true rather than hopeful, and a port clash surfaces here instead of as a blank browser tab.
     for _ in range(200):
@@ -142,6 +146,21 @@ async def serve(hub: Hub, cfg) -> tuple[asyncio.Task, str]:
 
 
 async def shutdown(task: asyncio.Task) -> None:
+    """Graceful first, cancel only as a fallback.
+
+    Cancelling the server task outright tears it down mid-await and prints a CancelledError
+    traceback. Now that the page has a stop button, shutdown is the normal path rather than the
+    exception, so every stop would end in a traceback. Asking uvicorn to exit closes sockets and
+    finishes handlers instead; cancellation remains for a server that will not go quietly.
+    """
+    server = getattr(task, "server", None)
+    if server is not None:
+        server.should_exit = True
+        try:
+            await asyncio.wait_for(asyncio.shield(task), 5)
+            return
+        except Exception:  # noqa: BLE001 - fall through to cancellation
+            pass
     task.cancel()
-    with contextlib.suppress(asyncio.CancelledError):
+    with contextlib.suppress(asyncio.CancelledError, Exception):
         await task

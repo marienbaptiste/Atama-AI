@@ -50,19 +50,27 @@ Target machine: single laptop, RTX 4090 mobile (16 GB VRAM), Linux or Windows/WS
 ```
 Browser (frontend)                    Python Orchestrator (backend)
 ┌─────────────────────┐   WebSocket   ┌──────────────────────────────┐
-│ TalkingHead avatar  │◄─────────────►│ FastAPI + asyncio            │
-│ mic capture (PCM)   │               │  ├─ VAD (silero)             │
-│ audio playback      │               │  ├─ STT (faster-whisper)     │
-│ viseme animation    │               │  ├─ ClaudeSession (1 proc)   │
-└─────────────────────┘               │  ├─ SentenceChunker          │
-                                      │  ├─ TTS client → VOICEVOX    │
-        ┌─────────────┐               │  └─ SRS fetcher (WK/Bunpro)  │
-        │ VOICEVOX    │◄──HTTP────────┤                              │
-        │ engine      │  :50021       └───────────┬──────────────────┘
-        │ (Docker)    │                           │ stdin/stdout
-        └─────────────┘                           ▼
-                                      claude -p (persistent subprocess,
-                                      stream-json in/out, MCP tools)
+│ TalkingHead avatar  │   /ws :8000   │ FastAPI + asyncio  (app.py)  │
+│ viseme + mood rig   │◄─────────────►│  ├─ Hub: fan-out to pages    │
+│ audio playback      │  speak/state/ │  ├─ VoiceLoop (PTT | VAD)    │
+│ hold SPACE = PTT    │  transcript ▼ │  ├─ VAD (silero)             │
+│ stop button         │  ▲ control:   │  ├─ STT (faster-whisper)     │
+└─────────────────────┘  start/stop/  │  ├─ ClaudeSession (1 proc)   │
+                         quit         │  ├─ SentenceChunker          │
+        ┌─────────────┐               │  ├─ TTS client → VOICEVOX    │
+        │ VOICEVOX    │◄──HTTP────────┤  ├─ SRS fetcher (WK/Bunpro)  │
+        │ (Docker)    │  :50021       │  └─ Memory (turn log, brief, │
+        └─────────────┘               │      topics, student.md)     │
+        ┌─────────────┐               └───────────┬──────────────────┘
+        │ SearxNG     │◄──HTTP :8888──┐           │ stdin/stdout
+        │ (Docker)    │               │           ▼
+        └─────────────┘   ┌───────────┴──┐   claude -p (persistent subprocess,
+  Yahoo! JAPAN RSS ◄─GET──┤ search MCP   │◄──stream-json in/out, MCP tools)
+  (news_feeds.txt)        │ (1 tool)     │        │
+                          └──────────────┘        ├──► Bunpro MCP (3 read tools,
+                                                  │    reads the SRS snapshot)
+  run.cmd / up.py  : docker up → wait ready → orchestrator → open page
+  stop.cmd / down.py, or the page's stop button (control quit): clean shutdown
               ▲                                   ▲
               │ style id                          │ persona text
         ┌─────┴───────────────────────────────────┴──────┐
@@ -72,6 +80,12 @@ Browser (frontend)                    Python Orchestrator (backend)
         └────────────────────────────────────────────────┘
               one file per tutor; TUTOR_PERSONA selects it
 ```
+
+**Where the build stands against this diagram (2026-09-10).** The browser page is
+`frontend/public/preview.html`, served by `backend/app.py`; it renders and plays, and sends only
+`control` messages (PTT `start`/`stop`, `quit`). The **microphone is still captured by the
+orchestrator** (`backend/audio.py`, sounddevice) — browser mic streaming (data flow step 1)
+arrives with M3. Memory is spec §6b, search §5c, the launcher §15.
 
 **A tutor is a persona and a voice together, from one file** (ADR-030). `prompts/<name>.md` holds
 the character *and* declares the VOICEVOX style it is written for; `TUTOR_PERSONA` picks the file
@@ -230,9 +244,13 @@ Boundaries:
 - **Results are untrusted text.** Titles and short snippets only, never full pages: control characters and `[`/`]` stripped (they would collide with the emotion tags of ADR-020), length-capped, count-capped. The tutor holds no built-in tools (§4), so a hostile result can at worst make her say something odd.
 - **Optional, degrades cleanly.** No SearxNG reachable → the tool says so, the `search` chip reads `down`, and Sensei opens from the student's profile and the previous session instead. Startup never blocks on it. There is deliberately **no static topic list** — the fallback is her own curiosity, not a canned menu.
 
-**Status: not implemented (ROADMAP V0.11).** SearxNG's JSON API has not been verified against a running instance — none was reachable and the Docker daemon was down — and §14 forbids coding against an unverified interface. The compose service and the `SEARXNG_URL` setting exist; the client lands once a live instance answers.
+**Status: implemented and verified live** (2026-09-09, and multi-source 2026-09-10). This section previously said "not implemented"; that was stale — the MCP server has been answering in live sessions since M1.
 
-For the record, since it is a plausible fallback if SearxNG is ever dropped: **NHK RSS** works (verified 2026-09-09) at `https://www3.nhk.or.jp/rss/news/cat<N>.xml` — `cat0` 主要, `cat1` 社会, `cat3` 科学・医療, `cat5` 経済, `cat6` 国際 (world), `cat7` スポーツ, all Japanese-language. NHK **News Web Easy** (やさしい日本語) is **not** usable: `news-list.json` redirects to `news.web.nhk` and returns `401 missing_token` (JWT required).
+**Sources are interleaved, not ranked by one engine** (2026-09-10, user directive). Measured on a Japanese news query, 47 of 57 SearxNG results came from `brave.news` alone, so taking the first few gave the tutor one source in practice. `news` results now draw round-robin across providers and are de-duplicated by title. Two SearxNG engines that were on by default are disabled in `docker/searxng/settings.yml` — `google news` (suspended behind a CAPTCHA) and `startpage news` (parse error): they returned nothing and each cost up to the request timeout on every search; disabling them took a search from several seconds to 0.7 s.
+
+**Yahoo! JAPAN ニュース, through its official RSS** — not SearxNG, whose only Yahoo news engine is the English US site and is not even defined in the default news set. Nine topic feeds (top picks, domestic, world, business, entertainment, sports, IT, science, local) are listed in `backend/data/news_feeds.txt`, merged into `news` results only, and counted as **one provider** so nine feeds cannot fill every slot. Headlines older than 72 hours, or undated, are dropped. The tool is still one read tool, `search`; the feeds are sources behind it, not a second tool.
+
+**NHK is deliberately excluded.** `https://www3.nhk.or.jp/rss/news/cat<N>.xml` still answers 200, but on 2026-09-10 every item across cat0/1/5/6 was 32–38 days old and `lastBuildDate` was 8–9 August: the feed is frozen (NHK moved to `news.web.nhk`). A 200 with month-old items is worse than a 404, because the tutor would present stale news as current — which is exactly what the age cutoff exists to prevent. NHK **News Web Easy** remains unusable: `news-list.json` returns `401 missing_token`.
 
 ## 6. TUTOR SYSTEM PROMPT (template — render with soul, profile and topic; versioned files under `prompts/`)
 
@@ -311,6 +329,13 @@ is abandoned.
   into the prompt as *recently discussed — do not open on these*, de-duplicated and newest first.
   It is the cheapest possible anti-repetition: one line of prompt, no retrieval, and it directly
   targets the failure a student notices first — three lessons in a row opening on the same news.
+- **The opening offers a choice** (added 2026-09-10, user request). When a last-session brief
+  exists, the tutor greets, recalls it in one sentence, and asks: carry on with that, or something
+  new? It waits for the answer before searching. Carrying on picks the thread back up with *today's*
+  SRS profile — refreshed at launch, so the goals are current even when the topic is not. Something
+  new, or a first-ever session, opens on one search (§5c) that avoids recent topics. The rule lives
+  in `prompts/tutor.md`; the opening nudge in code stays neutral. Bonus: a continuing session skips
+  the opening search, and its latency, entirely.
 - **`student.md` is markdown the user edits.** A wrong memory recalled confidently is worse than no
   memory, and the correction mechanism is a text editor. It holds grammar points missed more than
   once, vocabulary the student produced *unprompted*, topics that got them talking, and facts about
@@ -405,7 +430,7 @@ Capping it is cheaper than rotating more often.
 
 - TalkingHead init with the GLB avatar, lipsyncModules can be empty (we always pass visemes explicitly).
 - WebSocket client with auto-reconnect. Message protocol (define as typed constants shared in one place, mirrored in Python pydantic models; a contract test asserts the two sets are identical):
-  - client→server: `audio_chunk` (base64 PCM16), `control` (`start`, `stop`, `bargein_ack`, `resync`), `settings` (partial update of **any** key in the `config.py` schema, secrets included — §11; the server validates, persists to `settings.json`, applies live where possible, and replies with the applied `settings` echo in which secrets appear only as `{set, hint}`. `model` takes effect by respawning the claude subprocess with `--resume`, reported via `service_status: claude=restarting`; token changes re-run the session-start SRS fetch), `settings_test` (`{service}` — runs that service's real check and reports through `service_status`).
+  - client→server: `audio_chunk` (base64 PCM16), `control` (`start`, `stop`, `bargein_ack`, `resync`, `quit` — `start`/`stop` are the push-to-talk edges; `quit` shuts the orchestrator down cleanly from the page, and is deliberately not `stop`), `settings` (partial update of **any** key in the `config.py` schema, secrets included — §11; the server validates, persists to `settings.json`, applies live where possible, and replies with the applied `settings` echo in which secrets appear only as `{set, hint}`. `model` takes effect by respawning the claude subprocess with `--resume`, reported via `service_status: claude=restarting`; token changes re-run the session-start SRS fetch), `settings_test` (`{service}` — runs that service's real check and reports through `service_status`).
   - server→client: `state` (`listening|thinking|speaking`), `stt_final`, `assistant_text` (for subtitle display), `speak` (`{audio_b64, visemes[], vtimes[], vdurations[], text, emotion}`), `emotion`, `bargein`, `srs_profile` (for a collapsible debug panel), `service_status` (§5b), `settings` (echo), `timing` (per-turn stage breakdown, §10), `error`. `stt_partial` is **reserved**: STT runs on complete utterances, so partials are not produced in M2–M5; the type exists so a streaming-STT experiment does not need a protocol change.
 - UI: avatar full-viewport, waist-up camera framing; subtitle strip (toggle: JP / off — there is no English text source, since the tutor speaks only Japanese and 「英語で」 already gets an English explanation *spoken*; an EN subtitle mode would need a translation path and its latency cost, so it is explicitly out of scope until someone asks for it); mic state indicator; session timer; **service status bar** (§5b); settings drawer (voice speed, VAD sensitivity, model, subtitles); a one-line "headphones recommended" hint until the first successful barge-in.
 - Idle life: auto-blink (random 2–6 s), subtle procedural sway, `lookAt` camera. **Eye contact is held at ~0.9 idle and speaking** (`avatarIdleEyeContact` / `avatarSpeakingEyeContact`, both [0,1]): TalkingHead defaults to 0.2/0.5, which makes the tutor look away most of the time and reads as evasive rather than attentive. Not 1.0 — unbroken eye contact is a stare (verified 2026-09-10). **Listening reactions:** while `state=listening` and the server reports speech (VAD `speech_start`), the avatar shifts to an attentive pose and gives a small nod on each detected pause ≥ 300 ms — the あいづち a human tutor would give. While `thinking`, a subtle "considering" idle (gaze up-and-away, slight head tilt).

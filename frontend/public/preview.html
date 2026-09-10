@@ -22,6 +22,11 @@
         touch-action:none;user-select:none}
   #talk.hot{background:#c0392b;border-color:#e05b4a;color:#fff}
   #live{font-size:11px;color:#8b939d;line-height:1.5}
+  #quit{margin-top:8px;width:100%;color:#ffb4a8;border-color:#5a3b37}
+  #quit:hover{background:#4a2a26}
+  #ended{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;
+         background:#0e0f12f2;color:#c9ced6;font-size:15px;text-align:center;line-height:1.7}
+  #ended b{color:#fff;font-size:18px}
   /* Collapsed by default: the rig panel is for tuning, and it is in the way when the point is
      to have a conversation with her. */
   details{margin-top:12px;border-top:1px solid #2c3138;padding-top:8px}
@@ -42,6 +47,7 @@
 
   <button id="talk" disabled>hold SPACE to talk</button>
   <div id="live">not connected</div>
+  <button id="quit" disabled title="Stop the tutor and the server. The page cannot restart them.">stop</button>
 
   <details id="rig">
     <summary>rig controls</summary>
@@ -519,6 +525,34 @@ addEventListener("blur", () => pushToTalk(false));
 $("talk").addEventListener("pointerdown", e => { e.preventDefault(); pushToTalk(true); });
 addEventListener("pointerup", () => pushToTalk(false));
 
+//: Set the moment stop is pressed, so the socket closing afterwards reads as "ended on purpose"
+//: rather than "the server fell over" — which would otherwise trigger the reconnect loop.
+let quitting = false;
+
+function showEnded() {
+  if ($("ended")) return;
+  try { if (head.stopSpeaking) head.stopSpeaking(); } catch (e) {}
+  try { if (ctx) ctx.close(); } catch (e) {}
+  try { head.stop(); } catch (e) {}                 // halt the render loop: nothing left to animate
+  const cover = document.createElement("div");
+  cover.id = "ended";
+  cover.innerHTML = "<div><b>Session ended</b><br>The tutor and the server have stopped.<br>"
+    + "Start again from the terminal with the run command, then reload this page.</div>";
+  document.body.appendChild(cover);
+}
+
+$("quit").onclick = () => {
+  if (!wire || wire.readyState !== 1) { showEnded(); return; }
+  if (!confirm("Stop the tutor and shut down the server?")) return;
+  quitting = true;
+  pushToTalk(false);                                 // never leave the mic open on the way out
+  wire.send(JSON.stringify({ type: "control", action: "quit" }));
+  $("live").textContent = "stopping…";
+  $("talk").disabled = true; $("quit").disabled = true;
+  // The server closes the socket once it has cleaned up; if it never does, end anyway.
+  setTimeout(showEnded, 8000);
+};
+
 function connect() {
   const url = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
   let socket;
@@ -527,6 +561,7 @@ function connect() {
   socket.onopen = () => {
     wire = socket;
     $("talk").disabled = false;
+    $("quit").disabled = false;
     $("live").textContent = "connected — hold SPACE, or the button, and speak";
     $("live").classList.add("on");
   };
@@ -535,8 +570,10 @@ function connect() {
     $("talk").disabled = true;
     $("talk").classList.remove("hot");
     $("talk").textContent = "hold SPACE to talk";
-    $("live").textContent = "disconnected — reconnecting…";
+    $("quit").disabled = true;
     $("live").classList.remove("on");
+    if (quitting) { showEnded(); return; }  // stopped on purpose: do not retry a server we killed
+    $("live").textContent = "disconnected — reconnecting…";
     setTimeout(connect, 2000);          // the REPL may simply not be running yet
   };
   socket.onmessage = async (event) => {

@@ -84,21 +84,35 @@ Highlights:
 ```
 Browser (frontend)                    Python Orchestrator (backend)
 ┌─────────────────────┐   WebSocket   ┌──────────────────────────────┐
-│ TalkingHead avatar  │◄─────────────►│ FastAPI + asyncio            │
-│ mic capture (PCM)   │               │  ├─ VAD (silero)             │
-│ audio playback      │               │  ├─ STT (faster-whisper)     │
-│ viseme animation    │               │  ├─ ClaudeSession (1 proc)   │
-│ status bar/settings │               │  ├─ SentenceChunker          │
-└─────────────────────┘               │  ├─ TTS client → VOICEVOX    │
-                                      │  ├─ SRS fetcher (WK/Bunpro)  │
-        ┌─────────────┐               │  └─ Status registry          │
-        │ VOICEVOX    │◄──HTTP────────┤                              │
-        │ engine      │  :50021       └───────────┬──────────────────┘
-        │ (Docker)    │                           │ stdin/stdout
-        └─────────────┘                           ▼
-                                      claude -p (persistent subprocess,
-                                      stream-json in/out, MCP tools)
+│ TalkingHead avatar  │   /ws :8000   │ FastAPI + asyncio  (app.py)  │
+│ viseme + mood rig   │◄─────────────►│  ├─ Hub: fan-out to pages    │
+│ audio playback      │  speak/state/ │  ├─ VoiceLoop (PTT | VAD)    │
+│ hold SPACE = PTT    │  transcript ▼ │  ├─ VAD (silero)             │
+│ stop button         │  ▲ control:   │  ├─ STT (faster-whisper)     │
+│ status bar/settings │  start/stop/  │  ├─ ClaudeSession (1 proc)   │
+└─────────────────────┘  quit         │  ├─ SentenceChunker          │
+                                      │  ├─ TTS client → VOICEVOX    │
+        ┌─────────────┐               │  ├─ SRS fetcher (WK/Bunpro)  │
+        │ VOICEVOX    │◄──HTTP────────┤  ├─ Memory (turn log, brief, │
+        │ (Docker)    │  :50021       │  │   topics, student.md)     │
+        └─────────────┘               │  └─ Status registry          │
+        ┌─────────────┐               └───────────┬──────────────────┘
+        │ SearxNG     │◄──HTTP :8888──┐           │ stdin/stdout
+        │ (Docker)    │               │           ▼
+        └─────────────┘   ┌───────────┴──┐   claude -p (persistent subprocess,
+  Yahoo! JAPAN RSS ◄─GET──┤ search MCP   │◄──stream-json in/out, MCP tools)
+  (news_feeds.txt)        │ (1 tool)     │        │
+                          └──────────────┘        └──► Bunpro MCP (3 read tools,
+                                                       reads the SRS snapshot)
+
+  run.cmd / up.py  : docker up → wait ready → orchestrator → open page
+  stop.cmd / down.py, or the page's stop button (control quit): clean shutdown
 ```
+
+**Today** the page only renders, plays and sends controls (hold SPACE to talk, the stop
+button). Your **microphone is captured by the orchestrator** (sounddevice), not the browser;
+step 1 below, browser mic streaming, arrives with M3. News comes from SearxNG plus Yahoo! JAPAN
+headline feeds, interleaved so no single source fills the answer.
 
 | Service         | Port     | Bound to      |
 |-----------------|----------|---------------|
@@ -534,7 +548,8 @@ Sensei remembers you between lessons, and none of it costs you a pause mid-conve
   at the start, Sensei doesn't know it. A tutor who says 「あれ、なんだっけ」 beats one that goes
   silent for half a second.
 - **Written in the gaps.** Turn records are appended while the avatar is still speaking. The
-  summary that becomes next lesson's memory is written at session end.
+  summary that becomes next lesson's memory is written when you next launch, so exiting stays
+  instant.
 - **`memory/student.md` is yours to edit.** It lives outside the repo, is never committed, and is
   plain markdown — a wrong memory recalled confidently is worse than none, and the fix is a text
   editor.
@@ -732,6 +747,11 @@ None of it lives in the repository, so none of it can be committed.
 Past lessons are summarised **when you next launch**, by a small cheap model (`haiku` by default),
 which is why launch occasionally says `memory: catching up on 1 past session(s)`. Exiting stays
 instant. If the summary fails, that lesson is simply retried next time.
+
+**Each lesson opens with a choice.** If there is a last lesson to remember, she recalls it in a
+sentence and asks whether to carry on or talk about something new. Carry on, and she picks the
+thread back up with today's review items, since your SRS profile is refreshed at launch. Something
+new, or your very first lesson, and she finds one fresh news item that isn't a recent topic.
 
 **A wrong memory is worse than none.** If she has something wrong about you, open `student.md` and
 fix it — it is plain markdown, and that is the correction mechanism. Delete the `memory` folder to

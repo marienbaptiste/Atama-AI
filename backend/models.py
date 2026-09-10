@@ -47,7 +47,10 @@ class Control(_Msg):
     """
 
     type: Literal["control"] = "control"
-    action: Literal["start", "stop", "bargein_ack", "resync"]
+    #: `quit` shuts the orchestrator down cleanly — the claude subprocess, the speech queue and
+    #: this socket. It is NOT `stop`, which is already the push-to-talk release edge; overloading
+    #: it would make every released key a request to exit.
+    action: Literal["start", "stop", "bargein_ack", "resync", "quit"]
 
 
 class SettingsUpdate(_Msg):

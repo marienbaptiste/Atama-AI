@@ -34,7 +34,8 @@ from backend.tools import mcp_config
 
 DIM, BOLD, RESET = "\033[2m", "\033[1m", "\033[0m"
 #: Not something the student said — the cue that a session has begun, so Sensei opens it (§5c).
-OPENING_NUDGE = "（セッション開始。あいさつして、話題を一つ見つけて、質問してください。）"
+#: Deliberately neutral: HOW to open (offer to continue last time, or find news) is tutor.md's.
+OPENING_NUDGE = "（セッション開始。あいさつして、始めてください。）"
 
 
 def _emotion_tag(emotion: str) -> str:
@@ -379,6 +380,12 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None) -> None:
             # Visible on the console: a press that never arrives and a press that arrives but
             # produces no audio are different problems, and they look identical otherwise.
             print(chr(13) + DIM + "[browser: " + action + "]" + RESET + " " * 30, end="", flush=True)
+            if action == "quit":
+                # The page's stop button. Stopping the loop ends _listen, and run()'s finally
+                # then closes the claude subprocess, the speech queue and this server in order.
+                print(chr(13) + BOLD + "stop requested from the page - shutting down" + RESET, flush=True)
+                loop.stop()
+                return
             if action == "start":
                 loop.ptt_begin()
             elif action == "stop":
