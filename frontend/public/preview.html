@@ -93,10 +93,10 @@ const CAST = [
 // `pose` changes far more rarely than `gesture`: posture is where you are standing, a gesture is
 // punctuation over it. Kneel/sitting/oneknee are excluded everywhere — she is teaching, standing.
 const RIG = {
-  neutral:   { mood:"neutral", shapes:{},
+  neutral:   { mood:"neutral", shapes:{}, release:1200,
                gestures:["side"],                        gestureChance:0.10,
                poses:["side","straight","hip"],          poseChance:0.20 },
-  happy:     { mood:"happy",   shapes:{},
+  happy:     { mood:"happy",   shapes:{}, release:2600,
                gestures:["ok","thumbup","handup","namaste"], gestureChance:0.65,
                poses:["straight","side"],                poseChance:0.30 },
   // `release` matters here, not just on surprised: a pinned gaze beats avatarIdleEyeContact
@@ -112,7 +112,7 @@ const RIG = {
                poses:["straight","back"],                poseChance:0.40,
                shapes:{ browInnerUp:0.9, browOuterUpLeft:0.7, browOuterUpRight:0.7,
                         eyeWideLeft:0.6, eyeWideRight:0.6, jawOpen:0.18 } },
-  serious:   { mood:"neutral",
+  serious:   { mood:"neutral", release:2600,
                gestures:["index","side","handup"],       gestureChance:0.70,
                poses:["straight","wide"],                poseChance:0.25,
                shapes:{ browDownLeft:0.55, browDownRight:0.55, mouthPressLeft:0.3,
@@ -163,6 +163,28 @@ function buttons(host, names, fn) {
 
 function clearShapes() { held.forEach(s => head.setFixedValue(s, null)); held = []; }
 
+//: Expressions are events, not states. Without this she keeps whatever face the last sentence
+//: gave her — a `serious` turn left the brows down for the rest of the session, which is how a
+//: character stops reading as alive and starts reading as frozen (reported 2026-09-10).
+const SETTLE_AFTER_MS = 4000;          // face and mood back to neutral this long after a turn
+const REST_AFTER_MS   = 9000;          // posture drifts back to standing a while later
+const REST_POSES = ["straight", "side"];
+let settleTimer = null, restTimer = null;
+
+function settleSoon() {
+  clearTimeout(settleTimer);
+  clearTimeout(restTimer);
+  settleTimer = setTimeout(() => {
+    clearShapes();
+    head.setMood("neutral");
+    log(($("log").innerHTML || "") + "<br><i>settled to neutral</i>");
+  }, SETTLE_AFTER_MS);
+  restTimer = setTimeout(() => {
+    const rest = draw("rest", REST_POSES);
+    try { head.setPoseFromTemplate(rest, 2500); } catch (e) {}
+  }, REST_AFTER_MS);
+}
+
 //: Which hand last gestured. TalkingHead's `mirror` argument is false for the LEFT hand and
 //: true for the RIGHT, so this tracks the boolean it was given.
 let lastRight = true;
@@ -188,7 +210,8 @@ function applyRig(name) {
   head.setMood(r.mood);
   held = Object.keys(r.shapes);
   held.forEach(s => head.setFixedValue(s, r.shapes[s]));
-  if (r.release) setTimeout(clearShapes, r.release);
+  // Every emotion releases. An expression with no timer is an expression she is stuck in.
+  setTimeout(clearShapes, r.release ?? 2500);
 
   lastMotion = { pose: null, gesture: null };
 
@@ -209,6 +232,7 @@ function applyRig(name) {
       lastMotion.gesture = gesture + (right ? " (right)" : " (left)");
     }
   }
+  settleSoon();
 }
 
 async function speak(tag) {
