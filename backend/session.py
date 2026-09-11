@@ -13,20 +13,54 @@ turn (`brain.meters`, verified fields in constants.py) and replaces the session 
                   reason a turn is slow.
   settle()        after the new session has taken a turn: only then is the old one closed.
 
+Where the provider compacts is its own policy: no command reports it and it can change without a
+release of ours (verified 2026-09-11, constants.py). So the threshold is a fraction of the window
+the provider itself reports, never a measured token count, and `learn()` lowers it — persisted in
+CACHE_DIR/compaction.json — the first time the provider compacts on its own before we rotated.
+
 A replacement that fails to start keeps the old session; after MAX_FAILURES the rotator stops
 trying for the session and says so, and the provider's own compaction is the fallback — which the
 §10 instrumentation then shows as the slow turn it is. CONTEXT_ROTATE_AT = 0 never rotates, a
-supported configuration (spec §12 M4) and the default until ROADMAP V0.12 measures where the
-provider compacts.
+supported configuration (spec §12 M4).
 """
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 #: Replacements that fail to start this many times running are not tried again this session.
 MAX_FAILURES = 3
+#: After the provider compacts on its own at N tokens, rotate at this fraction of N from then on.
+LEARN_MARGIN = 0.85
+#: A learned threshold never goes below this: rotating every few turns would be its own problem.
+MIN_LEARNED = 0.1
+#: Where a learned threshold is kept, under CACHE_DIR.
+LEARNED_FILE = "compaction.json"
+
+
+def load_learned(path: Path) -> float | None:
+    """The threshold learned from an earlier session, or None. A bad file is no file."""
+    try:
+        value = float(json.loads(path.read_text(encoding="utf-8"))["rotate_at"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return value if 0 < value < 1 else None
+
+
+def save_learned(path: Path, rotate_at: float, **why: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"rotate_at": rotate_at, **why}, indent=2), encoding="utf-8")
+
+
+def effective_threshold(configured: float, learned: float | None) -> float:
+    """The configured fraction, lowered by a learned one. 0 stays 0: never is the user's call."""
+    configured = float(configured or 0.0)
+    if configured <= 0 or not learned:
+        return configured
+    return min(configured, learned)
 
 
 class Rotator:
@@ -60,6 +94,22 @@ class Rotator:
             self.armed = True
             self.log(f"context {used:,} of {window:,} tokens (>= {self.threshold:.0%}): rotation armed")
         return self.armed
+
+    def learn(self, trigger: str, pre_tokens: int | None, window: int | None) -> float | None:
+        """The provider compacted on its own before we rotated: its policy is earlier than our
+        threshold. Rotate earlier from now on. Returns the new threshold, or None if unchanged.
+
+        Ignores a compaction someone asked for ("manual"), and never switches rotation on — a
+        threshold of 0 is the user saying never."""
+        if trigger != "auto" or self.threshold <= 0 or not pre_tokens or not window:
+            return None
+        lowered = round(max(MIN_LEARNED, LEARN_MARGIN * pre_tokens / window), 3)
+        if lowered >= self.threshold:
+            return None
+        self.threshold = lowered
+        self.log(f"the provider compacted on its own at {pre_tokens:,} of {window:,} tokens: "
+                 f"rotating at {lowered:.0%} from now on")
+        return lowered
 
     def prepare(self) -> None:
         """Start the replacement in the background, once. Never awaited by a turn."""

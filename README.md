@@ -813,11 +813,14 @@ Bunpro progress (read-only, at most once a minute) and hands it to a fresh sessi
 at her next answer — the lesson carries on. The status bar's service dots show the fetch.
 
 **Long lessons.** Her memory of the current conversation has a limit — the status bar's layered
-gauge shows how full it is. When it fills, Claude compacts it on its own, which is a silent pause
-of several seconds. With `CONTEXT_ROTATE_AT` set (Settings → Advanced, e.g. `0.7`) the app instead
-starts a fresh session in the background once that fraction is reached, hands it the lesson so far,
-and switches over between two turns — she carries on without greeting you again. It is off (`0`)
-until the point where Claude compacts has been measured (ROADMAP V0.12).
+gauge shows how full it is. When it fills, Claude condenses it on its own, which is a pause of
+several seconds (12 s measured for a small one). So once her context passes `CONTEXT_ROTATE_AT`
+(Settings → Advanced, default `0.7` of the window) the app starts a fresh session in the
+background, hands it the lesson so far, and switches over between two turns — she carries on
+without greeting you again. `0` turns this off. Where Claude condenses is Claude's own policy and
+nothing reports it, so the app watches for it instead: if it ever happens, the page says she is
+tidying her notes, and if it came before the app rotated, the app rotates earlier from then on
+(remembered in `.cache/compaction.json`; delete the file to forget).
 
 ---
 

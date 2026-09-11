@@ -265,3 +265,38 @@ def test_status_is_reported_as_brain_not_claude(tmp_path):
     st = reg.get("brain")
     assert st is not None and st.state == "ready" and "claude-cli" in st.detail
     assert reg.get("claude") is None  # provider-agnostic chip (ADR-027)
+
+
+# ------------------------------------------------ compaction, as the CLI announces it (2026-09-11)
+# Verbatim shapes from a live `/compact` over stream-json (constants.py), trimmed of uuids.
+COMPACTING = {"type": "system", "subtype": "status", "status": "compacting", "session_id": "s"}
+COMPACT_OK = {"type": "system", "subtype": "status", "status": None, "compact_result": "success",
+              "session_id": "s"}
+COMPACT_FAILED = {"type": "system", "subtype": "status", "status": None, "compact_result": "failed",
+                  "compact_error": "Not enough messages to compact.", "session_id": "s"}
+BOUNDARY = {"type": "system", "subtype": "compact_boundary", "session_id": "s",
+            "compact_metadata": {"trigger": "auto", "pre_tokens": 24546, "post_tokens": 780,
+                                 "duration_ms": 11879, "preserved_segment": {}, "preserved_messages": {}}}
+
+
+def test_a_compaction_is_announced_start_and_end_with_its_figures(tmp_path):
+    from backend.brain import Compacting
+    b = ClaudeCliBrain(cfg(tmp_path))
+    assert b._translate(json.dumps(COMPACTING)) == [Compacting(active=True)]
+    assert b._translate(json.dumps(COMPACT_OK)) == []          # the boundary carries the figures
+    assert b._translate(json.dumps(BOUNDARY)) == [
+        Compacting(active=False, trigger="auto", pre_tokens=24546, post_tokens=780, duration_ms=11879)]
+
+
+def test_a_failed_compaction_is_reported_once(tmp_path):
+    from backend.brain import Compacting
+    b = ClaudeCliBrain(cfg(tmp_path))
+    b._translate(json.dumps(COMPACTING))
+    first = b._translate(json.dumps(COMPACT_FAILED))
+    assert first == [Compacting(active=False, error="Not enough messages to compact.")]
+    assert b._translate(json.dumps(COMPACT_FAILED)) == []     # the CLI said it twice; we say it once
+
+
+def test_other_status_events_are_not_compactions(tmp_path):
+    b = ClaudeCliBrain(cfg(tmp_path))
+    assert b._translate(json.dumps({"type": "system", "subtype": "status", "status": "requesting"})) == []

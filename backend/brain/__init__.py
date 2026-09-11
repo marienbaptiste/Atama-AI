@@ -72,7 +72,22 @@ class TurnComplete:
     usage: dict[str, Any] = field(default_factory=dict)
 
 
-BrainEvent = TextDelta | Thinking | ToolCall | ToolOutcome | RateLimited | BrainError | TurnComplete
+@dataclass(frozen=True)
+class Compacting:
+    """The provider is condensing the conversation to fit its window — seconds of silence the
+    student hears (spec §6b). Sent when it starts (`active`) and when it ends: what it did, or
+    why it failed. `trigger` is "auto" when the provider chose the moment itself."""
+
+    active: bool
+    trigger: str = ""
+    pre_tokens: int | None = None
+    post_tokens: int | None = None
+    duration_ms: float | None = None
+    error: str = ""
+
+
+BrainEvent = (TextDelta | Thinking | ToolCall | ToolOutcome | RateLimited | BrainError | Compacting
+              | TurnComplete)
 
 
 @runtime_checkable

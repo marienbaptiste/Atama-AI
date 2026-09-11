@@ -29,7 +29,8 @@ from backend import usage as usage_api
 from backend import model_tiers
 from backend import session as session_api
 from backend.chunker import SentenceChunker
-from backend.brain import BrainError, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome, TurnComplete
+from backend.brain import (BrainError, Compacting, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome,
+                           TurnComplete)
 from backend.speaker import SpeechQueue
 from backend.srs import profile as profile_api
 from backend.tts_voicevox import VoicevoxClient, VoicevoxError
@@ -396,6 +397,18 @@ async def _check_microphone(cfg) -> bool:
     return True
 
 
+def _compaction_text(ev: Compacting) -> str:
+    """One line for a provider compaction (spec §6b), for the terminal and the page."""
+    if ev.active:
+        return "Claude is condensing the conversation…"
+    if ev.error:
+        return f"condensing the conversation failed: {ev.error}"
+    who = {"auto": " on its own", "manual": " on request"}.get(ev.trigger, "")
+    sizes = f" {ev.pre_tokens:,} → {ev.post_tokens:,} tokens" if ev.pre_tokens and ev.post_tokens else ""
+    took = f" in {ev.duration_ms / 1000:.1f} s" if ev.duration_ms else ""
+    return f"Claude condensed the conversation{who}:{sizes}{took}"
+
+
 async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=None, account=None,
                   spawn_rotation=None, adopt=None, resync=None) -> None:
     """Full voice loop: speak to him, he answers aloud (spec §2).
@@ -462,6 +475,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
               + f") · voice→voice {v2v:.0f}ms · turn {t.total_ms:.0f}ms"
               + (f" · session p50 {t.session_p50_ms / 1000:.2f}s p90 {t.session_p90_ms / 1000:.2f}s "
                  f"({len(done)} turns)" if t.session_p50_ms else "")
+              + (f" · of which condensing {t.compaction_ms / 1000:.1f}s" if t.compaction_ms else "")
               + (f"  OVER {float(cfg.LATENCY_WARN_S):.1f}s" if slow else "") + f"{RESET}\n")
         if hub is not None:
             asyncio.get_running_loop().create_task(hub.timing(
@@ -508,8 +522,27 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
     async def no_spawn(_handoff):
         raise RuntimeError("rotation needs the session factory from run()")
 
-    rotator = session_api.Rotator(float(cfg.CONTEXT_ROTATE_AT), spawn_rotation or no_spawn, lesson_so_far,
-                                  log=lambda s: print(chr(13) + DIM + "[rotation] " + s + RESET, flush=True))
+    learned_path = cfg.path("CACHE_DIR") / session_api.LEARNED_FILE
+    rotator = session_api.Rotator(
+        session_api.effective_threshold(cfg.CONTEXT_ROTATE_AT, session_api.load_learned(learned_path)),
+        spawn_rotation or no_spawn, lesson_so_far,
+        log=lambda s: print(chr(13) + DIM + "[rotation] " + s + RESET, flush=True))
+
+    def compacting(ev: Compacting) -> None:
+        # Claude condensing on its own schedule (spec §6b): explain the silence on both screens,
+        # and if it came before our rotation did, rotate earlier from now on (ADR-032 amendment).
+        text = _compaction_text(ev)
+        print(chr(13) + (BOLD if ev.error else DIM) + "[memory] " + text + RESET, flush=True)
+        if hub is not None:
+            state = "running" if ev.active else ("failed" if ev.error else "done")
+            asyncio.get_running_loop().create_task(hub.status("compaction", state, text, remember=False))
+        window = (getattr(loop.brain, "meters", None) or {}).get("context_window")
+        lowered = rotator.learn(ev.trigger, ev.pre_tokens, window)
+        if lowered is not None:
+            session_api.save_learned(learned_path, lowered, pre_tokens=ev.pre_tokens, window=window,
+                                     at=time.strftime("%Y-%m-%dT%H:%M:%S"))
+
+    loop.on_compacting = compacting
 
     def swap_if_ready() -> None:
         new = rotator.take(loop.brain)
@@ -818,6 +851,8 @@ async def _one_turn(brain, text: str, voice=None, mem=None, opening: bool = Fals
             print(f"  {DIM}· tool {'ok' if event.ok else 'ERROR'}: {event.summary[:120]}{RESET}")
         elif isinstance(event, RateLimited):
             print(f"  {DIM}· rate limited: {event.detail}{RESET}")
+        elif isinstance(event, Compacting):
+            print(f"  {DIM}· {_compaction_text(event)}{RESET}")
         elif isinstance(event, BrainError):
             print(f"  {BOLD}· error:{RESET} {event.message}")
         elif isinstance(event, TurnComplete):

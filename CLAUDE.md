@@ -43,11 +43,13 @@ offline, `--speak` for the tutor voice, `--listen` for the mic — `--listen` im
 **Also built ahead of its milestone, by user directive:** the browser avatar with push-to-talk
 over a WebSocket (`backend/app.py`, `.un`), and the memory half of §6b (`backend/memory.py` —
 turn log, brief, recent topics, editable student notes, summarised at the next launch). Rotation
-(ADR-032) is not built. Neither closes an M3 or M4 gate.
+(ADR-032) is built and on by default at 0.7 of the reported window, adaptive to the provider's own
+compactions; its gate (M4c, live) is not met. Neither closes an M3 or M4 gate.
 
 V0 spikes still open: **V0.4** (TalkingHead — `speakAudio` signature, ms vs s for
 `vtimes`/`vdurations`, the real mood names; blocks M3, and a wrong timing unit is silent drift)
-and **V0.12** (context window and compaction stall; blocks only the rotation half of M4c).
+**V0.12** was closed on 2026-09-11 without a one-off measurement: the compaction point is provider
+policy, so it is watched for at runtime (ADR-032 amendment).
 Everything else in the V0 table is Done — check the table in `ROADMAP.md`, not this line.
 
 ---

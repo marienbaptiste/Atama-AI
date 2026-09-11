@@ -20,7 +20,8 @@ import numpy as np
 
 from backend import audio as audio_mod
 from backend.audio import SAMPLE_RATE
-from backend.brain import BrainError, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome, TurnComplete
+from backend.brain import (BrainError, Compacting, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome,
+                           TurnComplete)
 from backend.chunker import SentenceChunker
 from backend.speaker import SpeechQueue
 from backend.stt import QUIET_RMS, SpeechToText, Transcript
@@ -60,6 +61,9 @@ class TurnTiming:
     #: This session's rolling voice->voice p50/p90 as of this turn (set by the REPL's reporter).
     session_p50_ms: float | None = None
     session_p90_ms: float | None = None
+    #: The provider condensed the conversation during this turn (ADR-032's fallback): how long it
+    #: took, so the slow turn it causes is logged as what it is (spec §6b), not a mystery.
+    compaction_ms: float | None = None
 
     def voice_to_voice_ms(self) -> float:
         return self.first_audio_ms
@@ -90,6 +94,8 @@ class VoiceLoop:
     #: Called at the turn boundary, before the brain is asked anything — the one place a rotated
     #: session may take over (ADR-032: never inside a turn).
     before_turn: Callable[[], None] | None = None
+    #: The brain is condensing the conversation (start and end) — the caller explains the silence.
+    on_compacting: Callable[[Compacting], None] | None = None
 
     _frames: asyncio.Queue | None = field(default=None, init=False)
     _stop: threading.Event = field(default_factory=threading.Event, init=False)
@@ -382,6 +388,13 @@ class VoiceLoop:
                     await emit(chunker.push(ev.text))
                 elif isinstance(ev, Thinking):
                     timing.thinking_chars += len(ev.text)   # silence the student hears (spec §10)
+                elif isinstance(ev, Compacting):
+                    # The provider condensing on its own: the slow turn it causes is logged as
+                    # what it is (spec §6b), and the caller explains the silence.
+                    if not ev.active and ev.duration_ms:
+                        timing.compaction_ms = float(ev.duration_ms)
+                    if self.on_compacting is not None:
+                        self.on_compacting(ev)
                 elif isinstance(ev, (ToolCall, ToolOutcome, RateLimited, BrainError)):
                     pass                               # surfaced by the caller's own handlers
                 elif isinstance(ev, TurnComplete):

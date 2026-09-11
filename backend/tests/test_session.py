@@ -168,3 +168,43 @@ def test_a_request_replaces_a_replacement_built_on_old_data():
         await asyncio.sleep(0.01)
         assert stale.closed and r.take(FakeBrain("old")) is not stale and len(spawned) == 2
     asyncio.run(run())
+
+
+# ------------------------------------- the provider's compaction point is its policy, not ours
+def test_an_automatic_compaction_before_the_threshold_lowers_it():
+    r, _, logs = rotator(threshold=0.7)
+    assert r.learn("auto", 100_000, 200_000) == 0.425              # 85 % of where it compacted
+    assert r.threshold == 0.425 and any("compacted on its own" in line for line in logs)
+    assert r.observe(FakeBrain("old", used=90_000))                # now arms well before 100k
+
+
+def test_a_compaction_someone_asked_for_teaches_nothing():
+    r, _, _ = rotator(threshold=0.7)
+    assert r.learn("manual", 20_000, 200_000) is None and r.threshold == 0.7
+
+
+def test_a_compaction_later_than_the_threshold_teaches_nothing():
+    r, _, _ = rotator(threshold=0.5)
+    assert r.learn("auto", 190_000, 200_000) is None and r.threshold == 0.5
+
+
+def test_learning_never_switches_rotation_on():
+    r, _, _ = rotator(threshold=0)
+    assert r.learn("auto", 50_000, 200_000) is None and not r.enabled
+
+
+def test_a_learned_threshold_has_a_floor():
+    r, _, _ = rotator(threshold=0.7)
+    assert r.learn("auto", 2_000, 200_000) == session_api.MIN_LEARNED
+
+
+def test_the_learned_threshold_survives_a_restart(tmp_path):
+    path = tmp_path / session_api.LEARNED_FILE
+    assert session_api.load_learned(path) is None                  # nothing learned yet
+    session_api.save_learned(path, 0.425, pre_tokens=100_000, window=200_000)
+    assert session_api.load_learned(path) == 0.425
+    assert session_api.effective_threshold(0.7, 0.425) == 0.425
+    assert session_api.effective_threshold(0.3, 0.425) == 0.3      # the user's lower value wins
+    assert session_api.effective_threshold(0, 0.425) == 0          # never stays never
+    path.write_text("not json", encoding="utf-8")
+    assert session_api.load_learned(path) is None                  # a bad file is no file

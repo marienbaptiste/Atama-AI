@@ -1119,7 +1119,8 @@ start — still a start-of-session read, still not per-turn retrieval.
 
 ## ADR-032 — Context is rotated pre-emptively during the avatar's speech, never compacted mid-turn
 
-**Status:** Accepted (2026-09-09). See spec §6b. Depends on ADR-031's turn log.
+**Status:** Accepted (2026-09-09). See spec §6b. Depends on ADR-031's turn log. Amended
+2026-09-11: the compaction point is watched for, not measured (below).
 
 **Context.** A lesson is a long conversation. The Claude CLI keeps the transcript itself (ADR-027,
 §4) and compacts it when the window fills — automatically, at a moment of its choosing, taking as
@@ -1173,6 +1174,18 @@ lesson, and it gets more likely the better the lesson is going.
 
 **Rejected: rotating on a turn count or a clock.** Neither tracks what actually fills the window.
 One long tool result can do more than twenty turns of conversation.
+
+**Amendment 2026-09-11 — the compaction point is watched for, not measured.** Point 2 asked for
+the provider's trigger to be measured once (ROADMAP V0.12). The user rejected that: it is the
+provider's policy and can change under us. Verified the same day (CLI 2.1.159): no command reports
+it — `/context` gives usage and window only, and the documented `autoCompactWindow` and
+`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` did not trigger a compaction at 24.5k tokens — but the CLI
+announces every compaction on the stream with its trigger, sizes and duration. So the threshold is
+a fraction of the window the CLI reports each turn (default 0.7). Each compaction becomes a brain
+event, explained on screen and recorded on its turn. An automatic one that arrives before our
+threshold lowers it to 85 % of where it happened, kept across launches. Also verified: `/compact`
+can be sent in `-p` — the "told when to do it" path below — but it stalled 11.9 s for 24.5k tokens
+and writes Claude Code's coding-session summary, so it does not reverse this decision.
 
 **Reversed if:** the provider gains a way to compact incrementally, or to be told when to do it.
 Then we tell it, in the same gap, and skip the second process.

@@ -1404,6 +1404,13 @@ function showService(msg) {
     log((msg.state === "done" ? "<b>" : '<span class="err">') + esc(msg.detail) + (msg.state === "done" ? "</b>" : "</span>"));
     return;
   }
+  if (msg.service === "compaction") {              // Claude condensing her memory (spec §6b)
+    if (msg.state === "running") { $("live").textContent = "Tidying her notes — one moment…"; return; }
+    if ($("live").textContent.startsWith("Tidying")) $("live").textContent = "";
+    log((msg.state === "failed" ? '<span class="err">' : "<b>") + esc(msg.detail)
+        + (msg.state === "failed" ? "</span>" : "</b>"));
+    return;
+  }
   if (msg.service === "gpu") {                     // spec §10b: only worth a word when over the cap
     if (msg.state === "over") log('<span class="err">GPU memory over the cap</span> — ' + esc(msg.detail));
     return;

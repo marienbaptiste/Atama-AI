@@ -94,6 +94,30 @@ CLAUDE_INIT_TIMEOUT_S = 30.0
 # directory is invalid." for a cwd under %LOCALAPPDATA% (2026-09-09), and a shell is an injection
 # surface we do not need.
 # Event types seen on stdout: system/init, rate_limit_event, assistant, result.
+#
+# Compaction, verified live 2026-09-11 (CLI 2.1.159, claude-sonnet-5, `-p` stream-json):
+#   system/status {"status": "compacting"}                                     when it starts
+#   system/status {"status": null, "compact_result": "success"|"failed", "compact_error": "..."}
+#                 (a failure was reported twice in a row)
+#   system/compact_boundary {"compact_metadata": {"trigger": "manual"|"auto", "pre_tokens",
+#                 "post_tokens", "duration_ms", "preserved_segment", "preserved_messages"}}
+#   then a replayed user message carrying the summary.
+# `/compact` sent as a user message works in -p: 24,546 -> 780 tokens in 11.9 s (11,879 ms), with
+# Claude Code's coding-session summary template ("Files and Code Sections", ...) — a stall AND the
+# wrong summary for a lesson, which is why the app rotates (ADR-032) rather than asking for it.
+# `/context` sent as a message answers locally (0.2 s, model "<synthetic>", no API call):
+# "Tokens: 8.3k / 200k (4%)" plus a category table — the same figures result.usage already gives.
+# NOTHING reports where the CLI will compact on its own, and that point is provider policy that can
+# move without a release of ours: settings `autoCompactWindow: 10000` and env
+# CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=1 (both documented) each left a 24.5k-token session untouched.
+# So the app never assumes the point: it rotates at a fraction of the contextWindow the CLI reports
+# every turn (200000 for claude-sonnet-5 on this account, although the model-config docs list
+# Sonnet 5 as a ~1M-window model — trust the CLI's own figure), and any compaction with trigger
+# "auto" lowers that fraction for next time (backend/session.py).
+CLAUDE_EVENT_SYSTEM = "system"
+CLAUDE_SUBTYPE_STATUS = "status"
+CLAUDE_STATUS_COMPACTING = "compacting"
+CLAUDE_SUBTYPE_COMPACT_BOUNDARY = "compact_boundary"
 CLAUDE_EVENT_INIT = ("system", "init")
 CLAUDE_EVENT_RATE_LIMIT = "rate_limit_event"
 CLAUDE_EVENT_RESULT = "result"

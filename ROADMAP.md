@@ -47,7 +47,7 @@ Throwaway scripts, deleted or moved into `backend/tests/fixtures/` when done. Ea
 | **V0.9** | WaniKani token permissions: confirm from `/v2/user` which fields expose the token's granted permissions, so `make doctor` can warn on a write-capable token (ADR-021). | Pinned field name + a sanitised fixture for both a read-only and a write-capable token. | **Done 2026-09-09 — negative result.** `/v2/user.data` keys are `current_vacation_started_at, id, level, preferences, profile_url, started_at, subscription, username`; **token scopes are not exposed** and probing them would require a write. Read-only scope can only be guaranteed at token creation; the doctor and the settings page *instruct*, they cannot verify. Test pins the absence. |
 | **V0.8** | Do MCP tools survive `--tools ""`? Spawn with the Bunpro MCP configured and `--tools ""`; check `init.tools[]` for the MCP tool names. | Pinned: either `--tools ""` stands, or the fallback `--disallowedTools` list of the 20 built-in names from `init.tools`. | **Done 2026-09-09 — `--tools ""` stands**, *provided the MCP server is connected before the first turn*. See findings log ("Claude subprocess, live"). The disallow fallback is retired (tool names vary by platform). |
 
-| **V0.12** | **Context: how big is the window, and what does the provider do when it fills?** Drive one long real session, logging `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` per turn until the CLI compacts on its own. Answer: the usable window in tokens; how compaction announces itself on the stream (an event? silence?); **how long it stalls**; and whether the session id survives it. | Pinned constants: usable window, a safe `CONTEXT_ROTATE_AT` fraction under it, and the measured stall — the number that justifies ADR-032. Plus a fixture of whatever the stream emits. | Open — **blocks the rotation half of M4c.** The memory half (ADR-031) does not depend on it and ships first. |
+| **V0.12** | **Context: how big is the window, and what does the provider do when it fills?** Drive one long real session, logging `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` per turn until the CLI compacts on its own. Answer: the usable window in tokens; how compaction announces itself on the stream (an event? silence?); **how long it stalls**; and whether the session id survives it. | Pinned constants: usable window, a safe `CONTEXT_ROTATE_AT` fraction under it, and the measured stall — the number that justifies ADR-032. Plus a fixture of whatever the stream emits. | **Closed differently, 2026-09-11** — the user rejected a one-off measurement: where the CLI compacts is provider policy and can move under us. Verified live (CLI 2.1.159, claude-sonnet-5): the **window** is reported every turn (`modelUsage[].contextWindow` = 200000 here, though the docs list Sonnet 5 at ~1M); compaction **announces itself** — `system/status "compacting"`, then `system/compact_boundary {trigger, pre_tokens, post_tokens, duration_ms}` (pinned in constants.py, fixtures in test_brain_claude_cli.py); the **stall** was 11.9 s for a manual 24.5k→0.8k compaction; the **session id survives** it. **No command reports where it will compact on its own** (`/context` answers locally with usage and window only; the documented `autoCompactWindow` and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` did not trigger it at 24.5k). So the point is watched for, not measured: rotation runs at a fraction of the reported window, and an `auto` compaction that beats it lowers that fraction for good (`session.learn`, `.cache/compaction.json`) — ADR-032 amendment. |
 
 | **V0.13** | **Is a Japanese-specialised STT model better on the student's own voice?** `kotoba-tech/kotoba-whisper-v2.0-faster` is **verified to exist** (2026-09-09): `library_name: ctranslate2`, with `model.bin`/`config.json`/`tokenizer.json`/`vocabulary.json`, so `WhisperModel("kotoba-tech/kotoba-whisper-v2.0-faster")` loads it directly — no conversion. Its card claims better CER/WER than `large-v3` in-domain (ReazonSpeech), only **"competitive"** out-of-domain, and 6.3x faster from the distil architecture (756M params, 2 decoder layers vs 1550M). A learner's accented Japanese is firmly out-of-domain, so the published numbers do not settle it. Record real utterances through the real mic+VAD path and read the transcripts side by side: `python -m backend.tools.stt_compare --record 6`. | A decision in a new ADR superseding ADR-004's model choice, or an explicit "stayed on large-v3 because". Plus pinned VRAM and median latency for whichever wins, and the clips kept in `logs/stt/` as the only STT regression corpus this project can have. | **Done 2026-09-09 — negative result.** `large-v3` stays; kotoba-whisper is a 756M distil model and there is no larger one. See findings log. |
 
@@ -976,9 +976,16 @@ background with a handoff from the lesson's turn log (`prompt.build(handoff=...)
 budget, "carry on, do not greet again"), swaps only at a turn boundary via `VoiceLoop.before_turn`,
 closes the old session only after the new one has taken a turn, discards a pending replacement on
 a tutor switch, and gives up after 3 failed starts (the provider's own compaction then being the
-logged fallback). `tests/test_session.py` covers the contract above. **`CONTEXT_ROTATE_AT` defaults
-to 0 (never)** because V0.12 — where the provider compacts, and how long it stalls — is still
-unmeasured; setting it is the user's call until then. Gate M4c (a 40-minute live lesson crossing a
+logged fallback). `tests/test_session.py` covers the contract above.
+
+**Status 2026-09-11 — on by default at 0.7, and adaptive.** V0.12 closed without a one-off
+measurement (V0 table): the CLI announces every compaction, so the brain emits `Compacting` events,
+the page says she is tidying her notes, the turn records `compaction_ms`, and an `auto` compaction
+that arrives before our threshold lowers it to 85 % of where it happened (floor 10 %, persisted in
+`.cache/compaction.json`, never switching rotation on from 0). The per-turn timeout restarts when a
+compaction starts and when it ends, so a long one is not cut off as a stuck turn. Tests:
+`test_session.py` (learning), `test_brain_claude_cli.py` (the real event shapes),
+`test_voice_loop.py` (recorded on the turn). Gate M4c (a 40-minute live lesson crossing a
 rotation) is **not met**.
 
 **Status 2026-09-10 — the memory half is built, pulled forward from M4 by user directive.**
@@ -996,8 +1003,9 @@ the topic.
 
 **Known risk.** Rotation is the only feature in this milestone that can break a working
 conversation, and its failure mode is subtle — a tutor that quietly forgets. Ship the log, the
-start-of-session read and the summariser first; run them for several real lessons before enabling
-rotation. `CONTEXT_ROTATE_AT` unset means "never rotate", which must remain a supported
+start-of-session read and the summariser first; rotation is on by default at 0.7 of the
+window (140k tokens on a 200k window, well past an ordinary lesson), so it first fires only in a
+very long one. `CONTEXT_ROTATE_AT` unset means "never rotate", which must remain a supported
 configuration.
 
 ### 19. Settings store & interface — `backend/config.py` + `frontend/src/settings.ts` — **M0 (store) / M3 (drawer) / M5 (full page)**

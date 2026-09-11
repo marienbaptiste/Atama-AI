@@ -24,6 +24,7 @@ from typing import Any, AsyncIterator, Iterable
 from backend import config, constants
 from backend.brain import (
     BrainError,
+    Compacting,
     RateLimited,
     TextDelta,
     Thinking,
@@ -73,6 +74,8 @@ class ClaudeCliBrain:
         #: The status bar's numbers, as of the last `result` / `rate_limit_event` (see _meters).
         self.meters: dict[str, Any] = {}
         self.rate_limit: dict[str, Any] = {}
+        #: Inside a compaction the CLI announced (see _compaction).
+        self._compacting = False
 
     # ------------------------------------------------------------------ public
     @property
@@ -133,7 +136,11 @@ class ClaudeCliBrain:
                 continue
 
             for event in self._translate_event(parsed):
-                if isinstance(event, TextDelta):
+                if isinstance(event, Compacting):
+                    # A compaction is the CLI working, not hanging: the timeout restarts when it
+                    # starts and when it ends, or a long one would be cut off as a stuck turn.
+                    deadline = time.monotonic() + float(self._cfg.CLAUDE_TURN_TIMEOUT_S)
+                elif isinstance(event, TextDelta):
                     spoken.append(event.text)
                 elif isinstance(event, ToolCall):
                     tool_started = time.monotonic()
@@ -378,6 +385,9 @@ class ClaudeCliBrain:
                 return [RateLimited(f"{info.get('rateLimitType', '')} {status}".strip())]
             return []
 
+        if etype == constants.CLAUDE_EVENT_SYSTEM:
+            return self._compaction(ev)
+
         if etype == "result":
             if ev.get("is_error"):
                 return [
@@ -395,6 +405,25 @@ class ClaudeCliBrain:
             ]
 
         return []  # unknown event types are skipped, never fatal (spec §4)
+
+    def _compaction(self, ev: dict) -> list:
+        """The CLI's own compaction announcements (shapes verified 2026-09-11, constants.py)."""
+        sub = ev.get("subtype")
+        if sub == constants.CLAUDE_SUBTYPE_STATUS:
+            if ev.get("status") == constants.CLAUDE_STATUS_COMPACTING:
+                self._compacting = True
+                return [Compacting(active=True)]
+            if ev.get("compact_result") == "failed" and self._compacting:
+                self._compacting = False       # the CLI reports a failure twice; say it once
+                return [Compacting(active=False, error=str(ev.get("compact_error") or "failed"))]
+            return []                          # "requesting", or a success the boundary reports
+        if sub == constants.CLAUDE_SUBTYPE_COMPACT_BOUNDARY:
+            self._compacting = False
+            meta = ev.get("compact_metadata") or {}
+            return [Compacting(active=False, trigger=str(meta.get("trigger") or ""),
+                               pre_tokens=meta.get("pre_tokens"), post_tokens=meta.get("post_tokens"),
+                               duration_ms=meta.get("duration_ms"))]
+        return []
 
     @staticmethod
     def _meters(usage: dict, model_usage: dict) -> dict[str, Any]:

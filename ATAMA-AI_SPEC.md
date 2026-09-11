@@ -373,8 +373,12 @@ long enough to fill a window.
 - **Measure it, don't wait for it.** Every `TurnComplete` carries `usage`; for this CLI,
   `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` is what the model read
   that turn and tracks live context size for free.
-- Above `CONTEXT_ROTATE_AT` — a fraction of the usable window; **the window and the provider's own
-  compaction trigger are measured in ROADMAP V0.12, never assumed** — arm a rotation.
+- Above `CONTEXT_ROTATE_AT` — a fraction of the window **the provider reports every turn**, never a
+  hard-coded token count — arm a rotation. Where the provider compacts on its own is its policy:
+  nothing reports it and it can move without a release of ours (verified 2026-09-11). So it is
+  never assumed nor measured once — it is **watched for**. The provider announces each compaction
+  on the stream; the UI explains the silence, the turn records it, and an automatic compaction
+  that beats the threshold lowers it for every later session.
 - **Rotate in the speaking gap:** build a handoff brief from the turn log (deterministic, no model
   call), spawn a second process under the §4 rules with a fresh `--session-id`, prompt = the usual
   sections plus the brief.

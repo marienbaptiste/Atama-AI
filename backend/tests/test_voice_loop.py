@@ -402,3 +402,25 @@ def test_a_rotated_session_takes_over_at_the_turn_boundary():
     loop.before_turn = lambda: setattr(loop, "brain", new)
     asyncio.run(loop._turn(np.zeros(16000, dtype=np.float32)))
     assert old.turns == [] and new.turns == ["こんにちは。"]
+
+
+def test_a_compaction_mid_turn_is_recorded_and_announced():
+    """Spec §6b: the provider's own compaction is a latency event, logged as what it is."""
+    from backend.brain import Compacting
+
+    class CompactingBrain(FakeBrain):
+        async def turn(self, text):
+            self.turns.append(text)
+            yield Compacting(active=True)
+            yield Compacting(active=False, trigger="auto", pre_tokens=150_000, post_tokens=9_000,
+                             duration_ms=14_000)
+            for piece in self.reply:
+                yield TextDelta(piece)
+            yield TurnComplete(text=self.reply)
+
+    seen = []
+    loop = VoiceLoop(turn_mode="vad", brain=CompactingBrain(), stt=FakeStt(accepted()), vad=FakeVad(),
+                     voice=FakeVoice(), on_compacting=seen.append)
+    asyncio.run(loop._turn(np.zeros(16000, dtype=np.float32)))
+    assert [e.active for e in seen] == [True, False]
+    assert loop.timings[-1].compaction_ms == 14_000.0
