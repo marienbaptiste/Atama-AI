@@ -1194,6 +1194,39 @@ session (the one she greets with), the rest are caught up by a background task o
 talking, each reported as it goes, and an older catch-up can no longer overwrite a newer brief
 (`test_memory.py`). The prompt's ceiling went 2550 → 2650 for the new rule.
 
+## Next session — plan for 2026-09-13 (set 2026-09-12)
+
+**1. One real lesson on the new page, first.** Refresh study data at the start (Settings → Account)
+so the kanji progress is current. Watch: grammar in red, the hint lighting when she asks for a form,
+the floating word when the student gets one right, furigana only on kanji not yet passed. If the
+tutor switch fails again, the `[tutor]` lines in the terminal are the evidence that is still missing.
+
+**2. Measure what that lesson shows.** `python -m backend.tools.emotion_rate` for the emotion tags,
+plus the same measure for the study marks — how often she tags grammar, sets a target, credits the
+student. A low rate is prompt wording, not plumbing (ROADMAP 17, gate M3f).
+
+**3. Explanations on click (ADR-036 point 2).** Clicking a red grammar point still only names it.
+Build: client `explain` → a one-shot `claude -p` on the haiku tier under §4 rules, cached under
+`.cache/explain/` per point and language, back as `explanation`. Settings: `EXPLAIN_LANGUAGE`
+(en | ja). Tests: one call per uncached request, none for a cached one, a failed call says so
+instead of spinning.
+
+**4. Translate icon per sentence.** Same cached path, the English under her sentence. Decide whether
+it also appears on the student's own sentences.
+
+**5. Word cards (ADR-036 point 3).** Reading, on'yomi/kun'yomi, meaning, and the WaniKani stage.
+Needs an offline dictionary (JMdict/KANJIDIC): verify the package, its size and its licence, show
+the choice, then wire it to the tokenizer already in `backend/annotate.py`.
+
+**6. Prompt size.** 2650 tokens and rising with every rule (ADR-011, §10). Re-measure a turn and
+tighten the wording rather than let it drift.
+
+**7. Latency re-measure on Sonnet 5.** The 5.0 s gate (M3d, ADR-033) was last measured on
+Sonnet 4.6. Run the 20-turn harness once there is a real lesson to measure.
+
+**Left for a deliberate session:** M3b (10 interruptions on headphones under 300 ms; 10 turns on
+speakers with zero self-interruptions), M3c (the 10-turn acceptance), M3e (VRAM ≤ 10 GB).
+
 ## Integration order
 
 Each row is the seam introduced, and the one assertion that proves it.
