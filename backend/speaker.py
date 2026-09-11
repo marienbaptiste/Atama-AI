@@ -84,6 +84,7 @@ class SpeechQueue:
             return
         # The study marks ride with the audio to the page (ADR-036); the voice never had them.
         speech.grammar, speech.target = getattr(chunk, "grammar", ()), getattr(chunk, "target", "")
+        speech.used = getattr(chunk, "used", "")
         record = SpokenChunk(chunk, speech.synth_ms, started)
         self._emit("synthesised", record)
         await self._queue.put((speech, record))

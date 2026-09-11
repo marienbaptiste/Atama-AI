@@ -460,7 +460,7 @@ Capping it is cheaper than rotating more often.
 - Mic capture via AudioWorklet at 16 kHz mono PCM16 (NOT MediaRecorder/opus — we want raw frames for server VAD).
 - **DON'T** add build complexity: no React, no state library. One page, a few modules.
 
-## 8b. STUDY PANEL (ADR-036 — user request 2026-09-11. Built 2026-09-12: the layout, the chat, the tutor's marks, red grammar, the hint, furigana. Not yet: explanations on click, translation, word cards)
+## 8b. STUDY PANEL (ADR-036 — user request 2026-09-11. Built 2026-09-12: the layout, the chat, the tutor's marks, red grammar, the hint, furigana, the word you used floating behind her. Not yet: explanations on click, translation, word cards)
 
 - **Layout.** The avatar takes the left of the page; the conversation runs on the right as a
   message thread — her bubbles on one side, the student's on the other, newest at the bottom,
@@ -477,6 +477,10 @@ Capping it is cheaper than rotating more often.
   grammar point or a word); the page's **hint icon** shows it, closed until clicked, because the
   student should try first. Tags **never** reach TTS or the subtitle text: the chunker strips
   them and the sentence carries its spans. A malformed tag is dropped and logged, never spoken.
+- **When the student gets it right** (user, 2026-09-12). `[used:word or point]` at the head of her
+  reply — she is the one who can judge whether it was really theirs and really correct — floats
+  that word up behind her in gold, the way her mood faces drift. Once per turn, never spoken, and
+  recorded in the turn log so the habit can be measured.
 - **Words** are cut and looked up on the orchestrator — tokenizer, WaniKani cache, offline
   dictionary — and sent with the sentence. No model call.
 - **Explanations and translations** are asked for by the page and answered by a one-shot

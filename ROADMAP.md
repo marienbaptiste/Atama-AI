@@ -22,7 +22,10 @@ Two rules run through everything:
 1. **Never fabricate an external interface.** Verify against `claude --help`, VOICEVOX's live
    `/docs` OpenAPI, the TalkingHead README, and the WaniKani docs. Pin the finding in a dated
    code comment and in `backend/constants.py`. This is what **V0** below exists for.
-2. **The two hard numbers are gates, not aspirations** — voice→voice p90 ≤ 3.0 s, VRAM ≤ 10 GB.
+1b. **Milestone order, 2026-09-10 (user, ADR-034):** M2 declared done — M2a, M2b's 2-minute silence
+   check and M2c's overlap and five-emotion checks are **deferred to the end of the project, not met**.
+   **M4 is built before M3.**
+2. **The two hard numbers are gates, not aspirations** — voice→voice p90 ≤ 5.0 s (was 3.0 s until 2026-09-10, ADR-033), VRAM ≤ 10 GB.
    They are measured from M2 onward, not discovered at M5.
 
 ---
@@ -37,16 +40,100 @@ Throwaway scripts, deleted or moved into `backend/tests/fixtures/` when done. Ea
 | **V0.1** | `claude --help`: exact flag spellings for headless stream-json; is there a way to remove *all* built-in tools; how to isolate from user config. | `backend/constants.py` — the exact argv that works, dated. | **Done 2026-09-09** — see findings log below. |
 | **V0.2** | Run one real `claude -p` stream-json session. Capture every event type on stdout for a 3-turn conversation **with the Bunpro MCP server configured**, so the per-entry shape of `init.mcp_servers[]` and the `tool_use`/`tool_result` blocks are pinned. | `backend/tests/fixtures/claude_stream_*.jsonl` — replay fixtures for parser and status tests. | **Done 2026-09-09** (single-turn with a real MCP tool call; raw stream in `.cache/claude_probe.jsonl`, to be sanitised into a fixture at M1(e)). Shapes in the findings log. |
 | **V0.3** | Hit VOICEVOX `/docs` locally. Confirm `audio_query` response shape, the `pitchScale`/`intonationScale` request fields, and the `GET /speakers` shape used by the emotion table. | 4 real `audio_query` fixtures, a `/speakers` fixture, a pinned schema note. | **Done 2026-09-09** — VOICEVOX 0.25.2, fixtures in `backend/tests/fixtures/voicevox/`. See findings log. |
-| **V0.4** | TalkingHead README: `speakAudio` signature; whether `vtimes`/`vdurations` are **ms or s**; the real mood name set; whether gestures exist and their names; the facility for overriding ARKit blendshapes directly (needed for `surprised`/`serious`/`thinking`). | Pinned constants + comment. A wrong timing unit is silent drift; a wrong mood name is a silent no-op. | Open |
+| **V0.4** | TalkingHead README: `speakAudio` signature; whether `vtimes`/`vdurations` are **ms or s**; the real mood name set; whether gestures exist and their names; the facility for overriding ARKit blendshapes directly (needed for `surprised`/`serious`/`thinking`). | Pinned constants + comment. A wrong timing unit is silent drift; a wrong mood name is a silent no-op. | **Done 2026-09-10** — against the README and `modules/talkinghead.mjs` 1.4: `speakAudio(audio, opt, onsubtitles)`, **all times in ms**, bare Oculus viseme ids, the closed mood set (no thinking/surprised/serious — those drive `neutral` + `setFixedValue` blendshape overrides), the gesture names, eye-contact defaults 0.2/0.5. Pinned in `constants.py` (TALKINGHEAD_*). Status corrected here 2026-09-11. |
 | **V0.5** | WaniKani `/v2/user` and `/v2/assignments`: real response shape, pagination, rate-limit headers. | Sanitised fixtures (no personal data beyond what the golden tests need). | **Done 2026-09-09** — 6 endpoints captured live, fixtures in `backend/tests/fixtures/wanikani/`. See findings log. |
 | **V0.6** | Baseline VRAM: load faster-whisper `large-v3` @ `int8_float16` alone, read `nvidia-smi`. | A number. If > ~4.5 GB, ADR-004's fallback triggers now, not at M5. | **Done 2026-09-09 — 2 169 MiB.** Comfortably under the 3.5 GB estimate and the 4.5 GB fallback threshold: `large-v3` stays, `medium` is not needed. |
 | **V0.7** | **Does a trustworthy Bunpro MCP server exist?** Survey community stdio MCP servers for Bunpro; check they work against the current site/API, what credential they take, whether the code is small enough to read end-to-end (it receives your credentials), and — **disqualifying** — whether it exposes any write tool that cannot be removed from the surface (ADR-021). If none passes, the decision is to write `backend/srs/bunpro_mcp.py` (spec §5) with read tools only. | A decision recorded in ADR (new entry), plus either a pinned version or a stub module. | **Done 2026-09-09** — decision: **write our own** (ADR-023). See findings log. |
 | **V0.9** | WaniKani token permissions: confirm from `/v2/user` which fields expose the token's granted permissions, so `make doctor` can warn on a write-capable token (ADR-021). | Pinned field name + a sanitised fixture for both a read-only and a write-capable token. | **Done 2026-09-09 — negative result.** `/v2/user.data` keys are `current_vacation_started_at, id, level, preferences, profile_url, started_at, subscription, username`; **token scopes are not exposed** and probing them would require a write. Read-only scope can only be guaranteed at token creation; the doctor and the settings page *instruct*, they cannot verify. Test pins the absence. |
 | **V0.8** | Do MCP tools survive `--tools ""`? Spawn with the Bunpro MCP configured and `--tools ""`; check `init.tools[]` for the MCP tool names. | Pinned: either `--tools ""` stands, or the fallback `--disallowedTools` list of the 20 built-in names from `init.tools`. | **Done 2026-09-09 — `--tools ""` stands**, *provided the MCP server is connected before the first turn*. See findings log ("Claude subprocess, live"). The disallow fallback is retired (tool names vary by platform). |
 
-| **V0.12** | **Context: how big is the window, and what does the provider do when it fills?** Drive one long real session, logging `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` per turn until the CLI compacts on its own. Answer: the usable window in tokens; how compaction announces itself on the stream (an event? silence?); **how long it stalls**; and whether the session id survives it. | Pinned constants: usable window, a safe `CONTEXT_ROTATE_AT` fraction under it, and the measured stall — the number that justifies ADR-032. Plus a fixture of whatever the stream emits. | Open — **blocks the rotation half of M4c.** The memory half (ADR-031) does not depend on it and ships first. |
+| **V0.12** | **Context: how big is the window, and what does the provider do when it fills?** Drive one long real session, logging `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` per turn until the CLI compacts on its own. Answer: the usable window in tokens; how compaction announces itself on the stream (an event? silence?); **how long it stalls**; and whether the session id survives it. | Pinned constants: usable window, a safe `CONTEXT_ROTATE_AT` fraction under it, and the measured stall — the number that justifies ADR-032. Plus a fixture of whatever the stream emits. | **Closed differently, 2026-09-11** — the user rejected a one-off measurement: where the CLI compacts is provider policy and can move under us. Verified live (CLI 2.1.159, claude-sonnet-5): the **window** is reported every turn (`modelUsage[].contextWindow` = 200000 here, though the docs list Sonnet 5 at ~1M); compaction **announces itself** — `system/status "compacting"`, then `system/compact_boundary {trigger, pre_tokens, post_tokens, duration_ms}` (pinned in constants.py, fixtures in test_brain_claude_cli.py); the **stall** was 11.9 s for a manual 24.5k→0.8k compaction; the **session id survives** it. **No command reports where it will compact on its own** (`/context` answers locally with usage and window only; the documented `autoCompactWindow` and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` did not trigger it at 24.5k). So the point is watched for, not measured: rotation runs at a fraction of the reported window, and an `auto` compaction that beats it lowers that fraction for good (`session.learn`, `.cache/compaction.json`) — ADR-032 amendment. |
+
+| **V0.13** | **Is a Japanese-specialised STT model better on the student's own voice?** `kotoba-tech/kotoba-whisper-v2.0-faster` is **verified to exist** (2026-09-09): `library_name: ctranslate2`, with `model.bin`/`config.json`/`tokenizer.json`/`vocabulary.json`, so `WhisperModel("kotoba-tech/kotoba-whisper-v2.0-faster")` loads it directly — no conversion. Its card claims better CER/WER than `large-v3` in-domain (ReazonSpeech), only **"competitive"** out-of-domain, and 6.3x faster from the distil architecture (756M params, 2 decoder layers vs 1550M). A learner's accented Japanese is firmly out-of-domain, so the published numbers do not settle it. Record real utterances through the real mic+VAD path and read the transcripts side by side: `python -m backend.tools.stt_compare --record 6`. | A decision in a new ADR superseding ADR-004's model choice, or an explicit "stayed on large-v3 because". Plus pinned VRAM and median latency for whichever wins, and the clips kept in `logs/stt/` as the only STT regression corpus this project can have. | **Done 2026-09-09 — negative result.** `large-v3` stays; kotoba-whisper is a 756M distil model and there is no larger one. See findings log. |
 
 ### V0 findings log
+
+**2026-09-09 — STT model comparison (V0.13), on the user's own voice:**
+
+- **Result: `large-v3` stays.** Judged by ear on six recorded utterances through the real mic+VAD
+  path: "large v3 is much better". Not close.
+- **Why, almost certainly: it was not a fair fight on size.** `kotoba-whisper-v2.0` is a *distil*
+  model — **756 405 760 params with 2 decoder layers**, against `large-v3`'s **1 543 490 560**. The
+  card's "6.3x faster" and its "competitive out-of-domain" hedge are the same fact seen from two
+  sides, and a learner's accented Japanese is the out-of-domain case. The published in-domain
+  CER/WER win on ReazonSpeech (Japanese TV) did not transfer.
+- **There is no larger kotoba model, and there will not be one.** Verified 2026-09-09 via the HF
+  API: `kotoba-whisper-v2.0`, `v2.1`, `v2.2` and `bilingual-v1.0` are **all 756 405 760 params** —
+  byte-identical model size. v2.1 and v2.2 add punctuation and speaker diarization as
+  *post-processing* around the same distilled weights, not a bigger network. Distillation is the
+  entire premise of the project, so "the latest kotoba at about the same size as large-v3" does not
+  exist. `litagin/anime-whisper` is also 756M (and anime-domain, wrong register for a tutor).
+- **Full-size Japanese ASR is a thin field.** Of the top 100 Japanese ASR models by downloads, only
+  four are large-v3 class (>1.2B): `openai/whisper-large-v3` (1.54B), `Qwen/Qwen3-ASR-1.7B`
+  (2.35B), `mistralai/Voxtral-Mini-4B-Realtime-2602` (4.43B), `microsoft/VibeVoice-ASR` (8.67B).
+  **None is CTranslate2-compatible** — they are LLM-based ASR needing torch + transformers, which
+  is an ADR-004 architecture change, not a model swap. Voxtral and VibeVoice are also out on the
+  §10b VRAM budget before anything else loads.
+- **Open, if STT is revisited:** `Qwen3-ASR-1.7B` claims 52-language support including Japanese and
+  SOTA among open-source ASR. Worth a spike of its own *only* with eyes open about the cost: a
+  heavy new dependency, ~4-5 GB against the 10 GB cap, and — the real unknown — per-utterance
+  latency, since our workload is many short utterances and an autoregressive decoder with
+  `max_new_tokens` is a different latency profile from Whisper's. Do not start it without measuring
+  that first.
+
+
+**2026-09-09 — M2b, part 1: does the startup warm-up earn its place? Yes.** Same six clips,
+replayed twice in separate processes (`large-v3` @ `float16`), once loading the model and going
+straight to work, once doing the 1 s dummy transcribe first:
+
+| | first clip | median of the rest | p50 | p90 |
+|---|---|---|---|---|
+| no warm-up | **413.5 ms** | 276.4 ms | 299.1 ms | **388.0 ms** |
+| with warm-up (419 ms at startup) | **235.5 ms** | 283.4 ms | 280.0 ms | **343.0 ms** |
+
+- **The first-turn penalty is real and the warm-up removes it.** The identical clip costs 413.5 ms
+  cold and 235.5 ms warm — ~140 ms above the median, paid by the student's first sentence, which is
+  the worst possible place for it. 419 ms at startup buys it back. This is the third instance of the
+  same bug shape in this codebase (VOICEVOX styles, the output stream, now Whisper): *a subsystem
+  that reports ready before it can actually work*. Only this one was already fixed.
+- **p90 is 343 ms against the 350 ms budget — but this is NOT gate M2b.** Six clips cannot produce a
+  p90, the margin is 7 ms, and the roadmap asks for **20 recorded utterances at the user's own
+  speaking level**. Treat this as evidence the budget is reachable, not as evidence it is met.
+- Still outstanding for M2b: the 20-utterance run, and zero hallucinated transcripts across a
+  2-minute silent recording. Neither can run until the microphone is unmuted.
+
+**2026-09-09 — quantisation (V0.13 addendum), replayed on the same six clips:**
+
+| | VRAM | median | utt_02 | utt_06 |
+|---|---|---|---|---|
+| `large-v3` @ `int8_float16` | 2 178 MiB | 290 ms | ここ**　**もらったことはなぜ? | **ショッキング**するのがいいよ |
+| `large-v3` @ `float16` | **3 880 MiB** | **287 ms** | ここ**を**もらったことはなぜ? | **貯金**をするのがいいよ |
+
+- **`float16` is now the default.** It is *not slower* — 287 ms against 290 ms, within noise —
+  because int8 buys nothing on a GPU that runs fp16 natively; the quantisation was paying accuracy
+  for a saving that never existed at inference time.
+- The transcripts are the point, not the milliseconds. At int8 the model heard ちょきん (貯金,
+  savings) as **ショッキング**, and dropped the particle を in utt_02. At fp16 both are right.
+- Cost: **+1 702 MiB**, to 3 880 MiB against the §10b 10 GB cap. Headroom we were not spending.
+- `int8_float16` stays as the documented step-down if VRAM ever gets tight, ahead of dropping to
+  `medium` — now with a measured accuracy price attached to it rather than an assumed free lunch.
+- Replay any future STT change against these clips before believing it:
+  `python -m backend.tools.stt_compare --replay --models large-v3@float16,large-v3@int8_float16`
+
+**The cheaper levers on `large-v3`, not yet tried, in order:**
+
+1. ~~**Stop quantising.**~~ **Done 2026-09-09 — `float16` is now the default.** See the addendum
+   below: better transcripts, identical latency, +1.7 GB of headroom we were not spending.
+2. **Prime the decoder with the student's own vocabulary.** `condition_on_previous_text=False` is
+   deliberate (spec §9 — it stops hallucination loops), but it means every utterance is transcribed
+   cold. The WaniKani unlocks and Bunpro grammar in the profile are exactly the words this student
+   is most likely to say. faster-whisper's `initial_prompt`/`hotwords` are the mechanism —
+   **verify the parameter against the installed version before pinning** (ADR-015).
+3. **`beam_size`** is 5. Raising it trades latency for accuracy; measure both.
+
+The six clips are in `logs/stt/` (gitignored). They are the regression corpus: any future change
+to STT gets replayed against them with `--replay` before it is believed.
+
 
 Pinned facts, dated, to be copied into `backend/constants.py` at M0. Re-verify on every CLI or
 engine upgrade.
@@ -245,8 +332,14 @@ keeps bare names.
 
 **Measured (sonnet, `--effort high`, prompt 1 739 tokens: soul 345 + profile 594):** first
 sentence 1.8–2.4 s, ttft 1.6–2.2 s, MCP tool call 10 ms. The Claude stage budget is 1.60 s
-(§10) — currently over, with the levers (`--effort`, model, prompt size) untouched. Latency is
+(§10) — over, and that measurement is what moved the `--effort` default. Latency is
 M3's gate, not M1's; the numbers are recorded here so the M3 work starts from data.
+
+**2026-09-09 — first lever pulled: `--effort` default high → medium.** The A/B above is the
+whole argument: medium is the fastest of the three on *both* numbers (2.14 s between turns
+vs high's 3.75 s; 5.8 s opening vs 19.2 s), so `low` is not a further step down — it is
+slower than medium at less effort, and buys nothing. Remaining levers for M3: model and
+prompt size.
 
 **2026-09-09 — VOICEVOX 0.25.2 (V0.3), live:**
 
@@ -261,6 +354,15 @@ M3's gate, not M1's; the numbers are recorded here so the M3 work starts from da
 - **`prePhonemeLength` IS divided by `speedScale`.** Confirmed by computing the timeline and comparing
   with the real synthesised WAV across 4 samples x 2 speeds: agreement within 46 ms worst case, most
   under 30 ms (VOICEVOX rounds to sample boundaries, so exact equality would be asserting its rounding).
+- **`/version` answering is NOT readiness.** The engine loads a style's model on first *use*, so a
+  green status chip could still be followed by a silent first sentence — indistinguishable, to the
+  student, from a hang. `POST /initialize_speaker?speaker=<style_id>&skip_reinit=<bool>` -> 204 and
+  `GET /is_initialized_speaker?speaker=<style_id>` -> bool fix that. Measured (style 53): forced
+  reinit **534 ms**, `skip_reinit=true` on an already-loaded style **2 ms**, so warming at startup is
+  free once warm and idempotent. `speaker` is a STYLE id, so *every distinct style in the emotion
+  table* needs its own call — warming only the default leaves the first emotional sentence cold.
+  Startup now warms all of them before Sensei's opening line, and `voicevox` gained `loading`/`warm`
+  states so "ready" on screen means "can speak now" (spec §5b).
 - `GET /speakers` -> `[{name, speaker_uuid, styles: [{id, name, type}], supported_features, version}]`,
   43 speakers. **Styles are resolved by NAME**, not id, so an engine upgrade renumbering ids is safe.
   Chosen default: **No.7** — ノーマル=29, アナウンス=30 (crisp/formal), 読み聞かせ=31 (warm read-aloud):
@@ -268,6 +370,93 @@ M3's gate, not M1's; the numbers are recorded here so the M3 work starts from da
 - Synthesis of one short sentence takes **470-740 ms** on CPU. The §10 budget for "VOICEVOX first chunk
   + WS delivery" is 400 ms, so this is over already, before any WebSocket. Levers for M3: shorter first
   sentences, and starting synthesis on the first sentence while the rest still streams (already done).
+
+**2026-09-10 — V0.4, TalkingHead verified (README + modules/talkinghead.mjs):**
+
+- `speakAudio(audio, [opt={}], [onsubtitles=null])`, where `audio` carries `visemes[]`,
+  `vtimes[]`, `vdurations[]`. **All times are MILLISECONDS.** This was the dangerous unknown —
+  seconds would have been a silent 1000x drift — and our `as_message()` already emits ms
+  (`vtimes[0] == 100.0` for a 0.1 s prePhonemeLength). **No conversion needed at the WS boundary.**
+- `visemes[]` takes **bare** Oculus ids (`aa`, `PP`), not the `viseme_`-prefixed morph names.
+  TalkingHead's set is 15; our mapper emits 14 of them and never emits anything outside it —
+  the only one missing is `TH`, which Japanese has no sound for. Checked programmatically, not
+  by eye.
+- **Moods are a closed set of 8:** `neutral, happy, angry, sad, fear, disgust, love, sleep`.
+  Three of our four tags — `thinking`, `surprised`, `serious` — **are not moods**, and an unknown
+  name is a silent no-op. Spec §8's table already routes them to `neutral` + blendshape
+  overrides, so the guess it was carrying turns out to be right; it is now verified rather than
+  assumed.
+- Blendshape control: `head.setFixedValue("jawOpen", 1)`, released with `null`; or an `anim`
+  object `{dt: [ms], vs: {shape: [values]}}` passed to `speakAudio` for audio-synced motion.
+- Gestures exist: `handup, index, ok, thumbup, thumbdown, side, shrug`, left-handed unless
+  `mirror` is set.
+- **Avatar requirement: full-body GLB, Mixamo-compatible rig, ARKit (52) + Oculus visemes (15).**
+  Avaturn Type-2 avatars are stated compatible. **Still open:** the README does not give the
+  Ready Player Me URL parameters that guarantee both blendshape sets in the export, and it is
+  exactly the kind of thing that silently produces a face that cannot move. Confirm against Ready
+  Player Me's own docs before the user downloads one — do not guess it here.
+
+**2026-09-10 — M2c, first-chunk synthesis on the target box (speaker 53, CPU VOICEVOX):**
+
+| chars | synth | audio | RTF |
+|---|---|---|---|
+| 3 (はい。) | 245 ms | 544 ms | 0.45 |
+| 6 (こんにちは。) | 309 ms | 864 ms | 0.36 |
+| 8 | 358 ms | 1237 ms | 0.29 |
+| 10 | 431 ms | 1653 ms | 0.26 |
+| 14 | 523 ms | 2155 ms | 0.24 |
+| 19 | 682 ms | 3083 ms | 0.22 |
+
+Over 60 realistic tutor sentences x 5 emotions: **p50 493 ms, p90 622 ms, max 699 ms.**
+
+- **The 0.40 s stage budget is NOT met at p90.** Synthesis is linear at ~35 ms/char and the
+  levers are gone: ADR-005 forbids GPU VOICEVOX, and speaker 53 was already chosen as the
+  *cheapest* of the V0.3 shortlist (~615 ms/sentence, pinned then). Only a short first sentence
+  comes in under 400 ms — 3-8 characters does, 10+ does not.
+- **The N/N+1 overlap condition is met structurally, not by luck.** The real-time factor is
+  0.22-0.45, so synthesis of the next sentence always finishes well before the current one stops
+  playing, and the margin *widens* with length. The queue in `speaker.py` already works this way.
+- **But the §10 stage table predates push-to-talk.** With `TURN_MODE=ptt` the end-of-speech stage
+  is 0.00 s, not 0.50 s. Re-adding the measured numbers: 0 (VAD) + 0.34 (STT p90) + 1.60 (Claude)
+  + 0.62 (TTS p90) + 0.15 (playback) = **2.71 s**, inside the 3.0 s hard gate. The stage that
+  overspends is covered by the stage that no longer exists.
+- **Open for the user:** rebalance §10's stage table for ptt (moving the VAD allocation to TTS
+  would make M2c pass honestly), or leave the table and record M2c as missed-but-compensated.
+  Either way the hard number that matters — voice->voice p90 <= 3.0 s — is not yet measured
+  end to end; that is M3d.
+
+**2026-09-10 — M2d, measured against the live engine at every emotion speed:**
+
+`postPhonemeLength` **is** divided by `speedScale`, like `prePhonemeLength`. Controlled test at
+speaker 53, `pre=0`: post 0.0->0.5 adds 0.5013 s at speed 1.0 and **0.2453 s at speed 2.0**. The
+mapper already divides both, so its arithmetic is correct.
+
+| emotion | speed | mean err | max abs err |
+|---|---|---|---|
+| neutral | 1.0 | +13.2 ms | 24.3 ms |
+| happy | 1.05 | +0.3 ms | 13.2 ms |
+| thinking | 0.95 | -5.8 ms | 19.9 ms |
+| surprised | 1.1 | -9.5 ms | 23.3 ms |
+| serious | 0.95 | -5.8 ms | 19.9 ms |
+
+- **The residual is VOICEVOX's, not ours.** At speed 2.0 the engine returns 0.3627 s where exact
+  division of the speed-1 mora time would give 0.3520 s — **10.7 ms longer**, because it rounds
+  every mora to sample boundaries. No change to `visemes.py` can remove that; matching it exactly
+  would mean reimplementing the engine's rounding.
+- **The drift is text-dependent, and bigger than the live sweep suggested.** The committed
+  fixtures span **-11.4 ms** (さしすせそ) to **+46.4 ms** (ぱぴぷぺぽ) — re-synthesised from the
+  exact stored queries, so the recorded WAV lengths are not stale. It is not the consonants
+  either: an all-vowel あいうえお is +5.1 ms and か-row is *negative*. There is no function of the
+  audio_query that recovers it.
+- **So the drift is removed, not tolerated.** `VisemeTimeline.fitted_to(wav_ms)` scales the
+  predicted timeline onto the real WAV, which the caller has the instant synthesis returns.
+  Cumulative lag that was worst at the end of a sentence — where it shows — becomes a
+  proportional stretch of a fraction of a frame per viseme. Re-measured across all five emotions:
+  **0.0 ms**. `build()` remains pure and remains a prediction; the fit is a separate pure
+  function, so spec §7's "keep them pure" still holds.
+- Tests split accordingly: `MAX_PREDICTION_DRIFT_MS = 50` bounds `build()` alone (loose on
+  purpose — tightening it would only assert VOICEVOX's quantisation), while the fitted timeline
+  is asserted exact.
 
 **2026-09-09 — voice stability, measured (V0.3 follow-up):**
 
@@ -397,7 +586,7 @@ module does.
   client; a fourth MCP tool; a write-scope string outside the doctor; an `https://` literal in
   `srs/` that is not one of the two pinned origins; a `base_url=` parameter or env read on the
   client. Also a clean fixture tree that passes. Runtime host test: a `GET` to
-  `https://example.com` through the client raises `H3ostViolation` and nothing is sent; a 302
+  `https://example.com` through the client raises `HostViolation` and nothing is sent; a 302
   from an allowed host to any other host is not followed. The runtime `ReadOnlyTransport` test issues a `POST` through the client's
   underlying transport and asserts `ReadOnlyViolation`, that nothing was sent, and that the
   status registry received `error`. The import-time self-check test monkeypatches a second
@@ -467,6 +656,14 @@ events.
 - **Integrate** — Upstream of STT; also the barge-in trigger (subsystem 8) and the listening
   reactions (subsystem 9).have you planned the conne
 - **Gate M2a** — No false end-of-turn in 3 minutes of natural speech with normal pauses.
+  **DEFERRED 2026-09-10, user directive.** `TURN_MODE=ptt` is now the default and the key decides
+  when a turn ends, so this gate measures the fallback mode rather than the one in use. It does
+  not block M2. Finish it near the end, when the look and feel is settled and the silence window
+  can be tuned against real sessions instead of a staged three minutes.
+  Note what ptt also removes: the 900 ms window leaves the §10 budget entirely (a third of the
+  3.0 s), and gate **M3b**'s "zero self-interruptions on speakers" is close to vacuous when the
+  tutor's own voice cannot end a turn. Neither gate is deleted — both are re-measured if `vad`
+  ever becomes the default again.
 
 ### 4. STT — `backend/stt.py` — **M2**
 
@@ -483,7 +680,9 @@ events.
   chip.
 - **Integrate** — VAD → STT → Claude session.
 - **Gate M2b** — Warm STT p90 ≤ 0.35 s on the target GPU; zero hallucinated transcripts across a
-  2-minute silent recording.
+  2-minute silent recording. **Amended 2026-09-10 (user, ADR-033):** the timing is accepted at its
+  measured p90 of 0.58 s (large-v3, beam 5 — not traded for speed) and reported, not gating; the
+  gate is the zero-hallucination check.
 
 ### 5. TTS client — `backend/tts_voicevox.py` + `backend/emotions.py` — **M2**
 
@@ -503,6 +702,8 @@ events.
   generation.
 - **Gate M2c** — First-chunk audio ≤ 0.40 s p90; sentence *N* synthesises while sentence *N+1*
   is still being generated (visible in the timing log); five emotions audibly distinct.
+  **Amended 2026-09-10 (user, ADR-033):** first-chunk timing accepted at its measured p90 of
+  0.59 s and reported, not gating; the gate is the overlap and the five distinct emotions.
 
 ### 6. Viseme mapper — `backend/visemes.py` — **M2**
 
@@ -519,8 +720,11 @@ events.
   watch for correct closure and drift at the end of long sentences, under `surprised` (fastest)
   and `serious` (slowest).
 - **Integrate** — TTS → mapper → WS `speak` message.
-- **Gate M2d** — Golden tests green; timeline end time within one frame of the WAV duration at
-  every emotion speed.
+- **Gate M2d** — **MET 2026-09-10, exactly: 0.0 ms** at every emotion speed, five sentences each.
+  No tolerance argument required, because the drift is removed rather than tolerated —
+  `VisemeTimeline.fitted_to(wav_ms)` stretches the predicted timeline onto the real WAV in
+  `tts_voicevox.say()`. `build()` stays pure and stays a prediction (spec §7); the fit is a
+  separate pure function applied where the ground truth exists.
 
 ### 7. WebSocket protocol — `backend/models.py` + `frontend/src/ws.ts` — **M2 → M3**
 
@@ -537,6 +741,16 @@ events.
   auto-reconnects, the status bar shows the reconnect, and the session recovers.
 - **Integrate** — The seam between backend and frontend; frozen at M2 so M3 is pure frontend.
 - **Gate M3a** — Protocol frozen and mirrored; drift fails CI.
+
+**Status 2026-09-11 — Gate M3a met.** `frontend/src/protocol.gen.ts` is *generated* from
+`backend/models.py` (`python -m backend.tools.gen_protocol`) — every type, field and literal, not
+just the names — and `test_models.py` fails while the committed copy is stale. The same file
+round-trips every message, checks that an unknown client type is answered with an `error` while
+the socket lives, that `stt_partial` is never emitted, and that every emotion the voice knows the
+face knows. On the page, `ws.ts` `Handlers` requires one handler per server type, so `tsc` (run by
+`npm run build`) fails on a missing one. One field was added at M3: `state.turn`, the barge-in
+epoch (subsystem 8). **Not yet validated live:** kill the server mid-session and watch the page
+reconnect (the watchdog and the retry are ported unchanged from the prototype, where they worked).
 
 ### 8. Barge-in — spans `vad.py`, the WS layer, and `frontend/src/mic.ts` — **M3**
 
@@ -556,6 +770,18 @@ avatar's own voice through the speakers must **not** trigger it (ADR-018).
 - **Gate M3b** — Headphones: speech stops in **< 300 ms**, 10/10, no stale audio after.
   Speakers: **zero** self-interruptions in 10 turns.
 
+**Status 2026-09-11 — built, not measured.** Found while building it: the server never sent
+`bargein` and every `speak` said `turn: 0`, so the page played on to the end of the sentence it
+had. Now the orchestrator keeps a turn epoch (`Hub.epoch`: up when a turn starts and when she is
+interrupted), every `state` and `speak` carries it, and `bargein` closes it; the page drops any
+sentence of a closed epoch however late it arrives, including one still decoding
+(`speech.test.ts`, `test_app.py`). Push-to-talk: the page stops her on the key event itself
+(`mic.ts`), before the server hears of it, and logs key-to-silence for every barge-in with the
+session's worst — that log line is the M3b measurement. Hands-free: the server VAD decides (its
+thresholds, subsystem 3) and the page stops on `bargein`. The `getUserMedia` constraints test does
+not apply while the orchestrator captures the microphone (spec §2 "where the build stands"). Both
+live runs — 10 interruptions on headphones, 10 turns on speakers — are **not yet run**.
+
 ### 9. Avatar & frontend — `frontend/src/{avatar,ui,main,status}.ts` — **M3**
 
 **Contract:** `speak` message → lip-synced playback with the sentence's emotion applied at
@@ -573,6 +799,23 @@ playback start; `state` → mic indicator and listening reactions; `service_stat
 - **Gate M3c** — The M3 acceptance conversation: 10 turns, tight lip-sync, barge-in passing,
   status bar truthful.
 
+**Status 2026-09-11 — the frontend is built.** `frontend/` (Vite 8, TypeScript 7, Vitest 5, no
+framework): `index.html` + `src/{main, ws, protocol.gen, avatar, speech, rig, rigpanel, mic, status,
+settings, ui}.ts`. Ported from the prototype: the start screen, the settings panel and its tabs, the
+status bar with the service card, the mood kaomoji, the new-topic and stop buttons, the live tutor
+switch, the device meter, the reconnect watchdog, the "tidying her notes" line, and the rig panel
+(collapsed in the Activity card). New: subtitles (JP / off — her sentence as its audio starts, yours
+once heard), **listening reactions** (attentive once you are really talking, a nod at each pause
+≥ 300 ms, at most one per 1.5 s, some with a silent closed-mouth "mm"), the session timer, and the
+headphones hint (hands-free only, until the first barge-in). **The emotion is now applied by the
+audio-start callback** — TalkingHead's subtitle hook, which fires when a sentence leaves its queue
+(talkinghead.mjs 1.4, read 2026-09-11) — where the prototype applied it on receipt, a whole
+sentence ahead of the voice. `/` serves `frontend/dist` and is the only page — the prototype
+`preview.html` was removed on 2026-09-11 (user). `make run` / `.\run` builds the page first when its
+source is newer, and stops with a reason if there is no build at all to open. Headless tests: 33 in
+Vitest (the rig table, the reactions, the speech queue with a delayed start and barge-in, the
+dispatcher, the chip colours, push-to-talk). **Gate M3c (the live 10-turn acceptance) is not met.**
+
 ### 10. Latency instrumentation — cross-cutting — **M2 onward, enforced at M3**
 
 **Contract:** every turn logs a structured stage breakdown; rolling p50/p90 tracked per session;
@@ -583,8 +826,27 @@ the same record is sent to the client as `timing`.
   turns log **true first-content latency separately** from perceived latency.
 - **Validate** — A scripted 20-turn conversation produces the p50/p90 report.
 - **Integrate** — `--profile` overlay and the session JSONL.
-- **Gate M3d (hard)** — **voice→voice p90 ≤ 3.0 s over 20 turns.** Fillers do not count toward
+- **Gate M3d (hard)** — **voice→voice p90 ≤ 5.0 s over 20 turns** (3.0 s until 2026-09-10, ADR-033). Fillers do not count toward
   meeting it. Missing this gate blocks M4.
+- **Harness: built 2026-09-10** — `python -m backend.tools.latency_run` (recorded clips → warm
+  Whisper → scripted line to a real session → first complete sentence → its synthesis, + 0.15 s
+  slack; opening turn reported separately). Still missing from the contract: the live `timing`
+  message, rolling p50/p90 in the session log, and ttft/thinking on voice turns.
+- **Baseline 2026-09-10 — FAIL** (over the 3.0 s gate of the time, and 0.30 s over the 5.0 s gate
+  the user set the same day, ADR-033). sonnet, effort medium, tools on, 20 turns, app running alongside
+  (shared GPU): voice→voice **p50 3.49 s, p90 5.30 s**; stt p50/p90 0.51/0.61 s; Claude first
+  sentence **2.61/3.99 s**; tts 0.30/0.61 s; opening 3.98 s. The Claude stage tracks the model's
+  **thinking**: thinking p50 306 chars; the five turns with zero thinking ran 1.70–2.56 s
+  voice→voice, and the 730-char turn 8.29 s — roughly +0.5 s per 100 chars. `--effort medium`
+  does not keep thinking off (spec §10 requires it OFF). Rows: logs/latency/20260910-171340.jsonl.
+- **Clean re-run 2026-09-10 (app stopped, GPU idle) — FAIL against 5.0 s:** voice→voice
+  **p50 3.89 s, p90 6.03 s** — worse than the shared-GPU baseline, so sharing was NOT the cause.
+  STT stayed at 0.51/0.58 s on its own (large-v3, beam 5, 2–4 s clips): over its 0.35 s budget by
+  itself. The Claude stage is ttft-bound and noisy run to run: less thinking than the baseline
+  (p50 179 vs 306 chars) yet a higher ttft (p50 2.71 s), and one turn with NO thinking waited
+  11.4 s for its first token — server-side variance, not ours. **Twenty turns are too few to judge
+  a change against a p90 this noisy:** compare settings over repeated or longer runs.
+  Rows: logs/latency/20260910-172211.jsonl.
 
 ### 11. VRAM instrumentation — cross-cutting — **M2 onward**
 
@@ -701,6 +963,12 @@ covers, at the moment those sentences start playing (ADR-020).
 - **Gate M3f** — The scripted turn passes by eye and ear; tags appear in ≥ 30 % of turns in a
   normal conversation.
 
+**Status 2026-09-11 — the face half is built; the rate has a meter.** Every tag the voice table
+knows has a rig (`test_models.py` checks both tables agree), and the face changes with the audio,
+not before it (subsystem 9). The rig panel's *say it* row plays each emotion's sample sentence for
+the scripted check. `python -m backend.tools.emotion_rate` reads the turn logs and prints the
+share of turns carrying a tag against the 30 % gate. **Not yet run** on a normal conversation.
+
 ### 18. Memory and context — `backend/memory.py` + `backend/session.py` — **M4**
 
 Cross-session recall (ADR-031) and pre-emptive session rotation (ADR-032). Spec §6b. Both exist to
@@ -746,10 +1014,43 @@ the avatar is still playing audio and the orchestrator is idle.
   voice→voice unchanged within noise between turns before and after a rotation; the turn log parses
   100% and matches the schema; a fresh launch demonstrably recalls the previous session.
 
+**Status 2026-09-10 — the rotation half is built, hermetically tested, and OFF by default.**
+`backend/session.py` (`Rotator`): arms at `CONTEXT_ROTATE_AT` × the model's window (read from
+`brain.meters` after every turn — fields verified, constants.py), starts the replacement in the
+background with a handoff from the lesson's turn log (`prompt.build(handoff=...)`, own 600-token
+budget, "carry on, do not greet again"), swaps only at a turn boundary via `VoiceLoop.before_turn`,
+closes the old session only after the new one has taken a turn, discards a pending replacement on
+a tutor switch, and gives up after 3 failed starts (the provider's own compaction then being the
+logged fallback). `tests/test_session.py` covers the contract above.
+
+**Status 2026-09-11 — on by default at 0.7, and adaptive.** V0.12 closed without a one-off
+measurement (V0 table): the CLI announces every compaction, so the brain emits `Compacting` events,
+the page says she is tidying her notes, the turn records `compaction_ms`, and an `auto` compaction
+that arrives before our threshold lowers it to 85 % of where it happened (floor 10 %, persisted in
+`.cache/compaction.json`, never switching rotation on from 0). The per-turn timeout restarts when a
+compaction starts and when it ends, so a long one is not cut off as a stuck turn. Tests:
+`test_session.py` (learning), `test_brain_claude_cli.py` (the real event shapes),
+`test_voice_loop.py` (recorded on the turn). Gate M4c (a 40-minute live lesson crossing a
+rotation) is **not met**.
+
+**Status 2026-09-10 — the memory half is built, pulled forward from M4 by user directive.**
+`backend/memory.py`: the turn log (§6b schema, append-only, recorded from `on_turn` after
+`TurnComplete`), the start-of-session read into a `{{memory}}` prompt section, the summariser (run
+at the next launch on `MEMORY_SUMMARY_MODEL`, driven through an injected `ask`), and a fourth tier
+the original design lacked — `topics.jsonl`, rendered as *recently discussed — do not open on
+these*. Hermetic tests in `test_memory.py` cover the schema, append-only writes, a half-written
+last line, empty-renders-to-nothing, topic recency and de-duplication, a malformed summary leaving
+the previous memory intact, a failing summariser costing recall rather than the lesson, and the
+worst-case prompt budget with memory maxed. **Not yet done:** the critical-path phase-recording
+test described above, and rotation (ADR-032), which stays last by design. **Not validated live
+yet:** close and reopen after a real lesson and confirm she opens from the brief without repeating
+the topic.
+
 **Known risk.** Rotation is the only feature in this milestone that can break a working
 conversation, and its failure mode is subtle — a tutor that quietly forgets. Ship the log, the
-start-of-session read and the summariser first; run them for several real lessons before enabling
-rotation. `CONTEXT_ROTATE_AT` unset means "never rotate", which must remain a supported
+start-of-session read and the summariser first; rotation is on by default at 0.7 of the
+window (140k tokens on a 200k window, well past an ordinary lesson), so it first fires only in a
+very long one. `CONTEXT_ROTATE_AT` unset means "never rotate", which must remain a supported
 configuration.
 
 ### 19. Settings store & interface — `backend/config.py` + `frontend/src/settings.ts` — **M0 (store) / M3 (drawer) / M5 (full page)**
@@ -771,9 +1072,127 @@ is defaults → `settings.json` → env. Secrets never return to the browser in 
   the conversation memory survives the respawn. Restart the app and confirm everything persisted.
 - **Integrate** — The `settings` / `settings_test` messages (subsystem 7) and the status
   registry (subsystem 16).
+- **Persona picker (user directive 2026-09-10).** `TUTOR_PERSONA` is one setting that switches
+  character, voice *and* face together (ADR-026/030), so the settings page offers it as a single
+  choice rather than three. Two rules the picker has to respect:
+  *only offer personas whose declared avatar actually exists* — `prompt.declared_avatar()` names
+  the file and `check_avatar` says whether it is usable — and *show why one is unavailable*
+  rather than hiding it, because "たなか needs an avatar" is actionable and a missing row is not.
+  Only `minami` ships with a face today; the rest wait on commissioned models.
 - **Gate M5b** — The M5 acceptance: clone → first conversation without ever creating a `.env`.
 
 ---
+
+### 20. Second brain provider — OpenAI, headless — `backend/brain/openai_cli.py` — **deferred, user directive 2026-09-10**
+
+ADR-027 made the brain a provider behind an interface precisely so this is a new module rather
+than a rewrite: `BRAIN_PROVIDER` already exists as a config key and already says
+"Implemented: claude-cli". Nothing upstream of the chunker imports a provider.
+
+**This does NOT reopen ADR-001.** That decision forbids *substituting* the Anthropic API for the
+`claude` CLI — subscription auth, no per-token billing. A second provider sitting beside it is
+the case ADR-027 was written for. Adding OpenAI must not change how the Claude provider is
+spawned or authenticated.
+
+**Decided 2026-09-10 (user):** the **`codex` CLI driven headless as a subprocess, on a
+subscription** — the same shape as the Claude provider, not the HTTP API. This preserves ADR-001's
+actual reasoning (subscription auth, no per-token billing) rather than routing around it, so no
+ADR is superseded and none is needed: this is ADR-027's anticipated second implementation.
+
+Consequences that follow from picking the CLI:
+
+- **A verification spike comes first, like V0.1/V0.2 did for Claude.** The exact flags for
+  headless streaming, the event shapes on stdout, how a session id is assigned and resumed, and
+  how to prove the process is on subscription auth rather than an API key — all pinned live in
+  `constants.py` with a date. **Do not write a line of the provider against remembered flags**
+  (ADR-015). The Claude spike found `--tools ""` behaviour, an MCP readiness race and a
+  system-prompt truncation bug that no amount of reading would have predicted; assume the same
+  density of surprises here.
+- **The spawn hygiene of §4/ADR-016 applies to any brain subprocess, not just Claude:** empty
+  cwd outside the repo, allowlisted environment, no inherited MCP config, and an assertion at
+  init that the auth source is the subscription and not a key in the environment.
+- **Test** — The provider contract test runs against BOTH implementations: the same `Brain`
+  interface, the same event types (`TextDelta`, `Thinking`, `ToolCall`, `ToolOutcome`,
+  `RateLimited`, `TurnComplete`), the same restart/resume behaviour. A provider that cannot
+  produce the full event set is a provider the pipeline cannot use.
+- **Do not fabricate the interface** (ADR-015). Whichever reading wins, its flags or endpoint
+  shapes get verified live and pinned in `constants.py` with a date, like every other external
+  interface here.
+- **Sequencing:** after M3. The brain already works; a second one buys optionality, not a
+  milestone, and M2/M3 are not blocked by it.
+
+---
+
+### 21. `make doctor` — `backend/tools/doctor.py` — **M0 deliverable, NOT WRITTEN (found 2026-09-10)**
+
+The Makefile target exists and invokes `backend.tools.doctor`; the module does not. `make doctor`
+has therefore never run, despite M0 being recorded as done and the spec listing its checks under
+M0. Anyone following README's Setup section hits an import error on the third command.
+
+Spec M0 defines what it must check: `claude` CLI present and version-pinned, `ANTHROPIC_API_KEY`
+absent from the shell, a trivial `claude -p` returning `init.apiKeySource == "none"`, CUDA
+visible, VOICEVOX reachable on loopback **and not on other interfaces**, tokens present, every
+ignored path actually ignored via `git check-ignore`, and the §5b status table printed.
+
+Add to that list, from what later milestones turned up:
+
+- **the avatar** — `frontend/public/avatar.glb` present and passing `check_avatar`; a fresh clone
+  has no face and nothing currently tells the user that until the frontend silently fails.
+- **audio devices** — at least one input and one output on a host API that can actually be opened
+  at the fixed rates (see `CAPTURE_HOSTAPIS`); on Windows a device may enumerate and still be
+  unopenable, which cost a long debugging session.
+
+### 22. Study panel — `backend/annotate.py` (planned) + `frontend/src/chat.ts` — **M3 extension, user request 2026-09-11 (ADR-036, spec §8b)**
+
+**Contract:** the conversation as a chat thread beside the avatar; her grammar uses in red and
+clickable, words clickable for readings and meaning, a translate icon per sentence, a hint for
+what she wants the student to use — with no model call unless the student clicks.
+
+- **Verify first (ADR-015).** The tokenizer and dictionary packages (candidates: fugashi +
+  unidic-lite; a JMdict / KANJIDIC2 source) — install, read their real API, pin versions and a
+  dated finding in `constants.py`. Measure their load time and memory at startup.
+- **Test** — Chunker: `{{span|point}}` and `[target:point]` are stripped from the TTS text and the
+  subtitle text in every position (mid-sentence, across a chunk boundary, malformed, nested), and
+  their spans land on the right characters of the cleaned sentence. Annotator: words and readings
+  for a fixed sentence (golden), WaniKani data preferred over the dictionary, an unknown word
+  degrades to no card. Explain: one call per uncached request, none for a cached one; a failed
+  call returns an error message, never a stuck spinner. Page: bubbles, spans and cards render from
+  a recorded `speak`; the hint stays closed until clicked.
+- **Validate** — A normal 10-turn lesson: grammar tagged in most turns she teaches something (count
+  with the turn log, like M3f); every red span is the grammar it names; a click shows the rule in
+  the chosen language within a few seconds, the second click instantly.
+- **Gate** — To be set with the user when it is built. Latency must not move (ADR-033): tags are
+  output tokens, and a turn with them is measured like any other.
+
+**Status 2026-09-12 — the chat, the marks and the hint are built; explanations, translation and
+word cards are not.** The tutor's rules are in `prompts/tutor.md` (TOTAL_MAX_TOKENS 2350 → 2550);
+`chunker.py` strips `{{span|point}}` and `[target:…]` in every position, split across deltas or
+malformed, and records the spans (`test_chunker.py`); they reach the page as `speak.grammar` and
+`speak.target` and the turn log records them. The page (`frontend/src/chat.ts`, `STUDY_PANEL`)
+puts the tutor on the left and the conversation on the right, her grammar in red with a card on
+click, and a lightbulb that lights when she asks for a form and clears when the student answers.
+Her sentence joins the chat when its audio starts; one whose audio never started (TalkingHead drops
+what it cannot play) still joins it at the end of her turn. Checked in real-time headless Chrome
+against a demo orchestrator. **Not validated live**, and the tag rate is not measured yet.
+
+**Status 2026-09-12 — furigana is built.** `backend/annotate.py`: fugashi + unidic-lite (pinned,
+verified in constants.py) give a reading per run of kanji — 取り消す as 取=と, 消=け — corrected from
+`backend/data/readings.txt` for what the dictionary gets wrong in lesson Japanese (私, 日本, 明日,
+何を). `known` comes from WaniKani: the fetcher also reads kanji assignments and the kanji subjects
+up to the student's level (GET, launch and Refresh only, ADR-024) and counts a kanji as known when
+`passed_at` is set — there is no `passed` filter in the API (docs read 2026-09-12). The readings
+ride on `speak.readings` and `stt_final.readings`; the page renders `<ruby>`, and the `FURIGANA`
+setting (all / unknown / off, default **unknown**) re-reads the conversation live. Tests:
+`test_annotate.py`, `test_wanikani_kanji.py`, `chat.test.ts`. **Not validated live**; a student with
+no WaniKani data sees furigana on everything, which is the intended fallback.
+
+**Status 2026-09-12 — what the student got right floats behind her** (user). `[used:word]` in her
+reply, stripped like the other marks, reaches the page as `speak.used`; the page floats it up the
+mood layer in gold and logs it. Free: one more tag, no call. Also this day, because the launch sat
+for 80 s summarising five old sessions and looked hung: the launch now summarises only the newest
+session (the one she greets with), the rest are caught up by a background task once the student is
+talking, each reported as it goes, and an older catch-up can no longer overwrite a newer brief
+(`test_memory.py`). The prompt's ceiling went 2550 → 2650 for the new rule.
 
 ## Integration order
 
@@ -811,7 +1230,7 @@ Runs from M2 onward, every milestone, before any gate is called met:
    `apiKeySource`, `.env.example`-vs-`config.py` inventory, and protocol contract tests.
 3. `make check-secrets` — no token-shaped strings and no current `.env` value in the tracked
    tree.
-4. **20-turn latency run** — p50/p90 reported; p90 ≤ 3.0 s.
+4. **20-turn latency run** — p50/p90 reported; p90 ≤ 5.0 s (`python -m backend.tools.latency_run`).
 5. **VRAM check** — steady state ≤ 10 GB with the browser open.
 6. **Speakers run** — 10 turns on laptop speakers, zero self-interruptions.
 7. **Degradation matrix** — the app starts, holds a conversation, and shows the right chips

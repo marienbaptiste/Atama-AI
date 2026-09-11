@@ -120,7 +120,9 @@ orchestrator** (sounddevice, with unplug recovery), not the browser, so step 1 b
 works yet. **The conversation panel** (ADR-036, Settings → Display): the tutor sits on the left
 and the conversation runs on the right as a chat. Grammar points she uses show in **red**, and
 the **lightbulb** lights up when she wants you to use a particular form or word — click it to see
-which. **Coming next:** click a red point for the rule (English or Japanese), a translate icon on
+which. Kanji carry **furigana** (Settings → Display: all, only the ones you have not reached Guru
+on, or none). When you use something you have been learning **correctly**, she says so and the
+word drifts up behind her in gold. **Coming next:** click a red point for the rule (English or Japanese), a translate icon on
 each of her sentences, and word cards with readings and meanings. News comes from SearxNG plus Yahoo!
 JAPAN headline feeds, interleaved so no single source fills the answer.
 

@@ -82,6 +82,18 @@ def test_a_broken_mark_never_reaches_the_voice():
         assert out[0].grammar == () and c.stray_marks, broken
 
 
+def test_what_the_student_used_correctly_rides_on_the_sentence_and_is_never_spoken():
+    out, _ = run(["[proud][used:〜たら]よくできました。"])
+    assert texts(out) == ["よくできました。"]
+    assert out[0].used == "〜たら" and out[0].emotion == "proud" and out[0].target == ""
+
+
+def test_used_and_target_can_both_appear_in_one_turn():
+    out, _ = run(["[used:雨]いいですね。[target:〜たら]もう一度どうぞ。"])
+    assert texts(out) == ["いいですね。", "もう一度どうぞ。"]
+    assert out[0].used == "雨" and out[1].target == "〜たら" and out[1].used == ""
+
+
 def test_a_mark_in_the_turn_log_names_its_words():
     out, _ = run(["[encouraging][target:〜たら]雨が{{降ったら|〜たら}}？"])
     assert out[0].as_log() == {"text": "雨が降ったら？", "emotion": "encouraging", "synth_ms": None,

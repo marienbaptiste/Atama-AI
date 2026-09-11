@@ -173,6 +173,8 @@ class Memory:
         summarise must leave yesterday's memory intact rather than truncate it to nothing.
         """
         brief = str(summary.get("brief") or "").strip()
+        if brief and self._brief_date() > date:
+            brief = ""      # a catch-up of an older lesson must not replace a newer brief
         topics = [str(t).strip() for t in (summary.get("topics") or []) if str(t).strip()]
         notes_add = [str(n).strip() for n in (summary.get("notes") or []) if str(n).strip()]
         if not brief and not topics:
@@ -199,15 +201,28 @@ class Memory:
         except OSError:
             return False
 
-    async def summarise_pending(self, ask: Callable[[str], Awaitable[str]],
-                                instructions: str) -> int:
-        """Summarise every unsummarised log. `ask(prompt) -> reply text`. Returns how many landed.
+    def _brief_date(self) -> str:
+        """The date of the brief on disk — it is written as "(YYYY-MM-DD) …"."""
+        head = _read(self.brief_md)[:12]
+        return head[1:11] if head.startswith("(") else ""
+
+    async def summarise_pending(self, ask: Callable[[str], Awaitable[str]], instructions: str,
+                                limit: int | None = None,
+                                on_log: Callable[[Path, int, int], None] | None = None) -> int:
+        """Summarise unsummarised logs. `ask(prompt) -> reply text`. Returns how many landed.
 
         `ask` is injected rather than constructed here so tests can drive this with a fake, and so
-        the caller decides which (cheap) model spends the tokens.
+        the caller decides which (cheap) model spends the tokens. `limit` takes the newest logs
+        first — the launch summarises the last lesson, which is the one she greets with, and the
+        older ones are caught up in the background while the student is already talking (2026-09-12:
+        five pending sessions held the launch for 80 s). `on_log` reports progress.
         """
+        pending = self.pending_logs()
+        queue = list(reversed(pending))[:limit] if limit else pending
         landed = 0
-        for log in self.pending_logs():
+        for at, log in enumerate(queue, start=1):
+            if on_log is not None:
+                on_log(log, at, len(queue))
             excerpt = excerpt_of(log)
             if not excerpt:
                 continue

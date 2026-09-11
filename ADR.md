@@ -1342,7 +1342,9 @@ subscription whose limit is a five-hour window. The user asked for the smart way
 
 1. **The tutor tags inline.** She already picks each grammar point on purpose — she weaves in the
    student's Bunpro ghost reviews — so she marks it as she writes: `{{span|point}}` around the
-   phrase, and `[target:point]` for what she wants the student to produce next. A few output tokens
+   phrase, `[target:point]` for what she wants the student to produce next, and `[used:word]` for
+   something the student has just used correctly, which the page floats behind her (user,
+   2026-09-12) — she is the only one who can judge that. A few output tokens
    a turn, no extra call, no added latency. The chunker strips both before TTS and before the
    subtitle text, exactly like emotion tags (ADR-020), and sends the spans with the sentence.
 2. **Explanations and translations only on click**, from a one-shot side call: `claude -p` on the

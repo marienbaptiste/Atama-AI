@@ -40,6 +40,7 @@ class Speech:
     #: Study marks from the chunker (ADR-036), carried to the page. VOICEVOX never sees them.
     grammar: tuple = ()
     target: str = ""
+    used: str = ""
 
     @property
     def duration_ms(self) -> float:

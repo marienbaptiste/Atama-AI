@@ -163,6 +163,9 @@ class Speak(_Msg):
     #: she wants the student to use next when this sentence asks for it (the page's hint).
     grammar: list[GrammarSpan] = []
     target: str = ""
+    #: A word or grammar point the student has just used correctly (user, 2026-09-12): the page
+    #: floats it up behind her, the way her mood faces drift.
+    used: str = ""
     #: Furigana for the chat (backend/annotate.py), computed on the orchestrator, no model call.
     readings: list[Reading] = []
 

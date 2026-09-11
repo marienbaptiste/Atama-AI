@@ -25,7 +25,7 @@ SERVER_SAMPLES = {
     "assistant_text": {"text": "はい。"},
     "speak": {"audio_b64": "UklGRg==", "visemes": ["aa", "sil"], "vtimes": [100.0, 180.0],
               "vdurations": [80.0, 50.0], "text": "あ。", "emotion": "happy", "turn": 2,
-              "grammar": [{"start": 0, "end": 1, "point": "〜たら"}], "target": "〜たら",
+              "grammar": [{"start": 0, "end": 1, "point": "〜たら"}], "target": "〜たら", "used": "雨",
               "readings": [{"start": 0, "end": 1, "reading": "あ", "known": False}]},
     "emotion": {"emotion": "thinking"},
     "bargein": {"turn": 2},

@@ -89,6 +89,7 @@ export interface SpeakMsg {
   turn: number;
   grammar: GrammarSpan[];
   target: string;
+  used: string;
   readings: Reading[];
 }
 

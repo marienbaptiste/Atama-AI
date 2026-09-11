@@ -10,7 +10,7 @@ import { Backchannel } from "./rig";
 import { loadSamples, mountRigPanel } from "./rigpanel";
 import * as settings from "./settings";
 import * as status from "./status";
-import { $, APP_NAME, esc, hint, live, log, onFirstTouch, setMoodBg, setSubtitles, showEnded, subtitle } from "./ui";
+import { $, APP_NAME, esc, floatWord, hint, live, log, onFirstTouch, setMoodBg, setSubtitles, showEnded, subtitle } from "./ui";
 import { Link, type Handlers } from "./ws";
 
 //: Plain names for the cast. cast.json comes from the persona files themselves (make_preview).
@@ -45,6 +45,10 @@ function onSentence(msg: SpeakMsg, preview: boolean): void {
   if (preview) return;                              // a rig-panel sample, not the conversation
   chat.her(msg);
   if (msg.target) setGoal(msg.target);
+  if (msg.used) {                                   // you used it, and she noticed
+    floatWord(msg.used);
+    log(`<b>you used ${esc(msg.used)}</b> — she counted it`, "ok");
+  }
   log(`<b>her:</b> ${esc(msg.text)}` + (msg.emotion ? ` <i>${esc(msg.emotion)}</i>` : ""), "her");
 }
 

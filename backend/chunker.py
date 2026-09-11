@@ -39,12 +39,15 @@ _TAG_AT_START = re.compile(r"^\s*\[(" + "|".join(EMOTIONS) + r")\]\s*")
 _ANY_TAG = re.compile(r"\[(" + "|".join(EMOTIONS) + r")\]\s*")
 #: Longest prefix that could still become a tag once more deltas arrive, e.g. "[hap" or
 #: "[target:〜た" — bounded, so an unclosed target never swallows the rest of the reply.
-_PARTIAL_TAG = re.compile(r"^\s*\[(?:[a-z]*|target:[^\]\n。！？!?]{0,40})$")
+_PARTIAL_TAG = re.compile(r"^\s*\[(?:[a-z]*|(?:target|used):[^\]\n。！？!?]{0,40})$")
 _GRAMMAR = re.compile(r"\{\{([^{}|\n]+)\|([^{}\n]+)\}\}")
 _TARGET = re.compile(r"\[target:([^\]\n]*)\]\s*")
 _TARGET_AT_START = re.compile(r"^\s*\[target:([^\]\n]*)\]\s*")
-#: What a malformed mark leaves behind: a "|point}}" tail, a lone "{{" or "}}", an unclosed target.
-_BROKEN = re.compile(r"\|[^{}|\n]*\}\}|\{\{|\}\}|\[target:")
+#: The student just used this correctly — the page floats it behind her (user, 2026-09-12).
+_USED = re.compile(r"\[used:([^\]\n]*)\]\s*")
+_USED_AT_START = re.compile(r"^\s*\[used:([^\]\n]*)\]\s*")
+#: What a malformed mark leaves behind: a "|point}}" tail, a lone "{{" or "}}", an unclosed tag.
+_BROKEN = re.compile(r"\|[^{}|\n]*\}\}|\{\{|\}\}|\[(?:target|used):")
 
 
 @dataclass(frozen=True)
@@ -67,6 +70,8 @@ class Chunk:
     #: to use next if this sentence asks for it.
     grammar: tuple[GrammarMark, ...] = ()
     target: str = ""
+    #: A word or grammar point the student has just used correctly, for the page to celebrate.
+    used: str = ""
 
     def as_log(self) -> dict:
         """This sentence as the turn log records it (spec §6b); study marks only when present."""
@@ -75,6 +80,8 @@ class Chunk:
             out["grammar"] = [{"span": self.text[g.start:g.end], "point": g.point} for g in self.grammar]
         if self.target:
             out["target"] = self.target
+        if self.used:
+            out["used"] = self.used
         return out
 
 
@@ -88,8 +95,9 @@ class SentenceChunker:
     _buf: str = ""
     _emotion: str = NEUTRAL
     _pending: str | None = None
-    #: A target seen and not yet attached to a spoken sentence.
+    #: A target, and a "the student used this" mark, seen and not yet attached to a spoken sentence.
     _target: str = ""
+    _used: str = ""
     stray_tags: list[str] = field(default_factory=list)
     stray_marks: list[str] = field(default_factory=list)
 
@@ -137,10 +145,11 @@ class SentenceChunker:
         """Clean one sentence: drop stray tags, apply the pending emotion, drop the unspeakable,
         and turn study marks into spans on the cleaned text."""
         text = raw.strip()
-        for m in _TARGET.finditer(text):        # a target past the head: still never spoken
-            if m.group(1).strip():
-                self._target = m.group(1).strip()
-        text = _TARGET.sub("", text).strip()
+        for pattern, field_name in ((_TARGET, "_target"), (_USED, "_used")):
+            for m in pattern.finditer(text):    # a mark past the head: still never spoken
+                if m.group(1).strip():
+                    setattr(self, field_name, m.group(1).strip())
+            text = pattern.sub("", text).strip()
         emotion: str | None = None
         if strays := _ANY_TAG.findall(text):
             self.stray_tags.extend(strays)
@@ -152,7 +161,8 @@ class SentenceChunker:
         if not _SPEAKABLE.search(text):
             return Chunk("", emotion if emotion is not None else self._emotion)
         target, self._target = self._target, ""
-        return Chunk(text, emotion if emotion is not None else self._apply_pending(), grammar, target)
+        used, self._used = self._used, ""
+        return Chunk(text, emotion if emotion is not None else self._apply_pending(), grammar, target, used)
 
     def _marks(self, text: str) -> tuple[str, tuple[GrammarMark, ...]]:
         """`{{span|point}}` becomes `span`, and a mark saying where it sits in the cleaned text."""
@@ -187,6 +197,8 @@ class SentenceChunker:
                 self._pending = m.group(1)
             elif (m := _TARGET_AT_START.match(self._buf)) is not None:
                 self._target = m.group(1).strip() or self._target
+            elif (m := _USED_AT_START.match(self._buf)) is not None:
+                self._used = m.group(1).strip() or self._used
             else:
                 break
             self._buf = self._buf[m.end() :]

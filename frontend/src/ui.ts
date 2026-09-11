@@ -139,6 +139,23 @@ function spawnKao(mood = kaoMood, midway = false): void {
   layer.appendChild(el);
 }
 
+/** Something the student just used correctly, drifting up behind her (user, 2026-09-12). The same
+ *  layer as her mood faces, but gold, larger and slower: this is praise, not decoration. */
+export function floatWord(word: string): void {
+  const layer = document.getElementById("moodbg");
+  if (!layer || !word || kaoPaused || document.hidden) return;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const el = document.createElement("span");
+  el.className = "kao word";
+  el.textContent = word;
+  const seconds = 11 + Math.random() * 4;
+  el.style.cssText = `--x:${(12 + Math.random() * 62).toFixed(1)}%;--s:${(30 + Math.random() * 12).toFixed(0)}px;`
+    + `--b:0px;--o:0.9;--d:${seconds.toFixed(1)}s;--dx:${(Math.random() * 80 - 40).toFixed(0)}px;`
+    + "--r0:-3deg;--r1:3deg";
+  el.addEventListener("animationend", () => el.remove());
+  layer.appendChild(el);
+}
+
 export function setMoodBg(mood: string): void {
   mood = KAOMOJI[mood] ? mood : "neutral";
   const fresh = mood !== kaoMood;

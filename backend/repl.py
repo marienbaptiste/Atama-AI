@@ -88,10 +88,14 @@ async def run(args: argparse.Namespace) -> int:
         mem = memory_api.Memory.from_config(cfg)
         pending = mem.pending_logs()
         if pending:
-            print(f"{DIM}memory: catching up on {len(pending)} past session(s) "
-                  f"with {cfg.MEMORY_SUMMARY_MODEL}…{RESET}")
-            landed = await _summarise(cfg, mem)
-            print(f"{DIM}memory: {landed}/{len(pending)} summarised{RESET}")
+            # Only the newest here — it is the one she greets with. The rest are caught up in the
+            # background once the student is talking: five pending sessions held the launch for
+            # 80 seconds and looked like a hang (2026-09-12).
+            print(f"{DIM}memory: summarising the last lesson with {cfg.MEMORY_SUMMARY_MODEL}…{RESET}", flush=True)
+            landed = await _summarise(cfg, mem, limit=1)
+            rest = len(pending) - landed
+            print(f"{DIM}memory: {landed} summarised"
+                  + (f"; {rest} older session(s) continue in the background{RESET}" if rest > 0 else RESET))
         memory_text = mem.render()
 
     rendered = prompt.build(profile_text, persona=cfg.TUTOR_PERSONA, memory=memory_text)
@@ -219,6 +223,13 @@ async def run(args: argparse.Namespace) -> int:
         await _one_turn(brain, OPENING_NUDGE, voice, mem=mem, opening=True)
         await account(brain)
 
+    # Older sessions are summarised now, in the background: the student is already in the lesson,
+    # and a summary that fails here simply waits for the next launch (2026-09-12).
+    catchup: asyncio.Task | None = None
+    if mem is not None and mem.pending_logs():
+        catchup = asyncio.create_task(_summarise(cfg, mem))
+        catchup.add_done_callback(lambda t: None if t.cancelled() else t.exception())
+
     async def switch_persona(name: str):
         """Live tutor change (settings panel): a fresh session with the new persona, speaking in
         the voice that persona declares (ADR-030). Returns the started brain. The old one keeps
@@ -288,6 +299,8 @@ async def run(args: argparse.Namespace) -> int:
             await _listen(cfg, brain, voice, stt, hub, mem, switch_persona, account,
                           spawn_rotation, adopt, resync)
         finally:
+            if catchup is not None:
+                catchup.cancel()
             if voice is not None:
                 await voice.aclose()
             await brain.aclose()
@@ -317,6 +330,8 @@ async def run(args: argparse.Namespace) -> int:
                 continue
             await _one_turn(brain, line, voice, mem=mem)
     finally:
+        if catchup is not None:
+            catchup.cancel()
         if voice is not None:
             await voice.aclose()
         await brain.aclose()
@@ -827,7 +842,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
                       f"p90 {p90 / 1000:.2f}s (budget 5.0s){RESET}")
 
 
-async def _summarise(cfg, mem) -> int:
+async def _summarise(cfg, mem, limit: int | None = None) -> int:
     """One short-lived, cheap brain that summarises past sessions, then goes away.
 
     Same Brain interface as the tutor (ADR-027) but its own process, its own model and no tools:
@@ -855,8 +870,14 @@ async def _summarise(cfg, mem) -> int:
                 break
         return "".join(out)
 
+    def progress(log, at: int, total: int) -> None:
+        if total > 1:                      # the launch summarises one; the background says where it is
+            print(chr(13) + DIM + f"memory: summarising {log.stem[:10]} ({at}/{total})…" + RESET, flush=True)
+
     try:
-        return await asyncio.wait_for(mem.summarise_pending(ask, instructions), 240)
+        return await asyncio.wait_for(mem.summarise_pending(ask, instructions, limit=limit, on_log=progress), 600)
+    except asyncio.CancelledError:
+        raise
     except Exception:  # noqa: BLE001
         return 0
     finally:

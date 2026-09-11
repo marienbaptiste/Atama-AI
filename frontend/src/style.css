@@ -22,6 +22,7 @@ code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:4px}
 .kao{position:absolute;bottom:-60px;left:var(--x);color:#fff;white-space:nowrap;opacity:0;
      font:600 var(--s)/1 "Yu Gothic UI","Meiryo","Segoe UI Symbol",system-ui,sans-serif;
      filter:blur(var(--b));animation:kao var(--d) linear forwards}
+.kao.word{color:#ffd479;font-weight:800;filter:none;text-shadow:0 2px 14px rgba(0,0,0,.5)}
 @keyframes kao{
   0%  {transform:translate(0,0) rotate(var(--r0));opacity:0}
   15% {opacity:var(--o)}

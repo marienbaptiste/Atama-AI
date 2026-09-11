@@ -168,6 +168,7 @@ class Hub:
             grammar=[{"start": g.start, "end": g.end, "point": g.point}
                      for g in getattr(speech, "grammar", ())],
             target=getattr(speech, "target", ""),
+            used=getattr(speech, "used", ""),
             readings=self._readings(speech.text),
         ).model_dump(), to=self._ready)
         return speech.duration_ms / 1000.0

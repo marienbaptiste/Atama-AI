@@ -137,6 +137,32 @@ def test_summarise_pending_lands_a_parsed_reply(tmp_path):
     assert now.pending_logs() == []                      # never summarised twice
 
 
+def test_the_launch_summarises_one_session_and_leaves_the_rest_for_the_background(tmp_path):
+    """2026-09-12: five pending sessions held the launch for 80 s and looked like a hang."""
+    for session in ("aaa", "bbb", "ccc"):
+        mem(tmp_path, session=session).record_turn(student="質問", tutor_sentences=[{"text": "はい。"}])
+    now = mem(tmp_path, session="live")
+    asked = []
+
+    async def ask(prompt):
+        asked.append(prompt)
+        return '{"brief": "b", "topics": ["t"]}'
+
+    assert asyncio.run(now.summarise_pending(ask, "I", limit=1)) == 1
+    assert len(asked) == 1                                   # one model call, not three
+    assert len(now.pending_logs()) == 2                      # the rest wait for the background
+    assert asyncio.run(now.summarise_pending(ask, "I")) == 2  # which then catches them up
+    assert now.pending_logs() == []
+
+
+def test_a_background_catch_up_never_replaces_a_newer_brief(tmp_path):
+    now = mem(tmp_path, session="live")
+    now.apply_summary("today", "2026-09-12", {"brief": "the newest lesson", "topics": ["new"]})
+    now.apply_summary("older", "2026-09-01", {"brief": "an old lesson", "topics": ["old"]})
+    assert "the newest lesson" in now.brief_md.read_text(encoding="utf-8")
+    assert set(now.recent_topics()) == {"new", "old"}        # both are still remembered
+
+
 def test_a_summariser_that_fails_costs_recall_not_the_lesson(tmp_path):
     past = mem(tmp_path, session="past")
     past.record_turn(student="何か", tutor_sentences=[{"text": "はい。"}])
