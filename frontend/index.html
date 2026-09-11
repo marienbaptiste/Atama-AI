@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sensei — atama-AI</title>
+<title>…</title><!-- set from package.json productName at start (src/main.ts) -->
 <!-- TalkingHead (loaded by URL in src/avatar.ts) imports "three" by bare name; this resolves it.
      Same versions the prototype ran. Must come before any module script. -->
 <script type="importmap">
@@ -27,10 +27,10 @@
   <span class="chip" id="m-time" title="This lesson so far">
     <svg viewBox="0 0 24 24" fill="none" stroke="#e8453c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M10 2h4"/></svg>
     <b>0:00</b></span>
-  <span class="chip" id="m-ctx" title="Her memory of this conversation — appears after her first answer">
+  <span class="chip" id="m-ctx">
     <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>
     <b>–</b><i class="bar"><u></u></i></span>
-  <span class="chip" id="m-use" title="The five-hour usage window — appears after her first answer">
+  <span class="chip" id="m-use">
     <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/></svg>
     <b>–</b><em class="dot"></em></span>
   <span class="chip" id="m-mic" title="Microphone">
@@ -55,13 +55,12 @@
 <!-- her sentence as it plays, or yours once it was heard (spec §8: JP / off) -->
 <div id="subs" hidden lang="ja"></div>
 
-<!-- the dock: who teaches, the talk key, a new topic, stop -->
+<!-- the dock: the talk key, a new topic, stop. Who teaches is chosen in Settings → Voice. -->
 <div id="dock">
-  <select id="who" title="Your tutor" aria-label="Your tutor"></select>
   <button id="talk" disabled>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>
     <span>Hold SPACE to talk</span></button>
-  <button id="topic" class="round" disabled title="Ask her to drop this subject and find a new one" aria-label="New topic">
+  <button id="topic" class="round" disabled aria-label="New topic">
     <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>
   </button>
   <button id="quit" class="round" disabled title="Stop the tutor and the server. The page cannot restart them." aria-label="Stop">

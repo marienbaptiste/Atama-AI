@@ -2,6 +2,7 @@
   "name": "atama-ai-frontend",
   "private": true,
   "version": "0.3.0",
+  "productName": "Atama-AI",
   "description": "The avatar page: Vite + vanilla TypeScript, no framework (ADR-009).",
   "type": "module",
   "scripts": {

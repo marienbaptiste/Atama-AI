@@ -9,7 +9,7 @@ import { Backchannel } from "./rig";
 import { loadSamples, mountRigPanel } from "./rigpanel";
 import * as settings from "./settings";
 import * as status from "./status";
-import { $, esc, hint, live, log, onFirstTouch, setMoodBg, setSubtitles, showEnded, subtitle } from "./ui";
+import { $, APP_NAME, esc, hint, live, log, onFirstTouch, setMoodBg, setSubtitles, showEnded, subtitle } from "./ui";
 import { Link, type Handlers } from "./ws";
 
 //: Plain names for the cast. cast.json comes from the persona files themselves (make_preview).
@@ -27,7 +27,8 @@ let turn = 0;
 let unlocked = false;
 let mode = "ptt";
 const back = new Backchannel();
-const who = $<HTMLSelectElement>("who");
+//: The persona whose face is showing. Chosen in Settings → Voice, never on the main screen.
+let persona = "";
 
 const avatarReady: Promise<Avatar> = Avatar.create($("stage"), onSentence);
 avatarReady.then(a => { avatar = a; mountRigPanel(a); },
@@ -93,7 +94,9 @@ function onService(m: ServiceStatusMsg): void {
       if (m.state === "over") log(`GPU memory over the cap — ${esc(m.detail)}`, "err");
       return;
     case "tutor":                                   // a live tutor change in progress
-      live(m.detail);
+      // On the main line, not only in the Activity card: a switch that failed silently left the
+      // old tutor talking while the panel said the new one was chosen (2026-09-11).
+      live(m.detail, m.state === "failed" ? "warn" : "on");
       log(esc(m.detail), m.state === "failed" ? "err" : "ok");
       return;
     case "microphone":                              // unplugged, missing, back (spec §9)
@@ -113,10 +116,7 @@ function onSettings(m: SettingsMsg): void {
   talk.render();
   headphonesHint();
   const tutor = String(v.TUTOR_PERSONA || "");
-  if (tutor && tutor !== who.value && cast.some(c => c.id === tutor)) {
-    who.value = tutor;                              // keep the dropdown on the live tutor
-    void showPersona(tutor);
-  }
+  if (tutor && tutor !== persona && cast.some(c => c.id === tutor)) void showPersona(tutor);
 }
 
 function onLevel(level: number, speech: number): void {
@@ -208,16 +208,10 @@ $("quit").onclick = () => {
   window.setTimeout(showEnded, 8000);               // the server closes the socket once clean
 };
 
-// The dropdown and the panel's tutor cards are ONE live setting (2026-09-10).
-who.onchange = () => {
-  link.send({ type: "settings", values: { TUTOR_PERSONA: who.value } });
-  void showPersona(who.value);
-  who.blur();                                       // or SPACE would reopen the dropdown
-};
-
 async function showPersona(id: string): Promise<void> {
   const c = cast.find(x => x.id === id);
   if (!c) return;
+  persona = id;
   const a = await avatarReady;
   if (await a.show(c)) await loadSamples(id, a);
 }
@@ -234,6 +228,8 @@ if (location.hash.startsWith("#settings")) settings.openSettings(true, location.
 if (location.hash.startsWith("#mood=")) { $("start").hidden = true; setMoodBg(location.hash.slice(6)); }
 
 (async function boot() {
+  document.title = APP_NAME;
+  $("topic").title = `Ask ${APP_NAME} to drop this subject and find a new one`;
   status.bindStatus();
   talk.bind();
   talk.render();
@@ -244,8 +240,7 @@ if (location.hash.startsWith("#mood=")) { $("start").hidden = true; setMoodBg(lo
     log("no cast.json — run <code>make_preview</code>", "err");
     return;
   }
-  for (const c of cast) who.add(new Option((PERSONA_LABELS[c.id] || c.id) + (c.own_face ? "" : "  (stand-in face)"), c.id));
   settings.refresh();                               // the tutor cards are drawn from the cast
   const first = String(settings.values().TUTOR_PERSONA || cast[0]?.id || "");
-  if (first) { who.value = first; await showPersona(first); }
+  if (first) await showPersona(first);
 })();

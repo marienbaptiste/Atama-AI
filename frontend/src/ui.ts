@@ -2,6 +2,10 @@
  *  activity log, the live line, subtitles, the start and ended screens, the headphones hint, and
  *  her mood as white kaomoji drifting up behind her. */
 
+/** The product's name — package.json `productName`, injected at build time (vite.config.ts). The
+ *  page says it wherever it would otherwise say "her": in the title and every tooltip. */
+export const APP_NAME: string = __APP_NAME__;
+
 export const $ = <T extends HTMLElement = HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
   if (!el) throw new Error(`#${id} is missing from index.html`);

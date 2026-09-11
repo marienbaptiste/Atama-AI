@@ -397,6 +397,11 @@ async def _check_microphone(cfg) -> bool:
     return True
 
 
+#: A tutor switch that has not brought up the new session by then has failed: say so, keep the old
+#: tutor. Starting one normally takes a couple of seconds (measured 1.2 s, 2026-09-11).
+SWITCH_TIMEOUT_S = 90.0
+
+
 def _compaction_text(ev: Compacting) -> str:
     """One line for a provider compaction (spec §6b), for the terminal and the page."""
     if ev.active:
@@ -626,22 +631,42 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
         # A different person is about to speak: stop the current one, bring up the new persona
         # and voice, then let them introduce themselves. Used to wait for the next launch, so the
         # panel's tutor cards seemed to do nothing (2026-09-10).
-        await hub.status("tutor", "switching", f"switching to {name}...", remember=False)
-        print(chr(13) + BOLD + "[tutor] switching to " + name + RESET + " " * 20, flush=True)
-        if loop._turn_task is not None and not loop._turn_task.done():
-            loop.voice.cancel()
-            loop._turn_task.cancel()
+        # Everything inside the try, with a deadline and the full traceback: on 2026-09-11 a switch
+        # died between "saved" and "started" and nothing said why — the old tutor simply went on.
         try:
-            loop.brain = await switch_persona(name)
+            await hub.status("tutor", "switching", f"switching to {name}...", remember=False)
+            print(chr(13) + BOLD + "[tutor] switching to " + name + RESET + " " * 20, flush=True)
+            if loop._turn_task is not None and not loop._turn_task.done():
+                loop.voice.cancel()
+                loop._turn_task.cancel()
+            loop.brain = await asyncio.wait_for(switch_persona(name), SWITCH_TIMEOUT_S)
         except Exception as exc:  # noqa: BLE001 - the old tutor carries on rather than nobody
-            print(chr(13) + BOLD + "[tutor] could not switch: " + f"{type(exc).__name__}: {exc}"
-                  + RESET, flush=True)
-            await hub.status("tutor", "failed", f"could not switch to {name} - "
-                             f"{type(exc).__name__}", remember=False)
+            import traceback
+            traceback.print_exc()
+            reason = "timed out" if isinstance(exc, TimeoutError) else f"{type(exc).__name__}: {exc}"
+            print(chr(13) + BOLD + "[tutor] could not switch to " + name + ": " + reason + RESET, flush=True)
+            await hub.status("tutor", "failed", f"could not switch to {name} - {reason}"[:200],
+                             remember=False)
             return
         await rotator.discard()          # a replacement built for the previous tutor is no use now
         await hub.status("tutor", "ok", f"now teaching: {name}", remember=False)
         loop.ask(TUTOR_NUDGE)
+
+    #: Background jobs started from the page. The event loop holds tasks only weakly, so one nobody
+    #: references can vanish mid-flight; and one that dies must say so rather than disappear.
+    background: set[asyncio.Task] = set()
+
+    def in_background(coro, what: str) -> None:
+        task = asyncio.get_running_loop().create_task(coro)
+        background.add(task)
+
+        def finished(t: asyncio.Task) -> None:
+            background.discard(t)
+            if not t.cancelled() and t.exception() is not None:
+                exc = t.exception()
+                print(chr(13) + BOLD + f"[{what}] failed: {type(exc).__name__}: {exc}" + RESET, flush=True)
+
+        task.add_done_callback(finished)
 
     if hub is not None:
         def settings_saved(keys: list[str]) -> None:
@@ -652,7 +677,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
             if "AUDIO_OUTPUT_DEVICE" in keys:
                 voice.set_device(fresh.AUDIO_OUTPUT_DEVICE)
             if "TUTOR_PERSONA" in keys and switch_persona is not None:
-                asyncio.get_running_loop().create_task(change_tutor(str(fresh.TUTOR_PERSONA)))
+                in_background(change_tutor(str(fresh.TUTOR_PERSONA)), "tutor")
 
         hub.on_settings = settings_saved
 

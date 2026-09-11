@@ -2,7 +2,7 @@
  *  timer, her context, the five-hour window, the microphone, every service, and GPU memory. Each
  *  gauge fills in when its source reports. The colour logic is pure and tested (ROADMAP 16). */
 import type { MetersMsg, ServiceStatusMsg } from "./protocol.gen";
-import { $, esc } from "./ui";
+import { $, APP_NAME, esc } from "./ui";
 
 //: Spec §5b: every external dependency, working or not — not merely configured. One dot each.
 export const SVC_NAMES: Record<string, string> = {
@@ -57,6 +57,10 @@ export function showService(msg: ServiceStatusMsg): void {
 }
 
 export function bindStatus(): void {
+  // Tooltips name the product, never "her" (user, 2026-09-11) — so they are set here, from
+  // APP_NAME, rather than written into index.html.
+  $("m-ctx").title = `${APP_NAME}'s memory of this conversation — appears after the first answer`;
+  $("m-use").title = "The five-hour usage window — appears after the first answer";
   const toggle = () => { $("svc-pop").hidden = !$("svc-pop").hidden; $("m-svc").blur(); };
   $("m-svc").onclick = toggle;
   $("m-svc").onkeydown = e => { if (e.key === "Enter") toggle(); };
@@ -84,8 +88,8 @@ export function onMeters(m: MetersMsg, vramCapGb: number): void {
   if (m.context_tokens != null && m.context_window) {
     const f = m.context_tokens / m.context_window;
     gauge("m-ctx", f, Math.round(f * 100) + "%",
-      `Her memory of this conversation: ${kTok(m.context_tokens)} of ${kTok(m.context_window)} tokens. `
-      + "Before it is full she moves to a fresh session with the lesson so far.");
+      `${APP_NAME}'s memory of this conversation: ${kTok(m.context_tokens)} of ${kTok(m.context_window)} tokens. `
+      + `Before it is full, ${APP_NAME} moves to a fresh session with the lesson so far.`);
   }
   if (m.month_turns != null || m.limit_status) {
     // No dollars: the subscription runs through `claude -p` and is not billed per turn (user,
@@ -99,7 +103,7 @@ export function onMeters(m: MetersMsg, vramCapGb: number): void {
     gauge("m-use", null, `5h ${state}` + (reset ? ` · ${reset}` : ""),
       `Five-hour usage window: ${m.limit_status || "not reported yet"}`
       + (reset ? `, resets at ${reset}` : "") + ". The subscription says only whether you are inside "
-      + `the window, not how much of it is left. This month: ${turns} ${turns === 1 ? "turn" : "turns"} with her.`);
+      + `the window, not how much of it is left. This month: ${turns} ${turns === 1 ? "turn" : "turns"} with ${APP_NAME}.`);
     $("m-use").querySelector<HTMLElement>(".dot")!.style.background = LIMIT_DOT[m.limit_status ?? ""] || OFF;
   }
   if (m.vram_used_mib != null && m.vram_total_mib) {
