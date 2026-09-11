@@ -48,36 +48,39 @@ Target machine: single laptop, RTX 4090 mobile (16 GB VRAM), Linux or Windows/WS
 ## 2. ARCHITECTURE (FIXED — do not redesign)
 
 ```
-Browser (frontend)                    Python Orchestrator (backend)
-┌─────────────────────┐   WebSocket   ┌──────────────────────────────┐
-│ TalkingHead avatar  │   /ws :8000   │ FastAPI + asyncio  (app.py)  │
-│ viseme + mood rig   │◄─────────────►│  ├─ Hub: fan-out to pages    │
-│ audio playback      │  speak/state/ │  ├─ VoiceLoop (PTT | VAD)    │
-│ hold SPACE = PTT    │  transcript ▼ │  ├─ VAD (silero)             │
-│ stop button         │  ▲ control:   │  ├─ STT (faster-whisper)     │
-└─────────────────────┘  start/stop/  │  ├─ ClaudeSession (1 proc)   │
-                         quit         │  ├─ SentenceChunker          │
-        ┌─────────────┐               │  ├─ TTS client → VOICEVOX    │
-        │ VOICEVOX    │◄──HTTP────────┤  ├─ SRS fetcher (WK/Bunpro)  │
-        │ (Docker)    │  :50021       │  └─ Memory (turn log, brief, │
-        └─────────────┘               │      topics, student.md)     │
-        ┌─────────────┐               └───────────┬──────────────────┘
-        │ SearxNG     │◄──HTTP :8888──┐           │ stdin/stdout
-        │ (Docker)    │               │           ▼
-        └─────────────┘   ┌───────────┴──┐   claude -p (persistent subprocess,
-  Yahoo! JAPAN RSS ◄─GET──┤ search MCP   │◄──stream-json in/out, MCP tools)
-  (news_feeds.txt)        │ (1 tool)     │        │
-                          └──────────────┘        ├──► Bunpro MCP (3 read tools,
-                                                  │    reads the SRS snapshot)
-  run.cmd / up.py  : docker up → wait ready → orchestrator → open page
+Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
+┌──────────────────────────────────┐  WS   ┌──────────────────────────────┐
+│ left: TalkingHead avatar         │  /ws  │ FastAPI + asyncio  (app.py)  │
+│   visemes, emotion at audio start│ :8000 │  ├─ Hub: fan-out, turn epochs│
+│ right: chat thread (planned)     │◄─────►│  ├─ VoiceLoop (PTT | VAD)    │
+│   red grammar · word cards ·     │       │  ├─ VAD (silero)             │
+│   translate · hint               │       │  ├─ STT (faster-whisper)     │
+│ status bar · settings · SPACE    │       │  ├─ Brain → claude -p        │
+└──────────────────────────────────┘       │  ├─ SentenceChunker (+ tags) │
+  src/protocol.gen.ts is generated         │  ├─ Annotator (planned):     │
+  from backend/models.py (gate M3a)        │  │   dictionary, on-click    │
+                                           │  │   explain via claude -p   │
+        ┌─────────────┐                    │  ├─ TTS client → VOICEVOX    │
+        │ VOICEVOX    │◄──HTTP─────────────┤  ├─ SRS fetcher (WK/Bunpro)  │
+        │ (Docker)    │  :50021            │  ├─ Memory + rotation        │
+        └─────────────┘                    │  └─ Status registry          │
+        ┌─────────────┐                    └───────────┬──────────────────┘
+        │ SearxNG     │◄──HTTP :8888──┐                │ stdin/stdout
+        │ (Docker)    │               │                ▼
+        └─────────────┘   ┌───────────┴──┐        claude -p (persistent subprocess,
+  Yahoo! JAPAN RSS ◄─GET──┤ search MCP   │◄───────stream-json in/out, MCP tools)
+  (news_feeds.txt)        │ (1 tool)     │             │
+                          └──────────────┘             └──► Bunpro MCP (3 read tools,
+                                                            reads the SRS snapshot)
+  run.cmd / up.py  : docker up → wait ready → build the page if stale → orchestrator → open page
   stop.cmd / down.py, or the page's stop button (control quit): clean shutdown
-              ▲                                   ▲
-              │ style id                          │ persona text
-        ┌─────┴───────────────────────────────────┴──────┐
-        │ prompts/<persona>.md                           │
-        │   <!-- voice: NN -->  ──► VOICEVOX style id    │
-        │   persona text        ──► --system-prompt-file │
-        └────────────────────────────────────────────────┘
+              ▲                                        ▲
+              │ style id                               │ persona text
+        ┌─────┴────────────────────────────────────────┴──────┐
+        │ prompts/<persona>.md                                │
+        │   <!-- voice: NN -->  ──► VOICEVOX style id         │
+        │   persona text        ──► --system-prompt-file      │
+        └─────────────────────────────────────────────────────┘
               one file per tutor; TUTOR_PERSONA selects it
 ```
 
@@ -456,6 +459,32 @@ Capping it is cheaper than rotating more often.
 - **Self-barge-in (the avatar interrupting itself).** The mic hears the speakers. Three layers, all required: (1) `getUserMedia` with `echoCancellation: true`, `noiseSuppression: true`, `autoGainControl: false`; (2) while `speaking`, both the client energy check and the server VAD use a **higher threshold** (config `BARGEIN_THRESHOLD_FACTOR`, default 2.0 — note the server VAD emits a *probability* capped at 1.0, so the factor divides the headroom to certainty, `1-(1-t)/f`, giving 0.75 at t=0.5: multiplying would put the bar at 1.0 and silently disable barge-in, verified 2026-09-09) and require ≥ 250 ms of sustained speech before firing; (3) the server ignores VAD `speech_start` events during the first 150 ms of playback (loudspeaker onset). M3 acceptance includes a **10-turn conversation on laptop speakers with zero self-interruptions**, in addition to the headphones run.
 - Mic capture via AudioWorklet at 16 kHz mono PCM16 (NOT MediaRecorder/opus — we want raw frames for server VAD).
 - **DON'T** add build complexity: no React, no state library. One page, a few modules.
+
+## 8b. STUDY PANEL (ADR-036 — user request 2026-09-11; designed, not built)
+
+- **Layout.** The avatar takes the left of the page; the conversation runs on the right as a
+  message thread — her bubbles on one side, the student's on the other, newest at the bottom,
+  following the conversation as it grows. `STUDY_PANEL=off` returns to the full-width avatar with
+  subtitles.
+- **Her sentences.** Grammar spans in **red**, clickable for the rule in `EXPLAIN_LANGUAGE`
+  (`en` default, or `ja`). Words clickable for a card: the reading, on'yomi and kun'yomi of each
+  kanji, the English meaning, and — when it is on WaniKani — its SRS stage. A **translate icon**
+  at the end of each sentence shows the English beneath it. Furigana per `FURIGANA`: `unknown`
+  (default — kanji the student has not yet learned on WaniKani), `all`, or `off`.
+- **Tags, written by the tutor (prompt rules in `prompts/tutor.md`).** `{{span|point}}` wraps a
+  grammar use — `span` is the text as it appears, `point` the grammar point's name, as Bunpro
+  writes it where possible. `[target:point]` names what she wants the student to use next (a
+  grammar point or a word); the page's **hint icon** shows it, closed until clicked, because the
+  student should try first. Tags **never** reach TTS or the subtitle text: the chunker strips
+  them and the sentence carries its spans. A malformed tag is dropped and logged, never spoken.
+- **Words** are cut and looked up on the orchestrator — tokenizer, WaniKani cache, offline
+  dictionary — and sent with the sentence. No model call.
+- **Explanations and translations** are asked for by the page and answered by a one-shot
+  `claude -p` on the haiku tier under §4's rules (no tools, allowlisted environment, empty cwd),
+  cached under `.cache/explain/`. They never block a turn and are never generated unasked.
+- **Protocol additions** (generated like the rest, §8): `speak.grammar` (spans), `speak.words`,
+  `speak.target`, client `explain`, server `explanation`. Settings: `EXPLAIN_LANGUAGE`,
+  `FURIGANA`, `STUDY_PANEL`.
 
 ## 9. STT DETAILS
 

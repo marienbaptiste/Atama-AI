@@ -1141,6 +1141,28 @@ Add to that list, from what later milestones turned up:
   at the fixed rates (see `CAPTURE_HOSTAPIS`); on Windows a device may enumerate and still be
   unopenable, which cost a long debugging session.
 
+### 22. Study panel — `backend/annotate.py` (planned) + `frontend/src/chat.ts` — **M3 extension, user request 2026-09-11 (ADR-036, spec §8b)**
+
+**Contract:** the conversation as a chat thread beside the avatar; her grammar uses in red and
+clickable, words clickable for readings and meaning, a translate icon per sentence, a hint for
+what she wants the student to use — with no model call unless the student clicks.
+
+- **Verify first (ADR-015).** The tokenizer and dictionary packages (candidates: fugashi +
+  unidic-lite; a JMdict / KANJIDIC2 source) — install, read their real API, pin versions and a
+  dated finding in `constants.py`. Measure their load time and memory at startup.
+- **Test** — Chunker: `{{span|point}}` and `[target:point]` are stripped from the TTS text and the
+  subtitle text in every position (mid-sentence, across a chunk boundary, malformed, nested), and
+  their spans land on the right characters of the cleaned sentence. Annotator: words and readings
+  for a fixed sentence (golden), WaniKani data preferred over the dictionary, an unknown word
+  degrades to no card. Explain: one call per uncached request, none for a cached one; a failed
+  call returns an error message, never a stuck spinner. Page: bubbles, spans and cards render from
+  a recorded `speak`; the hint stays closed until clicked.
+- **Validate** — A normal 10-turn lesson: grammar tagged in most turns she teaches something (count
+  with the turn log, like M3f); every red span is the grammar it names; a click shows the rule in
+  the chosen language within a few seconds, the second click instantly.
+- **Gate** — To be set with the user when it is built. Latency must not move (ADR-033): tags are
+  output tokens, and a turn with them is measured like any other.
+
 ## Integration order
 
 Each row is the seam introduced, and the one assertion that proves it.

@@ -1278,3 +1278,89 @@ checks run at the end of the project; a failure there reopens that subsystem, no
 
 **Reversed if:** a deferred check fails in real use badly enough that M3 or M4 work is built on
 a broken base.
+
+---
+
+## ADR-035 — The page's protocol is generated; barge-in closes a turn epoch; a face changes with its audio
+
+**Status:** Accepted (2026-09-11), built at M3. Refines ADR-009 (the contract test) and ADR-020
+(when the face changes).
+
+**Context.** Building the M3 page found three things the prototype got wrong, each silently:
+
+1. ADR-009 asked for a test that the page's message *names* match the pydantic models. Names are
+   the least of it: a renamed field, a new literal or a changed type drifts just as silently, and
+   a hand-kept mirror drifts by construction.
+2. Barge-in never reached the page. The orchestrator stopped its own queue, but never sent
+   `bargein`, and every `speak` carried `turn: 0` — the page could not tell a sentence of the
+   interrupted turn from one of the next, so she played on to the end of what she had.
+3. The emotion was applied when a `speak` *arrived*. TalkingHead queues sentences, so the face ran
+   a whole sentence ahead of the voice — exactly what ADR-020 forbids.
+
+**Decision.**
+
+1. `frontend/src/protocol.gen.ts` is **generated** from `backend/models.py` — every type, field and
+   literal (`python -m backend.tools.gen_protocol`). `test_models.py` fails while the committed
+   copy is stale; on the page, the dispatcher's `Handlers` type needs one handler per server type,
+   so `npm run build` fails on a missing one.
+2. The orchestrator keeps a **turn epoch** (`Hub.epoch`): up by one when a turn starts and when she
+   is interrupted. `state` and `speak` carry it; `bargein` carries the epoch it closes. The page
+   drops any sentence of a closed epoch however late it arrives, even one still decoding. Under
+   push-to-talk the page stops her **on the key event itself** — a press while she talks is
+   unambiguous — and the server's `bargein` confirms; the page logs key-to-silence per barge-in,
+   which is the M3b measurement.
+3. The face is set by **TalkingHead's subtitle callback**, which fires when a sentence leaves its
+   queue and its audio starts (talkinghead.mjs 1.4, read 2026-09-11) — one word spanning the
+   sentence at t = 0, so it fires once.
+
+**Consequences.** Changing a message means running the generator; forgetting fails the tests. One
+field was added to the frozen M2 protocol: `state.turn`. The rig panel's samples play outside any
+epoch. Browser-side capture (ADR-006's AudioWorklet) is still not built — the orchestrator owns
+the microphone — so the constraints-object test of ROADMAP 8 does not apply yet.
+
+**Reversed if:** a second client appears in another language; then generate a JSON Schema and
+derive each client from it instead of emitting TypeScript directly.
+
+---
+
+## ADR-036 — The study panel: the tutor tags, the student clicks, the dictionary is local
+
+**Status:** Accepted by the user (2026-09-11) — design; not built. Spec §8b.
+
+**Context.** User request: the tutor on the left, the conversation on the right like a messaging
+app; every important grammar point in red, clickable for its rule in Japanese or English (a
+setting); vocabulary with on'yomi, kun'yomi and English; a translate icon at the end of each of
+her sentences; and a hint telling the student which form or word she is waiting for them to use.
+Built naively — a model annotating every sentence — that is one more LLM call per sentence on a
+subscription whose limit is a five-hour window. The user asked for the smart way.
+
+**Decision** (each option chosen by the user):
+
+1. **The tutor tags inline.** She already picks each grammar point on purpose — she weaves in the
+   student's Bunpro ghost reviews — so she marks it as she writes: `{{span|point}}` around the
+   phrase, and `[target:point]` for what she wants the student to produce next. A few output tokens
+   a turn, no extra call, no added latency. The chunker strips both before TTS and before the
+   subtitle text, exactly like emotion tags (ADR-020), and sends the spans with the sentence.
+2. **Explanations and translations only on click**, from a one-shot side call: `claude -p` on the
+   haiku tier (the CLI, never the API — ADR-001), no tools, under §4's isolation rules, off the
+   critical path, and **cached on disk** per grammar point and language, and per sentence. Each is
+   paid for once, and only if someone asks.
+3. **Vocabulary is local, with zero LLM cost**: the student's WaniKani data first (already cached,
+   read-only — no new calls, ADR-021/024), then an offline dictionary (KANJIDIC2 / JMdict), with a
+   Japanese tokenizer for word boundaries and furigana. These are new pinned dependencies; the
+   packages and their APIs are verified before any code uses them (ADR-015).
+4. Settings: `EXPLAIN_LANGUAGE` (`en` | `ja`), `FURIGANA`, `STUDY_PANEL`.
+
+**Consequences.** Tag use becomes a prompt-tuning target measured like gate M3f; a sentence
+without a tag simply shows plain text. The tutor's prompt grows by the tag rules, inside the
+existing budget. The first click on something costs a small call; the second is free. The
+dictionary data is downloaded at setup and credited in the README (JMdict and KANJIDIC2 are
+CC BY-SA).
+
+**Rejected:** a background annotation call every turn (the user was offered it; it pays for what
+is never opened); translations written by the tutor into her reply (English is output tokens and
+seconds before her voice, for text most turns never need); vocabulary from the model (a
+dictionary's readings are exact and free).
+
+**Reversed if:** inline tagging proves unreliable in prompt tuning; then one background call per
+turn replaces point 1.

@@ -229,6 +229,7 @@ if (location.hash.startsWith("#mood=")) { $("start").hidden = true; setMoodBg(lo
 
 (async function boot() {
   document.title = APP_NAME;
+  $("brand-name").textContent = APP_NAME;
   $("topic").title = `Ask ${APP_NAME} to drop this subject and find a new one`;
   status.bindStatus();
   talk.bind();

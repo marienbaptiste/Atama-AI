@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 140" role="img" aria-label="Atama-AI — a voice tutor for Japanese">
+  <!-- The mark (same as frontend/public/logo.svg) beside the wordmark. -->
+  <g transform="translate(6 6)">
+    <rect x="4" y="4" width="120" height="120" rx="32" fill="#e8453c"/>
+    <path d="M64 24c21.5 0 39 14.8 39 33s-17.5 33-39 33c-4.3 0-8.5-.6-12.4-1.7L34 99.5l4.2-15.8C30 77.6 25 68 25 57c0-18.2 17.5-33 39-33z" fill="#fff"/>
+    <path d="M62 39c1.9 9.6 5.6 13.3 15 15-9.4 1.7-13.1 5.4-15 15-1.9-9.6-5.6-13.3-15-15 9.4-1.7 13.1-5.4 15-15z" fill="#e8453c"/>
+    <circle cx="81" cy="41.5" r="4.2" fill="#e8453c"/>
+    <circle cx="84.5" cy="66" r="2.8" fill="#e8453c"/>
+  </g>
+  <text x="156" y="80" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="62" font-weight="800" fill="#2b2f36" letter-spacing="-1">Atama<tspan fill="#e8453c">-AI</tspan></text>
+  <text x="159" y="114" font-family="'Yu Gothic UI', 'Hiragino Sans', 'Segoe UI', sans-serif" font-size="21" font-weight="600" fill="#6b7380">頭 · a voice tutor for Japanese</text>
+</svg>

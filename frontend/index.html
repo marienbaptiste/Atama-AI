@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>…</title><!-- set from package.json productName at start (src/main.ts) -->
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
 <!-- TalkingHead (loaded by URL in src/avatar.ts) imports "three" by bare name; this resolves it.
      Same versions the prototype ran. Must come before any module script. -->
 <script type="importmap">
@@ -18,7 +19,8 @@
 <div id="stage"></div>
 
 <div id="start" role="button" tabindex="0">
-  <div><b>Click or press any key to start</b>
+  <div><div id="brand"><img src="/logo.svg" alt=""><span id="brand-name"></span></div>
+  <b>Click or press any key to start</b>
   Browsers only let a page play sound once you have touched it.<br>She waits for you.</div>
 </div>
 

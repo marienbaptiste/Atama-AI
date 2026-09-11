@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Atama-AI">
+  <!-- Atama-AI mark: a speech bubble with a spark in it — a mind (頭, atama) that talks.
+       Flat, single colour on a rounded tile, drawn from scratch. -->
+  <rect x="4" y="4" width="120" height="120" rx="32" fill="#e8453c"/>
+  <path d="M64 24c21.5 0 39 14.8 39 33s-17.5 33-39 33c-4.3 0-8.5-.6-12.4-1.7L34 99.5l4.2-15.8C30 77.6 25 68 25 57c0-18.2 17.5-33 39-33z" fill="#fff"/>
+  <path d="M62 39c1.9 9.6 5.6 13.3 15 15-9.4 1.7-13.1 5.4-15 15-1.9-9.6-5.6-13.3-15-15 9.4-1.7 13.1-5.4 15-15z" fill="#e8453c"/>
+  <circle cx="81" cy="41.5" r="4.2" fill="#e8453c"/>
+  <circle cx="84.5" cy="66" r="2.8" fill="#e8453c"/>
+</svg>

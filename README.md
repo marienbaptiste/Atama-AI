@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo-wordmark.svg" alt="Atama-AI — a voice tutor for Japanese" width="460"></p>
+
 # atama-AI (頭AI)
 
 **Real-time voice Japanese tutor with a 3D avatar.** Speak Japanese to a 3D sensei that knows
@@ -82,37 +84,44 @@ Highlights:
 ## Architecture
 
 ```
-Browser (frontend)                    Python Orchestrator (backend)
-┌─────────────────────┐   WebSocket   ┌──────────────────────────────┐
-│ TalkingHead avatar  │   /ws :8000   │ FastAPI + asyncio  (app.py)  │
-│ viseme + mood rig   │◄─────────────►│  ├─ Hub: fan-out to pages    │
-│ audio playback      │  speak/state/ │  ├─ VoiceLoop (PTT | VAD)    │
-│ hold SPACE = PTT    │  transcript ▼ │  ├─ VAD (silero)             │
-│ stop button         │  ▲ control:   │  ├─ STT (faster-whisper)     │
-│ status bar/settings │  start/stop/  │  ├─ ClaudeSession (1 proc)   │
-└─────────────────────┘  quit         │  ├─ SentenceChunker          │
-                                      │  ├─ TTS client → VOICEVOX    │
-        ┌─────────────┐               │  ├─ SRS fetcher (WK/Bunpro)  │
-        │ VOICEVOX    │◄──HTTP────────┤  ├─ Memory (turn log, brief, │
-        │ (Docker)    │  :50021       │  │   topics, student.md)     │
-        └─────────────┘               │  └─ Status registry          │
-        ┌─────────────┐               └───────────┬──────────────────┘
-        │ SearxNG     │◄──HTTP :8888──┐           │ stdin/stdout
-        │ (Docker)    │               │           ▼
-        └─────────────┘   ┌───────────┴──┐   claude -p (persistent subprocess,
-  Yahoo! JAPAN RSS ◄─GET──┤ search MCP   │◄──stream-json in/out, MCP tools)
-  (news_feeds.txt)        │ (1 tool)     │        │
-                          └──────────────┘        └──► Bunpro MCP (3 read tools,
-                                                       reads the SRS snapshot)
+Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
+┌──────────────────────────────────┐  WS   ┌──────────────────────────────┐
+│ left: TalkingHead avatar         │  /ws  │ FastAPI + asyncio  (app.py)  │
+│   visemes, emotion at audio start│ :8000 │  ├─ Hub: fan-out, turn epochs│
+│ right: chat thread (planned)     │◄─────►│  ├─ VoiceLoop (PTT | VAD)    │
+│   red grammar · word cards ·     │       │  ├─ VAD (silero)             │
+│   translate · hint               │       │  ├─ STT (faster-whisper)     │
+│ status bar · settings · SPACE    │       │  ├─ Brain → claude -p        │
+└──────────────────────────────────┘       │  ├─ SentenceChunker (+ tags) │
+  src/protocol.gen.ts is generated         │  ├─ Annotator (planned):     │
+  from backend/models.py (gate M3a)        │  │   dictionary, on-click    │
+                                           │  │   explain via claude -p   │
+        ┌─────────────┐                    │  ├─ TTS client → VOICEVOX    │
+        │ VOICEVOX    │◄──HTTP─────────────┤  ├─ SRS fetcher (WK/Bunpro)  │
+        │ (Docker)    │  :50021            │  ├─ Memory + rotation        │
+        └─────────────┘                    │  └─ Status registry          │
+        ┌─────────────┐                    └───────────┬──────────────────┘
+        │ SearxNG     │◄──HTTP :8888──┐                │ stdin/stdout
+        │ (Docker)    │               │                ▼
+        └─────────────┘   ┌───────────┴──┐        claude -p (persistent subprocess,
+  Yahoo! JAPAN RSS ◄─GET──┤ search MCP   │◄───────stream-json in/out, MCP tools)
+  (news_feeds.txt)        │ (1 tool)     │             │
+                          └──────────────┘             └──► Bunpro MCP (3 read tools,
+                                                            reads the SRS snapshot)
 
-  run.cmd / up.py  : docker up → wait ready → orchestrator → open page
+  run.cmd / up.py  : docker up → wait ready → build the page if stale → orchestrator → open page
   stop.cmd / down.py, or the page's stop button (control quit): clean shutdown
 ```
 
-**Today** the page only renders, plays and sends controls (hold SPACE to talk, the stop
-button). Your **microphone is captured by the orchestrator** (sounddevice), not the browser;
-step 1 below, browser mic streaming, arrives with M3. News comes from SearxNG plus Yahoo! JAPAN
-headline feeds, interleaved so no single source fills the answer.
+**Today** the page (`frontend/`, Vite + TypeScript) shows the tutor with lip-sync and her face
+changing as each sentence starts, subtitles, the status bar and the settings panel; you hold
+SPACE to talk and press it again to interrupt her. Your **microphone is captured by the
+orchestrator** (sounddevice, with unplug recovery), not the browser, so step 1 below is not how it
+works yet. **Planned** (ADR-036): the tutor moves to the left and the conversation appears on the
+right as a chat thread, with grammar points in red that you can click for the rule (English or
+Japanese), word cards with readings and meanings, a translate icon on each of her sentences, and a
+hint showing which form or word she is waiting for you to use. News comes from SearxNG plus Yahoo!
+JAPAN headline feeds, interleaved so no single source fills the answer.
 
 | Service         | Port     | Bound to      |
 |-----------------|----------|---------------|
