@@ -18,7 +18,7 @@ other documents to open, when, and what each one is authoritative for.
 **Project in one line:** a local-first, real-time voice Japanese tutor with a 3D avatar, whose
 brain is the `claude` CLI running headless as a persistent subprocess.
 
-**Current state: M0 done, M1 done, M2 declared done by the user (2026-09-10, ADR-034). Next: M4, then M3 (user directive).** The read-only gate, config/settings store, status registry,
+**Current state: M0 done, M1 done, M2 declared done by the user (2026-09-10, ADR-034). M4 then M3 by user directive: M4's code is complete (its gates are live checks, not met); M3's frontend is built (2026-09-11, `frontend/`) — gate M3a met, M3b–M3f are live checks, not met.** The page's message types are generated: after changing `backend/models.py`, run `python -m backend.tools.gen_protocol`. The read-only gate, config/settings store, status registry,
 GET-only SRS client, WaniKani + Bunpro fetchers, profile renderer, Bunpro MCP server, sentence
 chunker, prompt assembly, the `Brain` interface with its Claude CLI provider, and the text REPL
 all exist with tests (`make test`). Verified live: Sensei answers in character, uses the MCP
@@ -46,9 +46,8 @@ turn log, brief, recent topics, editable student notes, summarised at the next l
 (ADR-032) is built and on by default at 0.7 of the reported window, adaptive to the provider's own
 compactions; its gate (M4c, live) is not met. Neither closes an M3 or M4 gate.
 
-V0 spikes still open: **V0.4** (TalkingHead — `speakAudio` signature, ms vs s for
-`vtimes`/`vdurations`, the real mood names; blocks M3, and a wrong timing unit is silent drift)
-**V0.12** was closed on 2026-09-11 without a one-off measurement: the compaction point is provider
+No V0 spike is open. **V0.4** (TalkingHead: `speakAudio`, times in ms, the real mood names) was
+done 2026-09-10 and pinned in `constants.py`; the table said Open until 2026-09-11. **V0.12** was closed on 2026-09-11 without a one-off measurement: the compaction point is provider
 policy, so it is watched for at runtime (ADR-032 amendment).
 Everything else in the V0 table is Done — check the table in `ROADMAP.md`, not this line.
 

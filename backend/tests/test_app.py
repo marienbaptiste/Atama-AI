@@ -78,6 +78,30 @@ class FakeSpeech:
             return {"visemes": [], "vtimes": [], "vdurations": []}
 
 
+def test_every_sentence_carries_its_turn_and_a_bargein_closes_it():
+    """Spec §8 barge-in: the page drops audio of an interrupted turn however late it arrives, and
+    never mistakes the next turn's for it. Before 2026-09-11 every sentence said turn 0 and the
+    server never sent `bargein` at all."""
+    hub, sent = app.Hub(), []
+
+    async def capture(message, to=None):
+        sent.append(message)
+
+    hub.send = capture
+
+    async def go():
+        await hub.state("thinking")          # a turn starts
+        await hub.speak(FakeSpeech())
+        await hub.bargein()                  # the student talks over her
+        await hub.speak(FakeSpeech())        # anything after the barge-in is a newer epoch
+        await hub.state("thinking")          # the next turn
+        await hub.speak(FakeSpeech())
+
+    asyncio.run(go())
+    assert [(m["type"], m["turn"]) for m in sent] == [
+        ("state", 1), ("speak", 1), ("bargein", 1), ("speak", 2), ("state", 3), ("speak", 3)]
+
+
 class Page:
     def __init__(self):
         self.got = []

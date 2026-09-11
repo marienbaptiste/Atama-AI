@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sensei — atama-AI</title>
+<!-- TalkingHead (loaded by URL in src/avatar.ts) imports "three" by bare name; this resolves it.
+     Same versions the prototype ran. Must come before any module script. -->
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<div id="moodbg" aria-hidden="true"></div>
+<div id="stage"></div>
+
+<div id="start" role="button" tabindex="0">
+  <div><b>Click or press any key to start</b>
+  Browsers only let a page play sound once you have touched it.<br>She waits for you.</div>
+</div>
+
+<!-- the status bar: one glass pill, a flat single-colour icon per gauge (spec §5b) -->
+<div id="meters" aria-label="Status">
+  <span class="chip" id="m-time" title="This lesson so far">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8453c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M10 2h4"/></svg>
+    <b>0:00</b></span>
+  <span class="chip" id="m-ctx" title="Her memory of this conversation — appears after her first answer">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3 13l9 5 9-5"/></svg>
+    <b>–</b><i class="bar"><u></u></i></span>
+  <span class="chip" id="m-use" title="The five-hour usage window — appears after her first answer">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16a8 8 0 1 1 16 0"/><path d="M12 16l4-5"/></svg>
+    <b>–</b><em class="dot"></em></span>
+  <span class="chip" id="m-mic" title="Microphone">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#14b8c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>
+    <i class="bar"><u></u></i><em class="dot"></em></span>
+  <span class="chip" id="m-svc" title="Services — click for details" role="button" tabindex="0">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#22a355" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>
+    <span class="dots"></span></span>
+  <span class="chip" id="m-gpu" title="GPU memory — sampled every 30 s">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>
+    <b>–</b><i class="bar"><u></u></i></span>
+</div>
+<div id="svc-pop" hidden aria-label="Service status"></div>
+
+<button id="cog" title="Settings" aria-label="Settings">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#6b7380" stroke-width="2" stroke-linecap="round">
+    <circle cx="12" cy="12" r="6.2"/><circle cx="12" cy="12" r="2.3"/>
+    <path stroke-width="3" d="M12 5.4V2.6M16.67 7.33l1.98-1.98M18.6 12h2.8M16.67 16.67l1.98 1.98M12 18.6v2.8M7.33 16.67l-1.98 1.98M5.4 12H2.6M7.33 7.33 5.35 5.35"/>
+  </svg>
+</button>
+
+<!-- her sentence as it plays, or yours once it was heard (spec §8: JP / off) -->
+<div id="subs" hidden lang="ja"></div>
+
+<!-- the dock: who teaches, the talk key, a new topic, stop -->
+<div id="dock">
+  <select id="who" title="Your tutor" aria-label="Your tutor"></select>
+  <button id="talk" disabled>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>
+    <span>Hold SPACE to talk</span></button>
+  <button id="topic" class="round" disabled title="Ask her to drop this subject and find a new one" aria-label="New topic">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>
+  </button>
+  <button id="quit" class="round" disabled title="Stop the tutor and the server. The page cannot restart them." aria-label="Stop">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8453c" stroke-width="2.4" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>
+  </button>
+</div>
+<div id="live" data-tone="">not connected</div>
+<div id="hint" hidden></div>
+
+<!-- activity: the log, her view of you, and the rig tools, all collapsible -->
+<details id="activity">
+  <summary>Activity</summary>
+  <div id="log"></div>
+  <details><summary>Study profile</summary><pre id="profile">Not sent yet.</pre></details>
+  <details id="rig"><summary>Rig</summary>
+    <h4>say it</h4><div class="row" id="rig-say"></div>
+    <h4>mood</h4><div class="row" id="rig-moods"></div>
+    <h4>gesture</h4><div class="row" id="rig-gestures"></div>
+    <label><input type="checkbox" id="rig-hands" checked> vary hands (80% right)</label>
+    <label>hold <input type="range" id="rig-hold" min="1" max="8" step="1" value="3"><span id="rig-hold-v">3s</span></label>
+    <h4>posture</h4><div class="row" id="rig-poses"></div>
+    <h4>reaction</h4><div class="row" id="rig-reactions"></div>
+    <h4>framing</h4>
+    <label>zoom <input type="range" id="rig-zoom" min="-3" max="4" step="0.1"><span id="rig-zoom-v"></span></label>
+    <label>height <input type="range" id="rig-high" min="-0.6" max="1.2" step="0.02"><span id="rig-high-v"></span></label>
+    <label>offset <input type="range" id="rig-offx" min="-1" max="1" step="0.02"><span id="rig-offx-v"></span></label>
+    <div class="row">
+      <button type="button" id="rig-freeze">freeze all motion</button>
+      <button type="button" id="rig-reset">reset</button>
+      <button type="button" id="rig-recentre">recentre camera</button>
+    </div>
+  </details>
+</details>
+
+<div id="scrim" aria-hidden="true"></div>
+<section id="settings" role="dialog" aria-label="Settings" aria-hidden="true">
+  <nav id="snav"></nav>
+  <div id="smain">
+    <header>
+      <h1 id="stitle">Settings</h1>
+      <button id="sclose" aria-label="Close settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#6b7380" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </header>
+    <div id="sbody"></div>
+    <footer><span id="sstate"></span><button id="ssave" disabled>Save</button></footer>
+  </div>
+</section>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

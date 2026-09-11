@@ -222,7 +222,8 @@ rolling p50/p90 go into the session log.
 ### Prerequisites
 
 - Python 3.11+
-- Node 18+ (for the Vite frontend)
+- Node 20+ (builds the avatar page; `make run` does it for you — without Node you get the older
+  prototype page)
 - Docker (VOICEVOX only)
 - An NVIDIA GPU with CUDA available to CTranslate2
 - The `claude` CLI, logged in — see [Claude login](#claude-login)
@@ -254,12 +255,29 @@ make stop                     # stop everything (containers included)
 ```
 
 `make run` brings up the containers, waits until VOICEVOX genuinely answers rather than assuming
-it, starts the tutor with the browser avatar, and opens the page. **Hold SPACE and talk.**
+it, builds the avatar page if its source is newer than the last build (the first time it also runs
+`npm ci` in `frontend/`), starts the tutor with the browser avatar, and opens the page. **Hold
+SPACE and talk** — press it while she is talking to interrupt her.
 Ctrl+C stops the tutor and leaves the containers running — they are slow to start and cheap to
 keep, so `make stop` is separate and deliberate.
 
 Neither works? Both are plain modules: `python -m backend.tools.up` and
 `python -m backend.tools.down`.
+
+**The page** (`frontend/`, Vite + TypeScript, no framework — ADR-009). Working on it:
+
+```bash
+cd frontend
+npm ci                  # once
+npm run dev             # hot reload on http://127.0.0.1:5173, socket forwarded to a running tutor
+npm test                # headless unit tests (Vitest)
+npm run build           # type-check, then build into frontend/dist (served at /)
+```
+
+Its message types are **generated** from `backend/models.py`: after changing a message there, run
+`python -m backend.tools.gen_protocol`. The Python tests fail until you do, and `npm run build`
+fails while any server message has no handler on the page. The old single-file prototype is still
+at `/preview.html` until the new page has been through a live lesson.
 
 Then open `http://localhost:5173`. On first run the app opens on its **settings page**: paste
 your tokens, press each **Test** button, and the conversation view unlocks once Claude tests
@@ -354,7 +372,7 @@ bar shows it and the configured fallback model carries the conversation.
 Configuration lives in the app's **settings page** and is stored in `settings.json` (repo
 root, git-ignored, mode `0600`). There is no `.env` to edit.
 
-**Built today:** the cog at the top right of the avatar page (or `preview.html#settings`) opens
+**Built today:** the cog at the top right of the avatar page (or `/#settings`, `/#settings/sound`) opens
 a frosted panel generated from `config.py`: every key, grouped, typed, with its description.
 Tabs: Account, Brain, Voice, Sound, Display, Advanced. Save writes `settings.json`. The
 **microphone and output pickers list what is plugged in right now** (the list refreshes as you
@@ -596,9 +614,10 @@ atama-ai/
 │  ├─ models.py (pydantic WS protocol)
 │  ├─ data/             # hallucination_blocklist.txt, fillers.txt
 │  └─ tests/            # fixtures/ (sanitised, committed)  fixtures/private/ (ignored)
-├─ frontend/            # vite, vanilla TS
-│  ├─ index.html  src/{main.ts, avatar.ts, ws.ts, mic.ts, ui.ts, status.ts, settings.ts}
-│  └─ public/avatar.glb (git-ignored; see The avatar)
+├─ frontend/            # vite, vanilla TS (ADR-009)
+│  ├─ index.html  src/{main, ws, protocol.gen, avatar, speech, rig, rigpanel, mic, status, settings, ui}.ts
+│  ├─ scripts/srs-grep.mjs  # prebuild half of the §0 gate
+│  └─ public/avatar.glb (git-ignored; see The avatar)  cast.json, <persona>.speak.json (generated)
 ├─ prompts/tutor.md
 ├─ .cache/              # git-ignored, created at startup: mcp.json, rendered prompt,
 │                       #   claude-cwd/, srs cache, fillers/

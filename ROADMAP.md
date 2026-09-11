@@ -40,7 +40,7 @@ Throwaway scripts, deleted or moved into `backend/tests/fixtures/` when done. Ea
 | **V0.1** | `claude --help`: exact flag spellings for headless stream-json; is there a way to remove *all* built-in tools; how to isolate from user config. | `backend/constants.py` — the exact argv that works, dated. | **Done 2026-09-09** — see findings log below. |
 | **V0.2** | Run one real `claude -p` stream-json session. Capture every event type on stdout for a 3-turn conversation **with the Bunpro MCP server configured**, so the per-entry shape of `init.mcp_servers[]` and the `tool_use`/`tool_result` blocks are pinned. | `backend/tests/fixtures/claude_stream_*.jsonl` — replay fixtures for parser and status tests. | **Done 2026-09-09** (single-turn with a real MCP tool call; raw stream in `.cache/claude_probe.jsonl`, to be sanitised into a fixture at M1(e)). Shapes in the findings log. |
 | **V0.3** | Hit VOICEVOX `/docs` locally. Confirm `audio_query` response shape, the `pitchScale`/`intonationScale` request fields, and the `GET /speakers` shape used by the emotion table. | 4 real `audio_query` fixtures, a `/speakers` fixture, a pinned schema note. | **Done 2026-09-09** — VOICEVOX 0.25.2, fixtures in `backend/tests/fixtures/voicevox/`. See findings log. |
-| **V0.4** | TalkingHead README: `speakAudio` signature; whether `vtimes`/`vdurations` are **ms or s**; the real mood name set; whether gestures exist and their names; the facility for overriding ARKit blendshapes directly (needed for `surprised`/`serious`/`thinking`). | Pinned constants + comment. A wrong timing unit is silent drift; a wrong mood name is a silent no-op. | Open |
+| **V0.4** | TalkingHead README: `speakAudio` signature; whether `vtimes`/`vdurations` are **ms or s**; the real mood name set; whether gestures exist and their names; the facility for overriding ARKit blendshapes directly (needed for `surprised`/`serious`/`thinking`). | Pinned constants + comment. A wrong timing unit is silent drift; a wrong mood name is a silent no-op. | **Done 2026-09-10** — against the README and `modules/talkinghead.mjs` 1.4: `speakAudio(audio, opt, onsubtitles)`, **all times in ms**, bare Oculus viseme ids, the closed mood set (no thinking/surprised/serious — those drive `neutral` + `setFixedValue` blendshape overrides), the gesture names, eye-contact defaults 0.2/0.5. Pinned in `constants.py` (TALKINGHEAD_*). Status corrected here 2026-09-11. |
 | **V0.5** | WaniKani `/v2/user` and `/v2/assignments`: real response shape, pagination, rate-limit headers. | Sanitised fixtures (no personal data beyond what the golden tests need). | **Done 2026-09-09** — 6 endpoints captured live, fixtures in `backend/tests/fixtures/wanikani/`. See findings log. |
 | **V0.6** | Baseline VRAM: load faster-whisper `large-v3` @ `int8_float16` alone, read `nvidia-smi`. | A number. If > ~4.5 GB, ADR-004's fallback triggers now, not at M5. | **Done 2026-09-09 — 2 169 MiB.** Comfortably under the 3.5 GB estimate and the 4.5 GB fallback threshold: `large-v3` stays, `medium` is not needed. |
 | **V0.7** | **Does a trustworthy Bunpro MCP server exist?** Survey community stdio MCP servers for Bunpro; check they work against the current site/API, what credential they take, whether the code is small enough to read end-to-end (it receives your credentials), and — **disqualifying** — whether it exposes any write tool that cannot be removed from the surface (ADR-021). If none passes, the decision is to write `backend/srs/bunpro_mcp.py` (spec §5) with read tools only. | A decision recorded in ADR (new entry), plus either a pinned version or a stub module. | **Done 2026-09-09** — decision: **write our own** (ADR-023). See findings log. |
@@ -742,6 +742,16 @@ events.
 - **Integrate** — The seam between backend and frontend; frozen at M2 so M3 is pure frontend.
 - **Gate M3a** — Protocol frozen and mirrored; drift fails CI.
 
+**Status 2026-09-11 — Gate M3a met.** `frontend/src/protocol.gen.ts` is *generated* from
+`backend/models.py` (`python -m backend.tools.gen_protocol`) — every type, field and literal, not
+just the names — and `test_models.py` fails while the committed copy is stale. The same file
+round-trips every message, checks that an unknown client type is answered with an `error` while
+the socket lives, that `stt_partial` is never emitted, and that every emotion the voice knows the
+face knows. On the page, `ws.ts` `Handlers` requires one handler per server type, so `tsc` (run by
+`npm run build`) fails on a missing one. One field was added at M3: `state.turn`, the barge-in
+epoch (subsystem 8). **Not yet validated live:** kill the server mid-session and watch the page
+reconnect (the watchdog and the retry are ported unchanged from the prototype, where they worked).
+
 ### 8. Barge-in — spans `vad.py`, the WS layer, and `frontend/src/mic.ts` — **M3**
 
 **Contract:** genuine user speech while `speaking` → audio stops, server flushes the TTS queue,
@@ -760,6 +770,18 @@ avatar's own voice through the speakers must **not** trigger it (ADR-018).
 - **Gate M3b** — Headphones: speech stops in **< 300 ms**, 10/10, no stale audio after.
   Speakers: **zero** self-interruptions in 10 turns.
 
+**Status 2026-09-11 — built, not measured.** Found while building it: the server never sent
+`bargein` and every `speak` said `turn: 0`, so the page played on to the end of the sentence it
+had. Now the orchestrator keeps a turn epoch (`Hub.epoch`: up when a turn starts and when she is
+interrupted), every `state` and `speak` carries it, and `bargein` closes it; the page drops any
+sentence of a closed epoch however late it arrives, including one still decoding
+(`speech.test.ts`, `test_app.py`). Push-to-talk: the page stops her on the key event itself
+(`mic.ts`), before the server hears of it, and logs key-to-silence for every barge-in with the
+session's worst — that log line is the M3b measurement. Hands-free: the server VAD decides (its
+thresholds, subsystem 3) and the page stops on `bargein`. The `getUserMedia` constraints test does
+not apply while the orchestrator captures the microphone (spec §2 "where the build stands"). Both
+live runs — 10 interruptions on headphones, 10 turns on speakers — are **not yet run**.
+
 ### 9. Avatar & frontend — `frontend/src/{avatar,ui,main,status}.ts` — **M3**
 
 **Contract:** `speak` message → lip-synced playback with the sentence's emotion applied at
@@ -776,6 +798,22 @@ playback start; `state` → mic indicator and listening reactions; `service_stat
 - **Integrate** — `speakAudio` **only** — never `speakText` (ADR-007).
 - **Gate M3c** — The M3 acceptance conversation: 10 turns, tight lip-sync, barge-in passing,
   status bar truthful.
+
+**Status 2026-09-11 — the frontend is built.** `frontend/` (Vite 8, TypeScript 7, Vitest 5, no
+framework): `index.html` + `src/{main, ws, protocol.gen, avatar, speech, rig, rigpanel, mic, status,
+settings, ui}.ts`. Ported from the prototype: the start screen, the settings panel and its tabs, the
+status bar with the service card, the mood kaomoji, the new-topic and stop buttons, the live tutor
+switch, the device meter, the reconnect watchdog, the "tidying her notes" line, and the rig panel
+(collapsed in the Activity card). New: subtitles (JP / off — her sentence as its audio starts, yours
+once heard), **listening reactions** (attentive once you are really talking, a nod at each pause
+≥ 300 ms, at most one per 1.5 s, some with a silent closed-mouth "mm"), the session timer, and the
+headphones hint (hands-free only, until the first barge-in). **The emotion is now applied by the
+audio-start callback** — TalkingHead's subtitle hook, which fires when a sentence leaves its queue
+(talkinghead.mjs 1.4, read 2026-09-11) — where the prototype applied it on receipt, a whole
+sentence ahead of the voice. `/` serves `frontend/dist`; `/preview.html` stays until this page is
+validated live; `make run` rebuilds when the source is newer than the build. Headless tests: 33 in
+Vitest (the rig table, the reactions, the speech queue with a delayed start and barge-in, the
+dispatcher, the chip colours, push-to-talk). **Gate M3c (the live 10-turn acceptance) is not met.**
 
 ### 10. Latency instrumentation — cross-cutting — **M2 onward, enforced at M3**
 
@@ -923,6 +961,12 @@ covers, at the moment those sentences start playing (ADR-020).
   it never does, the prompt wording is wrong, not the pipeline).
 - **Gate M3f** — The scripted turn passes by eye and ear; tags appear in ≥ 30 % of turns in a
   normal conversation.
+
+**Status 2026-09-11 — the face half is built; the rate has a meter.** Every tag the voice table
+knows has a rig (`test_models.py` checks both tables agree), and the face changes with the audio,
+not before it (subsystem 9). The rig panel's *say it* row plays each emotion's sample sentence for
+the scripted check. `python -m backend.tools.emotion_rate` reads the turn logs and prints the
+share of turns carrying a tag against the 30 % gate. **Not yet run** on a normal conversation.
 
 ### 18. Memory and context — `backend/memory.py` + `backend/session.py` — **M4**
 

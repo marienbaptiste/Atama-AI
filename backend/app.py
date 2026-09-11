@@ -19,7 +19,7 @@ from typing import Any, Callable
 
 import uvicorn
 from starlette.applications import Starlette
-from starlette.responses import RedirectResponse
+from starlette.responses import FileResponse, RedirectResponse
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -28,7 +28,11 @@ from backend import config, models, settings_view
 from backend.speaker import Speech
 
 STATIC_DIR = config.REPO_ROOT / "frontend" / "public"
-#: The page reconnects when it has heard nothing for 3 heartbeats (WATCHDOG_MS in preview.html).
+#: The built page (`npm --prefix frontend run build`, ADR-009). Only its index and /assets come
+#: from here; the avatar, the cast and the preview audio stay in public/ and are served from there,
+#: so regenerating them never needs a rebuild. Without a build, / falls back to the prototype.
+DIST_DIR = config.REPO_ROOT / "frontend" / "dist"
+#: The page reconnects when it has heard nothing for 3 heartbeats (WATCHDOG_MS in src/ws.ts).
 #: Levels and audio usually arrive far more often; this covers a quiet link, e.g. no microphone.
 HEARTBEAT_S = 4.0
 #: How long her voice waits for a connected page to be started (clicked) before it is dropped.
@@ -58,6 +62,11 @@ class Hub:
         self.on_settings: Callable[[list[str]], None] | None = None
         #: The status bar's latest gauges, merged, replayed to a page that connects later.
         self.last_meters: dict[str, Any] = {}
+        #: The turn epoch (spec §8 barge-in). Up by one when a turn starts and when she is
+        #: interrupted; every `state` and `speak` carries it, and `bargein` closes it. The page
+        #: then drops a sentence of an interrupted turn however late it arrives — without this
+        #: every sentence said turn 0 and nothing could tell stale audio from fresh.
+        self.epoch = 0
 
     async def join(self, ws: WebSocket) -> None:
         await ws.accept()
@@ -93,7 +102,7 @@ class Hub:
                     await ws.close(code=1011)
 
     async def heartbeat(self) -> None:
-        """Proof of life for the page's watchdog (preview.html). Not kept in `last_status`."""
+        """Proof of life for the page's watchdog (src/ws.ts). Not kept in `last_status`."""
         beat = models.ServiceStatus(service="orchestrator", state="ok", detail="heartbeat").model_dump()
         while True:
             await asyncio.sleep(HEARTBEAT_S)
@@ -101,18 +110,24 @@ class Hub:
 
     # ---------------------------------------------------------------- messages
     async def state(self, name: str) -> None:
-        await self.send(models.State(state=name).model_dump())
+        if name == "thinking":
+            self.epoch += 1          # a new turn: its sentences outrank anything stopped before
+        await self.send(models.State(state=name, turn=self.epoch).model_dump())
 
     async def transcript(self, text: str, accepted: bool = True, reason: str = "") -> None:
         await self.send(models.SttFinal(text=text, accepted=accepted, reason=reason).model_dump())
 
-    async def speak(self, speech: Speech, turn: int = 0) -> float:
+    async def speak(self, speech: Speech, turn: int | None = None) -> float:
         """Send one sentence for the browser to play. Returns its duration in seconds.
 
         The viseme timeline has already been fitted to the real WAV (`tts_voicevox.say`), and the
         times are milliseconds — which is what TalkingHead's `speakAudio` wants, verified in V0.4.
         Nothing is converted here; that is the point of having fitted it upstream.
+
+        `turn` defaults to the epoch at the moment the sentence was handed over, not when it is
+        finally sent: a sentence held for an unstarted page still belongs to the turn it came from.
         """
+        turn = self.epoch if turn is None else turn
         # A page cannot play sound until the student has clicked or pressed a key on it (browser
         # autoplay policy). Audio sent before that was lost — her whole opening greeting went
         # unheard (2026-09-10). So while a page is connected but not yet started, wait for it;
@@ -178,7 +193,11 @@ class Hub:
         echo = await asyncio.to_thread(settings_view.snapshot)
         await self.send(models.Settings(**echo).model_dump())
 
-    async def bargein(self, turn: int = 0) -> None:
+    async def bargein(self) -> None:
+        """She was interrupted (spec §8): every page stops now and drops what is left of this
+        turn. Closes the epoch, so whatever she says next is never mistaken for it. Without this
+        the page played on to the end of the sentence it had (found 2026-09-11)."""
+        turn, self.epoch = self.epoch, self.epoch + 1
         await self.send(models.BargeIn(turn=turn).model_dump())
 
     async def status(self, service: str, state: str, detail: str = "", last_error: str = "",
@@ -234,14 +253,24 @@ def build(hub: Hub) -> Starlette:
         finally:
             hub.leave(ws)
 
-    async def index(_request) -> RedirectResponse:
+    async def index(_request):
+        page = DIST_DIR / "index.html"
+        if page.exists():
+            # no-cache: a rebuilt page must never be shadowed by yesterday's copy in the browser.
+            return FileResponse(page, headers={"Cache-Control": "no-cache"})
         return RedirectResponse("/preview.html")
 
     return Starlette(routes=[
         Route("/", index),
         WebSocketRoute("/ws", socket),
+        Mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets"), check_dir=False)),
         Mount("/", StaticFiles(directory=str(STATIC_DIR), html=True)),
     ])
+
+
+def page_url(host: str, port: int) -> str:
+    """The page to open: the built one when it exists, else the prototype."""
+    return f"http://{host}:{port}/" + ("" if (DIST_DIR / "index.html").exists() else "preview.html")
 
 
 async def serve(hub: Hub, cfg, registry=None) -> tuple[asyncio.Task, str]:
@@ -268,7 +297,7 @@ async def serve(hub: Hub, cfg, registry=None) -> tuple[asyncio.Task, str]:
         if getattr(server, "started", False):
             break
         await asyncio.sleep(0.05)
-    return task, f"http://{host}:{port}/preview.html"
+    return task, page_url(host, port)
 
 
 async def shutdown(task: asyncio.Task) -> None:

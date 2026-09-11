@@ -33,6 +33,15 @@ CHOICES: dict[str, tuple[str, ...]] = {
     "BRAIN_PROVIDER": ("claude-cli",),
 }
 
+#: Plain names for the sign-in fields. They come from here because the page's own source may not
+#: name the SRS token keys at all — spec §0's build-time grep fails on them in frontend/src — so
+#: the page lists secrets from the schema and shows these labels.
+LABELS: dict[str, str] = {
+    "WANIKANI_TOKEN": "WaniKani",
+    "BUNPRO_API_TOKEN": "Bunpro",
+    "CLAUDE_CODE_OAUTH_TOKEN": "Claude sign-in token",
+}
+
 #: Keys the running session applies the moment they are saved (the rest: next launch).
 LIVE = frozenset({"AUDIO_INPUT_DEVICE", "AUDIO_OUTPUT_DEVICE", "TUTOR_PERSONA"})
 
@@ -55,7 +64,7 @@ def schema() -> list[dict[str, Any]]:
             "key": s.key, "group": s.group, "type": s.type.__name__, "default": default,
             "description": s.description, "secret": s.secret,
             "choices": list(CHOICES.get(s.key, ())), "locked": LOCKED.get(s.key, ""),
-            "options": None, "live": s.key in LIVE,
+            "options": None, "live": s.key in LIVE, "label": LABELS.get(s.key, ""),
         })
     return out
 

@@ -57,6 +57,35 @@ def wait_for_voicevox(url: str, seconds: float = 90.0) -> bool:
     return False
 
 
+FRONTEND = config.REPO_ROOT / "frontend"
+
+
+def ensure_frontend() -> None:
+    """Build the page when it is missing or older than its source (ADR-009).
+
+    Without Node.js the prototype page still works, so this warns rather than fails — the tutor
+    matters more than the page it appears on."""
+    built = FRONTEND / "dist" / "index.html"
+    sources = [FRONTEND / "index.html", FRONTEND / "package.json", *(FRONTEND / "src").rglob("*")]
+    newest = max((p.stat().st_mtime for p in sources if p.is_file()), default=0.0)
+    if built.exists() and built.stat().st_mtime >= newest:
+        return
+    npm = shutil.which("npm")
+    if not npm:
+        print("npm is not on PATH - opening the prototype page. Install Node.js for the full page.",
+              file=sys.stderr)
+        return
+    if not (FRONTEND / "node_modules").exists():
+        print("installing the page's build tools (once) …", flush=True)
+        if subprocess.call([npm, "ci"], cwd=str(FRONTEND)) != 0:
+            print("npm ci failed - opening the prototype page", file=sys.stderr)
+            return
+    print("building the page …", flush=True)
+    if subprocess.call([npm, "run", "build"], cwd=str(FRONTEND)) != 0:
+        print("the page did not build (see above) - opening the last build or the prototype",
+              file=sys.stderr)
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="make run", description="start everything")
     ap.add_argument("--no-docker", action="store_true", help="assume the containers are already up")
@@ -73,6 +102,9 @@ def main(argv: list[str]) -> int:
         print(f"VOICEVOX never answered at {cfg.VOICEVOX_URL}. `docker compose logs voicevox`",
               file=sys.stderr)
         return 1
+
+    if not args.text:
+        ensure_frontend()
 
     from backend import repl
     argv_repl = ["repl", *rest] if args.text else [

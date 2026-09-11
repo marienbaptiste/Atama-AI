@@ -1,11 +1,14 @@
 """The WebSocket protocol, defined once (spec §8).
 
 This module is the single source of truth for what may travel between the orchestrator and the
-browser. `frontend/src/ws.ts` mirrors the type *names*, and `test_models.py` asserts the two sets
-are identical — a rename that breaks the browser fails CI here rather than appearing as a silent
-no-op in the UI three days later.
+browser. `frontend/src/protocol.gen.ts` is GENERATED from it (`python -m backend.tools.gen_protocol`)
+— every type, field and literal — and `test_models.py` fails while the committed copy is stale, so
+a rename that breaks the browser fails CI here rather than appearing as a silent no-op in the UI
+three days later. On the page, `ws.ts` types its dispatcher so `tsc` fails while any server type
+has no handler (gate M3a).
 
 Frozen at M2 on purpose (ROADMAP subsystem 7): M3 is then pure frontend against a fixed contract.
+One addition at M3 (2026-09-11): `state.turn`, the barge-in epoch (see `Speak.turn`).
 
 Two conventions worth knowing before adding a message:
 
@@ -79,6 +82,9 @@ class SettingsTest(_Msg):
 class State(_Msg):
     type: Literal["state"] = "state"
     state: Literal["listening", "thinking", "speaking"]
+    #: The turn epoch this state belongs to (see `Speak.turn`): a page that interrupts her while
+    #: she is still thinking knows which sentences, not yet arrived, to drop.
+    turn: int = 0
 
 
 class SttPartial(_Msg):
@@ -127,7 +133,9 @@ class Speak(_Msg):
     vdurations: list[float]
     text: str
     emotion: str = ""
-    #: Lets the client drop audio belonging to a turn it has already barged in on.
+    #: The turn epoch (backend/app.py `Hub.epoch`): it goes up when a turn starts and when she is
+    #: interrupted, so the page drops audio of a turn it has already barged in on however late
+    #: that audio arrives, and never mistakes the next turn's for it.
     turn: int = 0
 
 
@@ -139,7 +147,8 @@ class Emotion(_Msg):
 
 
 class BargeIn(_Msg):
-    """The server has accepted an interruption: stop playback and drop queued audio."""
+    """The server has accepted an interruption: stop playback and drop queued audio of `turn` and
+    every epoch before it."""
 
     type: Literal["bargein"] = "bargein"
     turn: int = 0

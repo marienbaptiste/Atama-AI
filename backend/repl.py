@@ -491,6 +491,16 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
         rotator.observe(loop.brain)
         rotator.prepare()
 
+    aloop = asyncio.get_running_loop()
+
+    def interrupted() -> None:
+        # Barge-in (spec §8): say so here, and tell the page to stop NOW and drop the rest of the
+        # turn. Without it the page played on to the end of the sentence it had (M3b, 2026-09-11).
+        # Thread-safe: the terminal's push-to-talk key reports from its own thread.
+        print(f"\r{BOLD}— interrupted —{RESET}")
+        if hub is not None:
+            aloop.call_soon_threadsafe(lambda: aloop.create_task(hub.bargein()))
+
     loop = VoiceLoop(
         turn_mode=cfg.TURN_MODE,
         brain=brain, stt=stt, vad=vad, voice=voice, input_device=cfg.AUDIO_INPUT_DEVICE,
@@ -500,7 +510,7 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
             f"\r{BOLD}you:{RESET} {t.text}" if t
             else f"\r{DIM}(discarded: {t.reason} — {t.text[:40]}){RESET}"),
         on_chunk=lambda c, ms: print(f"  {DIM}{ms / 1000:5.2f}s{RESET} {_emotion_tag(c.emotion)}{c.text}"),
-        on_bargein=lambda: print(f"\r{BOLD}— interrupted —{RESET}"),
+        on_bargein=interrupted,
         on_turn=report_turn,
     )
     loop_ref["loop"] = loop

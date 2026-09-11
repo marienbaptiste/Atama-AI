@@ -81,11 +81,14 @@ Browser (frontend)                    Python Orchestrator (backend)
               one file per tutor; TUTOR_PERSONA selects it
 ```
 
-**Where the build stands against this diagram (2026-09-10).** The browser page is
-`frontend/public/preview.html`, served by `backend/app.py`; it renders and plays, and sends only
-`control` messages (PTT `start`/`stop`, `quit`). The **microphone is still captured by the
-orchestrator** (`backend/audio.py`, sounddevice) — browser mic streaming (data flow step 1)
-arrives with M3. Memory is spec §6b, search §5c, the launcher §15.
+**Where the build stands against this diagram (2026-09-11).** The browser page is the Vite +
+TypeScript app in `frontend/` (ADR-009), built into `frontend/dist` and served by `backend/app.py`
+(the prototype `frontend/public/preview.html` stays reachable until the new page is validated live).
+It renders and plays, and sends `control` and `settings` messages. The **microphone is still
+captured by the orchestrator** (`backend/audio.py`, sounddevice, with the device recovery of §9) —
+browser mic streaming (data flow step 1, `audio_chunk`) is not built, and whether it should replace
+the orchestrator's capture is an open question for the user. Memory is spec §6b, search §5c, the
+launcher §15.
 
 **A tutor is a persona and a voice together, from one file** (ADR-030). `prompts/<name>.md` holds
 the character *and* declares the VOICEVOX style it is written for; `TUTOR_PERSONA` picks the file
