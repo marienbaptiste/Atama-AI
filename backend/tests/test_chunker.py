@@ -36,6 +36,63 @@ def test_does_not_split_mid_sentence_across_delta_boundaries():
     assert texts(out) == ["よくできました。", "でもここは違います。"]
 
 
+# ------------------------------------------------------------------ study marks (ADR-036)
+def test_a_grammar_mark_is_never_spoken_and_lands_on_its_words():
+    out, c = run(["[happy]雨が{{降ったら|〜たら}}行きません。"])
+    [chunk] = out
+    assert chunk.text == "雨が降ったら行きません。" and chunk.emotion == "happy"
+    [g] = chunk.grammar
+    assert chunk.text[g.start:g.end] == "降ったら" and g.point == "〜たら"
+    assert c.stray_marks == []
+
+
+def test_marks_split_across_deltas_come_out_whole():
+    out, _ = run(["雨が{{降っ", "たら|〜た", "ら}}、{{行かない|〜ない}}", "です。"])
+    [chunk] = out
+    assert chunk.text == "雨が降ったら、行かないです。"
+    assert [(chunk.text[g.start:g.end], g.point) for g in chunk.grammar] == [("降ったら", "〜たら"), ("行かない", "〜ない")]
+
+
+def test_a_target_at_the_head_of_a_question_rides_on_that_sentence():
+    out, _ = run(["はい。[encouraging][target:〜たら]『たら』を使って答えてみてください。"])
+    assert texts(out) == ["はい。", "『たら』を使って答えてみてください。"]
+    assert out[0].target == "" and out[1].target == "〜たら" and out[1].emotion == "encouraging"
+
+
+def test_a_target_before_the_emotion_tag_works_too():
+    out, c = run(["[target:〜てもいい][encouraging]聞いてみてください。"])
+    assert out[0].text == "聞いてみてください。" and out[0].target == "〜てもいい"
+    assert out[0].emotion == "encouraging" and c.stray_tags == []
+
+
+def test_a_target_split_across_deltas_is_never_spoken():
+    out, _ = run(["[tar", "get:〜た", "ら]使ってみて。"])
+    assert texts(out) == ["使ってみて。"] and out[0].target == "〜たら"
+
+
+def test_a_target_anywhere_else_is_still_removed():
+    out, _ = run(["使ってみてください[target:〜たら]。"])
+    assert texts(out) == ["使ってみてください。"] and out[0].target == "〜たら"
+
+
+def test_a_broken_mark_never_reaches_the_voice():
+    for broken in ("雨が{{降ったら行きません。", "雨が降ったら|〜たら}}行きません。", "雨が降ったら}}行きません。"):
+        out, c = run([broken])
+        assert texts(out) == ["雨が降ったら行きません。"], broken
+        assert out[0].grammar == () and c.stray_marks, broken
+
+
+def test_a_mark_in_the_turn_log_names_its_words():
+    out, _ = run(["[encouraging][target:〜たら]雨が{{降ったら|〜たら}}？"])
+    assert out[0].as_log() == {"text": "雨が降ったら？", "emotion": "encouraging", "synth_ms": None,
+                               "grammar": [{"span": "降ったら", "point": "〜たら"}], "target": "〜たら"}
+
+
+def test_a_plain_sentence_logs_as_before():
+    out, _ = run(["はい。"])
+    assert out[0].as_log() == {"text": "はい。", "emotion": None, "synth_ms": None}
+
+
 def test_period_is_not_a_split_point():
     """`.` is ambiguous (decimals, abbreviations) and is not in the spec's split set."""
     out, _ = run(["It costs 3.50 dollars today"])

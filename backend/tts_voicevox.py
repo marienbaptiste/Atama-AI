@@ -37,6 +37,9 @@ class Speech:
     timeline: visemes_mod.VisemeTimeline
     style_id: int
     synth_ms: float = 0.0
+    #: Study marks from the chunker (ADR-036), carried to the page. VOICEVOX never sees them.
+    grammar: tuple = ()
+    target: str = ""
 
     @property
     def duration_ms(self) -> float:

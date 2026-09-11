@@ -371,8 +371,7 @@ class VoiceLoop:
             for chunk in chunks:
                 elapsed = (time.monotonic() - heard_at) * 1000.0
                 timing.chunks += 1
-                timing.sentences.append({"text": chunk.text, "emotion": chunk.emotion or None,
-                                         "synth_ms": None})
+                timing.sentences.append(chunk.as_log())
                 if timing.first_chunk_ms == 0.0:
                     timing.first_chunk_ms = elapsed
                 if self.on_chunk is not None:

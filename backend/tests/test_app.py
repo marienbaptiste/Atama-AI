@@ -102,6 +102,23 @@ def test_every_sentence_carries_its_turn_and_a_bargein_closes_it():
         ("state", 1), ("speak", 1), ("bargein", 1), ("speak", 2), ("state", 3), ("speak", 3)]
 
 
+def test_study_marks_ride_with_their_sentence():
+    """ADR-036: the grammar she used and the form she wants reach the page with the audio."""
+    from backend.chunker import GrammarMark
+    hub, sent = app.Hub(), []
+
+    async def capture(message, to=None):
+        sent.append(message)
+
+    hub.send = capture
+    speech = FakeSpeech()
+    speech.grammar, speech.target = (GrammarMark(0, 2, "〜たら"),), "〜たら"
+    asyncio.run(hub.speak(speech))
+    asyncio.run(hub.speak(FakeSpeech()))
+    assert sent[0]["grammar"] == [{"start": 0, "end": 2, "point": "〜たら"}] and sent[0]["target"] == "〜たら"
+    assert sent[1]["grammar"] == [] and sent[1]["target"] == ""
+
+
 def test_the_root_is_the_built_page_or_says_how_to_build_it(tmp_path, monkeypatch):
     """One page (the prototype was removed, 2026-09-11): / serves the build, or explains itself."""
     monkeypatch.setattr(app, "DIST_DIR", tmp_path)

@@ -88,7 +88,7 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
 ┌──────────────────────────────────┐  WS   ┌──────────────────────────────┐
 │ left: TalkingHead avatar         │  /ws  │ FastAPI + asyncio  (app.py)  │
 │   visemes, emotion at audio start│ :8000 │  ├─ Hub: fan-out, turn epochs│
-│ right: chat thread (planned)     │◄─────►│  ├─ VoiceLoop (PTT | VAD)    │
+│ right: chat thread               │◄─────►│  ├─ VoiceLoop (PTT | VAD)    │
 │   red grammar · word cards ·     │       │  ├─ VAD (silero)             │
 │   translate · hint               │       │  ├─ STT (faster-whisper)     │
 │ status bar · settings · SPACE    │       │  ├─ Brain → claude -p        │
@@ -117,10 +117,11 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
 changing as each sentence starts, subtitles, the status bar and the settings panel; you hold
 SPACE to talk and press it again to interrupt her. Your **microphone is captured by the
 orchestrator** (sounddevice, with unplug recovery), not the browser, so step 1 below is not how it
-works yet. **Planned** (ADR-036): the tutor moves to the left and the conversation appears on the
-right as a chat thread, with grammar points in red that you can click for the rule (English or
-Japanese), word cards with readings and meanings, a translate icon on each of her sentences, and a
-hint showing which form or word she is waiting for you to use. News comes from SearxNG plus Yahoo!
+works yet. **The conversation panel** (ADR-036, Settings → Display): the tutor sits on the left
+and the conversation runs on the right as a chat. Grammar points she uses show in **red**, and
+the **lightbulb** lights up when she wants you to use a particular form or word — click it to see
+which. **Coming next:** click a red point for the rule (English or Japanese), a translate icon on
+each of her sentences, and word cards with readings and meanings. News comes from SearxNG plus Yahoo!
 JAPAN headline feeds, interleaved so no single source fills the answer.
 
 | Service         | Port     | Bound to      |

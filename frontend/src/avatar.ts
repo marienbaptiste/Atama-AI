@@ -33,9 +33,13 @@ interface Head extends SpeakingHead {
 
 export interface Framing { zoom: number; high: number; offx: number }
 //: Framing is a judgement by eye, and it cost a round trip every time. Remembered per browser.
-const FRAMING_KEY = "atama.framing";
+//: A new key for the new page (2026-09-11): the prototype's saved framing put her head under the
+//: status bar, and a saved value would have hidden the new default.
+const FRAMING_KEY = "atama.framing.v2";
 //: offx 0: the old control panel no longer covers the left of the stage, so she is centred.
-export const DEFAULT_FRAMING: Framing = { zoom: -0.4, high: 0.38, offx: 0 };
+//: high 0.38 -> 0.12: lower in frame, so her head clears the status bar (user, 2026-09-11). At 0.3
+//: her head still touched it in a real-time screenshot (60 px from the top at 1264x705).
+export const DEFAULT_FRAMING: Framing = { zoom: -0.4, high: 0.12, offx: 0 };
 
 function loadFraming(): Framing {
   try {
@@ -57,6 +61,11 @@ const MM: Record<string, number> = { mouthPressLeft: 0.35, mouthPressRight: 0.35
 
 export class Avatar {
   readonly player: SpeechPlayer;
+  /** Resolves once a model is on stage. TalkingHead cannot speak before that — speakAudio reads
+   *  `this.avatar`, which showAvatar sets — and a sentence that arrived while the model was still
+   *  loading threw and was lost (found 2026-09-12). */
+  readonly loaded: Promise<void>;
+  private markLoaded!: () => void;
   framing: Framing = loadFraming();
   /** Gesture hold in seconds, and whether the left hand gets a turn (rig panel). */
   holdS = 3;
@@ -70,16 +79,17 @@ export class Avatar {
   private lastRight = true;
   private shownGlb = "";
 
-  private constructor(readonly head: Head, onSentence: (msg: SpeakMsg) => void) {
-    this.player = new SpeechPlayer(head, b64 => this.decode(b64), msg => {
-      this.emote(msg.emotion || "neutral");
-      onSentence(msg);
+  private constructor(readonly head: Head, onSentence: (msg: SpeakMsg, preview: boolean) => void) {
+    this.loaded = new Promise(resolve => { this.markLoaded = resolve; });
+    this.player = new SpeechPlayer(head, b64 => this.decode(b64), (msg, preview, late) => {
+      if (!late) this.emote(msg.emotion || "neutral");   // a face for audio that was never heard is wrong
+      onSentence(msg, preview);
     });
     // Keep finding the camera again between turns, or she drifts off during long silences.
     window.setInterval(() => { if (Math.random() < 0.7) this.meetEye(900); }, 4000);
   }
 
-  static async create(stage: HTMLElement, onSentence: (msg: SpeakMsg) => void): Promise<Avatar> {
+  static async create(stage: HTMLElement, onSentence: (msg: SpeakMsg, preview: boolean) => void): Promise<Avatar> {
     const mod = await import(/* @vite-ignore */ TALKINGHEAD_URL);
     const head = new mod.TalkingHead(stage, {
       // The constructor THROWS on a falsy ttsEndpoint (talkinghead.mjs:813) though we never call
@@ -87,6 +97,10 @@ export class Avatar {
       ttsEndpoint: "unused://voicevox-makes-the-audio",
       lipsyncModules: [],
       cameraView: "upper",
+      // No dragging the camera around her (user, 2026-09-11): a stray drag left her off-centre,
+      // and nothing in a lesson needs it. Zoom and pan are already off by default
+      // (talkinghead.mjs 1.4 lines 146-148, applied to OrbitControls at 849-851).
+      cameraRotateEnable: false,
       avatarMood: "neutral",
       modelPixelRatio: 1,          // it multiplies by devicePixelRatio itself; passing it squares it
       // TalkingHead defaults to 0.2 idle / 0.5 speaking, which reads as evasive on a teacher. 0.9
@@ -107,6 +121,7 @@ export class Avatar {
       return false;
     }
     this.shownGlb = c.glb;
+    this.markLoaded();
     this.reframe();
     this.meetEye(600);
     return true;

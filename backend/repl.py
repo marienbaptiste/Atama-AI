@@ -870,7 +870,7 @@ async def _one_turn(brain, text: str, voice=None, mem=None, opening: bool = Fals
             now = time.monotonic() - started
             first_chunk_at = first_chunk_at if first_chunk_at is not None else now
             n += 1
-            spoken.append({"text": chunk.text, "emotion": chunk.emotion or None, "synth_ms": None})
+            spoken.append(chunk.as_log())
             print(f"  {DIM}{now:5.2f}s{RESET} {_emotion_tag(chunk.emotion)}{chunk.text}")
             if voice is not None:
                 await voice.say(chunk)

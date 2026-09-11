@@ -25,18 +25,32 @@ export interface SpeakingHead {
   stopSpeaking(): void;
 }
 
+interface Handed { msg: SpeakMsg; preview: boolean; started: boolean }
+
 export class SpeechPlayer {
   /** The newest epoch stopped: audio of this epoch or older is dropped. */
   private stoppedUpTo = -1;
   /** The newest epoch handed to the head. */
   lastTurn = -1;
   private chain: Promise<unknown> = Promise.resolve();
+  /** Sentences handed to the head whose start has not been announced yet, in order. */
+  private handed: Handed[] = [];
 
   constructor(
     private readonly head: SpeakingHead,
     private readonly decode: (b64: string) => Promise<AudioLike>,
-    private readonly onStart: (msg: SpeakMsg) => void,
+    /** `preview`: a rig-panel sample, not part of the conversation. `late`: announced after the
+     *  fact because its own start never fired (its audio could not play) — the text still belongs
+     *  in the conversation, but the face should not jump to an emotion that was never heard. */
+    private readonly onStart: (msg: SpeakMsg, preview: boolean, late: boolean) => void,
   ) {}
+
+  /** Her turn is over: announce anything handed over whose start never fired. Found 2026-09-11:
+   *  TalkingHead drops a sentence it cannot play (a suspended audio context) before its callback
+   *  runs, and the conversation lost the sentence with it. */
+  flush(): void {
+    for (const h of this.handed.splice(0)) this.announce(h, true);
+  }
 
   /** Queue one sentence. Resolves true once handed to the head, false if it was dropped.
    *  `preview`: a rig-panel sample, outside any turn — never filtered, never counted. */
@@ -50,7 +64,22 @@ export class SpeechPlayer {
   /** Stop now, and drop every sentence of epoch `turn` and before (default: all received). */
   stop(turn: number = this.lastTurn): void {
     this.stoppedUpTo = Math.max(this.stoppedUpTo, turn);
+    this.handed = [];                               // never played: not part of the conversation
     this.head.stopSpeaking();
+  }
+
+  /** This sentence's audio started — so everything queued before it has played, whether or not
+   *  its own callback fired. Announce those first, in order. */
+  private started(h: Handed): void {
+    const at = this.handed.indexOf(h);
+    if (at === -1) return;                          // already announced, or dropped by a stop
+    for (const earlier of this.handed.splice(0, at + 1)) this.announce(earlier, earlier !== h);
+  }
+
+  private announce(h: Handed, late: boolean): void {
+    if (h.started) return;
+    h.started = true;
+    this.onStart(h.msg, h.preview, late);
   }
 
   private async hand(msg: SpeakMsg, preview: boolean): Promise<boolean> {
@@ -58,18 +87,15 @@ export class SpeechPlayer {
     const audio = await this.decode(msg.audio_b64);
     if (!preview && msg.turn <= this.stoppedUpTo) return false;   // interrupted while it decoded
     if (!preview) this.lastTurn = Math.max(this.lastTurn, msg.turn);
-    let started = false;
+    const h: Handed = { msg, preview, started: false };
+    this.handed.push(h);
     this.head.speakAudio(
       // `words` is REQUIRED for supplied visemes to be read at all: in speakAudio the visemes
       // branch is nested inside `if (r.words)` — omit it and you get audio with a frozen face.
       { audio, words: [msg.text || " "], wtimes: [0], wdurations: [audio.duration * 1000],
         visemes: msg.visemes, vtimes: msg.vtimes, vdurations: msg.vdurations },
       null,
-      () => {
-        if (started) return;
-        started = true;
-        this.onStart(msg);
-      },
+      () => this.started(h),                        // fires per subtitle word; once is all we act on
     );
     return true;
   }

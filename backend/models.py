@@ -115,6 +115,15 @@ class AssistantText(_Msg):
     text: str
 
 
+class GrammarSpan(_Msg):
+    """Where she used a grammar point in a `speak` sentence (ADR-036): characters [start, end) of
+    `text`, counted in Unicode code points — the page counts the same way (Array.from)."""
+
+    start: int
+    end: int
+    point: str
+
+
 class Speak(_Msg):
     """One sentence of synthesised audio with its lip-sync timeline.
 
@@ -137,6 +146,10 @@ class Speak(_Msg):
     #: interrupted, so the page drops audio of a turn it has already barged in on however late
     #: that audio arrives, and never mistakes the next turn's for it.
     turn: int = 0
+    #: Study marks (ADR-036, spec §8b), never spoken: her grammar uses in this sentence, and what
+    #: she wants the student to use next when this sentence asks for it (the page's hint).
+    grammar: list[GrammarSpan] = []
+    target: str = ""
 
 
 class Emotion(_Msg):

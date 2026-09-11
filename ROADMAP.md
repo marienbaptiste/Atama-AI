@@ -1164,6 +1164,17 @@ what she wants the student to use — with no model call unless the student clic
 - **Gate** — To be set with the user when it is built. Latency must not move (ADR-033): tags are
   output tokens, and a turn with them is measured like any other.
 
+**Status 2026-09-12 — the chat, the marks and the hint are built; explanations, translation and
+word cards are not.** The tutor's rules are in `prompts/tutor.md` (TOTAL_MAX_TOKENS 2350 → 2550);
+`chunker.py` strips `{{span|point}}` and `[target:…]` in every position, split across deltas or
+malformed, and records the spans (`test_chunker.py`); they reach the page as `speak.grammar` and
+`speak.target` and the turn log records them. The page (`frontend/src/chat.ts`, `STUDY_PANEL`)
+puts the tutor on the left and the conversation on the right, her grammar in red with a card on
+click, and a lightbulb that lights when she asks for a form and clears when the student answers.
+Her sentence joins the chat when its audio starts; one whose audio never started (TalkingHead drops
+what it cannot play) still joins it at the end of her turn. Checked in real-time headless Chrome
+against a demo orchestrator. **Not validated live**, and the tag rate is not measured yet.
+
 ## Integration order
 
 Each row is the seam introduced, and the one assertion that proves it.

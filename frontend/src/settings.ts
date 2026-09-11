@@ -96,7 +96,10 @@ const TABS: Tab[] = [
   ] },
   { id: "display", label: "Display", sections: [
     { title: "On screen", items: [
-      { key: "SUBTITLES", label: "Subtitles", kind: "segmented", options: [["jp", "Japanese"], ["off", "Off"]] },
+      { key: "STUDY_PANEL", label: "Conversation beside the tutor", kind: "toggle",
+        help: "Her sentences in a chat on the right, grammar points in red, and a hint of what she wants you to use. Off: the tutor full-width, with subtitles." },
+      { key: "SUBTITLES", label: "Subtitles", kind: "segmented", options: [["jp", "Japanese"], ["off", "Off"]],
+        help: "When the conversation panel is off." },
     ] },
   ] },
   { id: "advanced", label: "Advanced", advanced: true, sections: [] },

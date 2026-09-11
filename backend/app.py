@@ -156,6 +156,9 @@ class Hub:
             text=speech.text,
             emotion=speech.emotion,
             turn=turn,
+            grammar=[{"start": g.start, "end": g.end, "point": g.point}
+                     for g in getattr(speech, "grammar", ())],
+            target=getattr(speech, "target", ""),
         ).model_dump(), to=self._ready)
         return speech.duration_ms / 1000.0
 

@@ -82,6 +82,8 @@ class SpeechQueue:
             return
         if self._cancelled:
             return
+        # The study marks ride with the audio to the page (ADR-036); the voice never had them.
+        speech.grammar, speech.target = getattr(chunk, "grammar", ()), getattr(chunk, "target", "")
         record = SpokenChunk(chunk, speech.synth_ms, started)
         self._emit("synthesised", record)
         await self._queue.put((speech, record))

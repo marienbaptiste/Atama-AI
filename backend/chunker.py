@@ -15,6 +15,10 @@ Rules:
 - A tag the model puts MID-sentence violates the prompt ("Nothing else in brackets, ever"). It is
   removed from the spoken text — a bracket must never reach TTS — applied from the NEXT sentence,
   and recorded in `stray_tags` so a prompt bug is visible rather than silent.
+- Study marks (ADR-036, spec §8b) are shown on the page and NEVER spoken: `{{span|point}}` wraps a
+  grammar use and becomes `span` plus a `GrammarMark` on the cleaned text; `[target:point]` names
+  what she wants the student to use next and rides on the sentence it opens (or sits in). Whatever
+  is left of a malformed mark is removed and recorded in `stray_marks`.
 """
 from __future__ import annotations
 
@@ -33,8 +37,24 @@ TERMINATORS = "。！？!?…‥\n"
 _SPEAKABLE = re.compile(r"[^\s。、！？!?…‥・「」『』（）()\[\]【】〜~—\-—.,]")
 _TAG_AT_START = re.compile(r"^\s*\[(" + "|".join(EMOTIONS) + r")\]\s*")
 _ANY_TAG = re.compile(r"\[(" + "|".join(EMOTIONS) + r")\]\s*")
-#: Longest prefix that could still become a tag once more deltas arrive, e.g. "[hap".
-_PARTIAL_TAG = re.compile(r"^\s*\[[a-z]*$")
+#: Longest prefix that could still become a tag once more deltas arrive, e.g. "[hap" or
+#: "[target:〜た" — bounded, so an unclosed target never swallows the rest of the reply.
+_PARTIAL_TAG = re.compile(r"^\s*\[(?:[a-z]*|target:[^\]\n。！？!?]{0,40})$")
+_GRAMMAR = re.compile(r"\{\{([^{}|\n]+)\|([^{}\n]+)\}\}")
+_TARGET = re.compile(r"\[target:([^\]\n]*)\]\s*")
+_TARGET_AT_START = re.compile(r"^\s*\[target:([^\]\n]*)\]\s*")
+#: What a malformed mark leaves behind: a "|point}}" tail, a lone "{{" or "}}", an unclosed target.
+_BROKEN = re.compile(r"\|[^{}|\n]*\}\}|\{\{|\}\}|\[target:")
+
+
+@dataclass(frozen=True)
+class GrammarMark:
+    """Where she used a grammar point: characters [start, end) of the cleaned sentence, counted in
+    code points (as Python indexes str), and the point's name."""
+
+    start: int
+    end: int
+    point: str
 
 
 @dataclass(frozen=True)
@@ -43,6 +63,19 @@ class Chunk:
 
     text: str
     emotion: str = NEUTRAL
+    #: Study marks (ADR-036): her grammar uses in this sentence, and what she wants the student
+    #: to use next if this sentence asks for it.
+    grammar: tuple[GrammarMark, ...] = ()
+    target: str = ""
+
+    def as_log(self) -> dict:
+        """This sentence as the turn log records it (spec §6b); study marks only when present."""
+        out: dict = {"text": self.text, "emotion": self.emotion or None, "synth_ms": None}
+        if self.grammar:
+            out["grammar"] = [{"span": self.text[g.start:g.end], "point": g.point} for g in self.grammar]
+        if self.target:
+            out["target"] = self.target
+        return out
 
 
 @dataclass
@@ -55,7 +88,10 @@ class SentenceChunker:
     _buf: str = ""
     _emotion: str = NEUTRAL
     _pending: str | None = None
+    #: A target seen and not yet attached to a spoken sentence.
+    _target: str = ""
     stray_tags: list[str] = field(default_factory=list)
+    stray_marks: list[str] = field(default_factory=list)
 
     # ------------------------------------------------------------------ public
     def push(self, delta: str) -> list[Chunk]:
@@ -98,23 +134,61 @@ class SentenceChunker:
         return self._build(raw)
 
     def _build(self, raw: str) -> Chunk:
-        """Clean one sentence: drop stray tags, apply the pending emotion, drop the unspeakable."""
+        """Clean one sentence: drop stray tags, apply the pending emotion, drop the unspeakable,
+        and turn study marks into spans on the cleaned text."""
         text = raw.strip()
+        for m in _TARGET.finditer(text):        # a target past the head: still never spoken
+            if m.group(1).strip():
+                self._target = m.group(1).strip()
+        text = _TARGET.sub("", text).strip()
+        emotion: str | None = None
         if strays := _ANY_TAG.findall(text):
             self.stray_tags.extend(strays)
             text = _ANY_TAG.sub("", text).strip()
             # A mid-sentence tag is malformed: honour the intent from the NEXT sentence.
             emotion = self._apply_pending()
             self._pending = strays[-1]
-            return Chunk(text if _SPEAKABLE.search(text) else "", emotion)
+        text, grammar = self._marks(text)
         if not _SPEAKABLE.search(text):
-            return Chunk("", self._emotion)
-        return Chunk(text, self._apply_pending())
+            return Chunk("", emotion if emotion is not None else self._emotion)
+        target, self._target = self._target, ""
+        return Chunk(text, emotion if emotion is not None else self._apply_pending(), grammar, target)
+
+    def _marks(self, text: str) -> tuple[str, tuple[GrammarMark, ...]]:
+        """`{{span|point}}` becomes `span`, and a mark saying where it sits in the cleaned text."""
+        parts: list[str] = []
+        marks: list[GrammarMark] = []
+        size = last = 0
+        for m in _GRAMMAR.finditer(text):
+            before = self._unbroken(text[last:m.start()])
+            span = m.group(1)
+            parts += [before, span]
+            marks.append(GrammarMark(size + len(before), size + len(before) + len(span), m.group(2).strip()))
+            size += len(before) + len(span)
+            last = m.end()
+        parts.append(self._unbroken(text[last:]))
+        joined = "".join(parts)
+        lead = len(joined) - len(joined.lstrip())
+        clean = joined.strip()
+        return clean, tuple(GrammarMark(g.start - lead, g.end - lead, g.point) for g in marks
+                            if g.point and 0 <= g.start - lead < g.end - lead <= len(clean))
+
+    def _unbroken(self, segment: str) -> str:
+        if _BROKEN.search(segment):
+            self.stray_marks.append(segment.strip()[:40])
+            segment = _BROKEN.sub("", segment)
+        return segment
 
     def _consume_leading_tag(self, final: bool = False) -> None:
-        """Strip tags at the head of the buffer (there may be more than one if the model repeats)."""
-        while (m := _TAG_AT_START.match(self._buf)) is not None:
-            self._pending = m.group(1)
+        """Strip tags at the head of the buffer — emotion tags and targets, in either order, more
+        than one if the model repeats."""
+        while True:
+            if (m := _TAG_AT_START.match(self._buf)) is not None:
+                self._pending = m.group(1)
+            elif (m := _TARGET_AT_START.match(self._buf)) is not None:
+                self._target = m.group(1).strip() or self._target
+            else:
+                break
             self._buf = self._buf[m.end() :]
         if final and _PARTIAL_TAG.match(self._buf):
             self._buf = ""  # an unterminated "[hap" at end of turn is not speech

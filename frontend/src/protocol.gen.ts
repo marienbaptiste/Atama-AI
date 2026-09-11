@@ -8,6 +8,14 @@ export const RESERVED_TYPES = ["stt_partial"] as const;
 export type ClientType = (typeof CLIENT_TYPES)[number];
 export type ServerType = (typeof SERVER_TYPES)[number];
 
+// ------------------------------------------------------------------ shared parts
+/** Where she used a grammar point in a `speak` sentence (ADR-036): characters [start, end) of `text`, counted in Unicode code points — the page counts the same way (Array.from). */
+export interface GrammarSpan {
+  start: number;
+  end: number;
+  point: string;
+}
+
 // ------------------------------------------------------------------ client -> server
 /** Raw mic audio. PCM16 mono at 16 kHz (spec §9) — never encoded audio. */
 export interface AudioChunkMsg {
@@ -70,6 +78,8 @@ export interface SpeakMsg {
   text: string;
   emotion: string;
   turn: number;
+  grammar: GrammarSpan[];
+  target: string;
 }
 
 /** A mood change not tied to a spoken sentence — the idle face between turns. */

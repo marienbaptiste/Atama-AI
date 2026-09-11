@@ -3,6 +3,7 @@
  *  fail while one is missing (gate M3a). */
 import "./style.css";
 import { Avatar, type CastEntry } from "./avatar";
+import { Chat } from "./chat";
 import { Talk } from "./mic";
 import type { ServiceStatusMsg, SettingsMsg, SpeakMsg, TimingMsg } from "./protocol.gen";
 import { Backchannel } from "./rig";
@@ -29,14 +30,21 @@ let mode = "ptt";
 const back = new Backchannel();
 //: The persona whose face is showing. Chosen in Settings → Voice, never on the main screen.
 let persona = "";
+//: What she has asked the student to use (a `[target:]` mark, ADR-036) — the hint. Cleared when
+//: the student answers, i.e. when her next turn starts.
+let goal = "";
+const chat = new Chat($("chat-list"), (point, mark) => showPoint(point, mark));
 
 const avatarReady: Promise<Avatar> = Avatar.create($("stage"), onSentence);
 avatarReady.then(a => { avatar = a; mountRigPanel(a); },
                  err => log(`the avatar could not load: ${esc(err)}`, "err"));
 
 /** Her sentence, the moment its audio starts: the face has just been set (speech.ts). */
-function onSentence(msg: SpeakMsg): void {
+function onSentence(msg: SpeakMsg, preview: boolean): void {
   subtitle(msg.text, "her");
+  if (preview) return;                              // a rig-panel sample, not the conversation
+  chat.her(msg);
+  if (msg.target) setGoal(msg.target);
   log(`<b>her:</b> ${esc(msg.text)}` + (msg.emotion ? ` <i>${esc(msg.emotion)}</i>` : ""), "her");
 }
 
@@ -46,12 +54,17 @@ const handlers: Handlers = {
   stt_partial: () => { /* reserved: never sent (models.py SttPartial) */ },
   stt_final: m => {
     if (m.accepted) subtitle(m.text, "you");
+    chat.you(m.text, m.accepted, m.reason);
     log(`<b>you:</b> ${esc(m.text)}` + (m.accepted ? "" : ` <i>(discarded: ${esc(m.reason)})</i>`),
         m.accepted ? "you" : "err");
   },
   // Not sent today: `speak` carries each sentence, shown as its audio starts.
   assistant_text: m => log(`<b>her:</b> ${esc(m.text)}`, "her"),
-  speak: async m => { await (await avatarReady).player.play(m); },
+  speak: async m => {
+    const a = await avatarReady;
+    await a.loaded;                                 // she cannot speak before her model is on stage
+    await a.player.play(m);
+  },
   emotion: async m => (await avatarReady).emote(m.emotion),
   bargein: async m => {
     (await avatarReady).stop(m.turn);
@@ -70,8 +83,8 @@ const handlers: Handlers = {
 function onState(s: typeof state, t: number): void {
   state = s;
   turn = t;
-  if (s === "thinking") avatar?.thinking();
-  else if (s === "listening") avatar?.listening();
+  if (s === "thinking") { avatar?.thinking(); setGoal(""); }   // the student answered
+  else if (s === "listening") { avatar?.listening(); avatar?.player.flush(); }   // her turn is over
   const ptt = mode === "ptt";
   live(s === "thinking" ? "she is thinking…"
     : s === "speaking" ? (ptt ? "she is speaking — hold SPACE to interrupt" : "she is speaking")
@@ -111,7 +124,10 @@ function onService(m: ServiceStatusMsg): void {
 function onSettings(m: SettingsMsg): void {
   settings.onSettings(m);
   const v = m.values as Record<string, unknown>;
-  setSubtitles(v.SUBTITLES);
+  // The conversation panel replaces the subtitles; with it off, subtitles as configured.
+  const study = v.STUDY_PANEL !== false;
+  document.body.classList.toggle("study", study);
+  setSubtitles(study ? "off" : v.SUBTITLES);
   mode = String(v.TURN_MODE || "ptt");
   talk.render();
   headphonesHint();
@@ -134,6 +150,49 @@ function showTiming(m: TimingMsg): void {
     + `first sentence ${s(m.first_chunk_ms)}` + (m.thinking_chars ? `, thought ${m.thinking_chars} chars` : "")
     + ")" + (m.p90_ms != null ? ` · session p90 ${s(m.p90_ms)} of 5.0 s over ${m.turns}` : ""));
 }
+
+// ------------------------------------------------------------------ study panel: hint and grammar
+function setGoal(target: string): void {
+  goal = target;
+  const button = $<HTMLButtonElement>("goal");
+  button.disabled = !target;
+  button.classList.toggle("has", !!target);
+  if (!target) $("goal-pop").hidden = true;
+}
+
+$("goal").onclick = e => {
+  e.stopPropagation();
+  if (!goal) return;
+  $("goal").classList.remove("has");
+  showPop($("goal-pop"), $("goal"), "<small>Your tutor is waiting for you to use</small>"
+    + `<b>${esc(goal)}</b><p>Try it in your answer — hold SPACE and speak.</p>`);
+  $("goal").blur();                                 // or the next SPACE would press it
+};
+
+function showPoint(point: string, mark: HTMLElement): void {
+  showPop($("gp-pop"), mark, `<small>Grammar point</small><b>${esc(point)}</b>`
+    + "<p>The rule itself, in English or Japanese, comes with the next update.</p>");
+}
+
+/** A small card beside what was clicked: above it if there is room, else below; on screen. */
+function showPop(pop: HTMLElement, anchor: HTMLElement, html: string): void {
+  for (const other of document.querySelectorAll<HTMLElement>(".pop")) other.hidden = true;
+  pop.innerHTML = html;
+  pop.hidden = false;
+  const r = anchor.getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2)) + "px";
+  pop.style.top = (r.top - h - 10 >= 8 ? r.top - h - 10 : r.bottom + 10) + "px";
+}
+
+addEventListener("click", e => {
+  if (!(e.target as HTMLElement | null)?.closest?.(".pop")) {
+    for (const pop of document.querySelectorAll<HTMLElement>(".pop")) pop.hidden = true;
+  }
+});
+addEventListener("keydown", e => {
+  if (e.key === "Escape") for (const pop of document.querySelectorAll<HTMLElement>(".pop")) pop.hidden = true;
+});
 
 function headphonesHint(): void {
   let done = false;
@@ -231,6 +290,7 @@ if (location.hash.startsWith("#mood=")) { $("start").hidden = true; setMoodBg(lo
   document.title = APP_NAME;
   $("brand-name").textContent = APP_NAME;
   $("topic").title = `Ask ${APP_NAME} to drop this subject and find a new one`;
+  $("goal").title = "What your tutor wants you to use next";
   status.bindStatus();
   talk.bind();
   talk.render();

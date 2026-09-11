@@ -54,6 +54,14 @@
   </svg>
 </button>
 
+<!-- the conversation beside the tutor (spec §8b, ADR-036) -->
+<aside id="chat" aria-label="Conversation">
+  <header><b>Conversation</b></header>
+  <div id="chat-list" role="log" aria-live="polite"></div>
+</aside>
+<div id="gp-pop" class="pop" hidden></div>
+<div id="goal-pop" class="pop" hidden></div>
+
 <!-- her sentence as it plays, or yours once it was heard (spec §8: JP / off) -->
 <div id="subs" hidden lang="ja"></div>
 
@@ -62,6 +70,9 @@
   <button id="talk" disabled>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M6 11a6 6 0 0 0 12 0M12 17v4"/></svg>
     <span>Hold SPACE to talk</span></button>
+  <button id="goal" class="round" disabled aria-label="Hint">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.4 1.1 2.2h5c0-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3z"/></svg>
+  </button>
   <button id="topic" class="round" disabled aria-label="New topic">
     <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>
   </button>

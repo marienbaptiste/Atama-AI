@@ -15,6 +15,7 @@ class FakeHead implements SpeakingHead {
 
 const say = (text: string, turn: number, emotion = ""): SpeakMsg => ({
   type: "speak", audio_b64: "", visemes: ["aa"], vtimes: [100], vdurations: [80], text, emotion, turn,
+  grammar: [], target: "",
 });
 const decodeNow = async () => ({ duration: 1 });
 
@@ -72,6 +73,37 @@ describe("SpeechPlayer", () => {
     const player = new SpeechPlayer(head, decodeNow, () => {});
     player.stop(7);                                 // pressed during turn 7's thinking
     expect(await player.play(say("一。", 7))).toBe(false);
+  });
+
+  it("still puts a sentence in the conversation when its audio never started, at the turn's end", async () => {
+    const head = new FakeHead(), seen: string[] = [];
+    const player = new SpeechPlayer(head, decodeNow, (m, _p, late) => seen.push(m.text + (late ? " (late)" : "")));
+    await player.play(say("一。", 1));
+    await player.play(say("二。", 1));
+    player.flush();                                 // her turn ended; neither start ever fired
+    expect(seen).toEqual(["一。 (late)", "二。 (late)"]);
+    player.flush();
+    expect(seen.length).toBe(2);                    // each once
+  });
+
+  it("announces an earlier sentence whose start was lost before the one that started", async () => {
+    const head = new FakeHead(), seen: string[] = [];
+    const player = new SpeechPlayer(head, decodeNow, (m, _p, late) => seen.push(m.text + (late ? " (late)" : "")));
+    await player.play(say("一。", 1));
+    await player.play(say("二。", 1));
+    head.queued[1].start();
+    expect(seen).toEqual(["一。 (late)", "二。"]);
+    head.queued[0].start();                         // a stale callback changes nothing
+    expect(seen.length).toBe(2);
+  });
+
+  it("drops what was never said when she is interrupted", async () => {
+    const head = new FakeHead(), seen: string[] = [];
+    const player = new SpeechPlayer(head, decodeNow, m => seen.push(m.text));
+    await player.play(say("一。", 1));
+    player.stop();
+    player.flush();
+    expect(seen).toEqual([]);
   });
 
   it("plays a rig-panel sample outside any turn without disturbing the turn filter", async () => {

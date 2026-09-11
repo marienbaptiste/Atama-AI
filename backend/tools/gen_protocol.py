@@ -15,6 +15,8 @@ import sys
 import types
 from typing import Any, Literal, Union, get_args, get_origin
 
+from pydantic import BaseModel
+
 from backend import config, models
 
 OUT = config.REPO_ROOT / "frontend" / "src" / "protocol.gen.ts"
@@ -34,6 +36,8 @@ def _members(union) -> tuple[type, ...]:
 def ts(tp: Any) -> str:
     """A pydantic field annotation as a TypeScript type."""
     origin = get_origin(tp)
+    if isinstance(tp, type) and issubclass(tp, BaseModel):
+        return tp.__name__                       # a nested model: its own interface (below)
     if tp is Any:
         return "unknown"
     if tp is str:
@@ -62,14 +66,34 @@ def _doc(model: type) -> str:
     return " ".join(first.split())
 
 
-def _interface(model: type, server: bool) -> str:
+def _nested(messages) -> list[type]:
+    """Models used inside messages (e.g. GrammarSpan), in first-use order."""
+    seen: list[type] = []
+
+    def walk(tp) -> None:
+        if isinstance(tp, type) and issubclass(tp, BaseModel):
+            if tp not in seen:
+                seen.append(tp)
+                for f in tp.model_fields.values():
+                    walk(f.annotation)
+            return
+        for arg in get_args(tp):
+            walk(arg)
+
+    for m in messages:
+        for f in m.model_fields.values():
+            walk(f.annotation)
+    return [m for m in seen if m not in messages]
+
+
+def _interface(model: type, server: bool, name: str | None = None) -> str:
     """One message. A server message always carries every field (model_dump() writes them all);
     a client message may leave out any field that has a default."""
     lines = []
     doc = _doc(model)
     if doc:
         lines.append(f"/** {doc} */")
-    lines.append(f"export interface {model.__name__}Msg {{")
+    lines.append(f"export interface {name or model.__name__ + 'Msg'} {{")
     for name, field in model.model_fields.items():
         optional = "" if server or field.is_required() or name == "type" else "?"
         lines.append(f"  {name}{optional}: {ts(field.annotation)};")
@@ -92,6 +116,8 @@ def render() -> str:
         "export type ClientType = (typeof CLIENT_TYPES)[number];",
         "export type ServerType = (typeof SERVER_TYPES)[number];",
         "",
+        "// ------------------------------------------------------------------ shared parts",
+        *(_interface(m, server=True, name=m.__name__) + "\n" for m in _nested((*client, *server))),
         "// ------------------------------------------------------------------ client -> server",
         *(_interface(m, server=False) + "\n" for m in client),
         "// ------------------------------------------------------------------ server -> client",

@@ -43,7 +43,10 @@ MEMORY_MAX_TOKENS = 220
 #: keeps it honest.
 #: Raised again 2100 -> 2350 on 2026-09-10 for the memory section. The same trade as before:
 #: a deliberate spend, enforced by test_worst_case_sections_fit_the_total, not headroom to fill.
-TOTAL_MAX_TOKENS = 2350
+#: Raised 2350 -> 2550 on 2026-09-11 for the study-mark rules (ADR-036): the tutor tags her grammar
+#: and what she wants the student to use, so the page can show them with no extra model call. Same
+#: trade, same test.
+TOTAL_MAX_TOKENS = 2550
 #: A ROTATED session's handoff (ADR-032): the lesson so far, from the turn log. Only rotated
 #: sessions carry it, so it has its own budget on top of TOTAL_MAX_TOKENS rather than squeezing
 #: the sections every session needs. Spent only when a long lesson has earned a fresh window.
