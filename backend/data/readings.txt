@@ -1,0 +1,13 @@
+# Readings the tokenizer (fugashi + unidic-lite) gets wrong in lesson Japanese — checked
+# 2026-09-12. One per line: the word as written, whitespace, its reading in hiragana.
+# Matched on the text before tokenising, longest first; a word listed here is never re-read.
+# Add a line when the chat shows a wrong reading; no code change needed.
+日本語    にほんご
+日本人    にほんじん
+日本      にほん
+私        わたし
+明日      あした
+何を      なにを
+何が      なにが
+何も      なにも
+何か      なにか

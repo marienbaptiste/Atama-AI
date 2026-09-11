@@ -1325,9 +1325,11 @@ derive each client from it instead of emitting TypeScript directly.
 
 ## ADR-036 — The study panel: the tutor tags, the student clicks, the dictionary is local
 
-**Status:** Accepted by the user (2026-09-11). Partly built 2026-09-12: the chat beside the
-tutor, the tutor's inline marks, red grammar and the hint (points 1 and 4's `STUDY_PANEL`).
-Explanations on click, translations and word cards (points 2 and 3) are not built yet. Spec §8b.
+**Status:** Accepted by the user (2026-09-11). Partly built 2026-09-12: the chat beside the tutor,
+the tutor's inline marks, red grammar, the hint (point 1), and furigana from local data — the
+tokenizer and the student's WaniKani kanji progress (point 3's readings, point 4's `FURIGANA` and
+`STUDY_PANEL`). Explanations and translations on click (point 2) and word cards (the rest of
+point 3) are not built yet. Spec §8b.
 
 **Context.** User request: the tutor on the left, the conversation on the right like a messaging
 app; every important grammar point in red, clickable for its rule in Japanese or English (a

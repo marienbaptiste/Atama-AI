@@ -125,9 +125,15 @@ def test_wanikani_fetch_raw_paginates_and_requests_subjects():
     raw = wk.fetch_raw(c)
     assert raw["_errors"] == {}
     assert all(m == "GET" for m, _, _ in calls)
-    assert sum(1 for _, p, _ in calls if p == "/v2/assignments") == 2
-    subj = next(p for _, path, p in calls if path == "/v2/subjects")
-    assert "ids" in subj and len(subj["ids"].split(",")) <= 30 + 30
+    # Two collections are read: the student's vocabulary, and (for the chat's furigana, spec §8b)
+    # their kanji. Each follows its next page; the follow-up carries the cursor from `next_url`.
+    first_pages = [p for _, path, p in calls if path == "/v2/assignments" and "page_after_id" not in p]
+    assert [p.get("subject_types") for p in first_pages] == ["vocabulary", "kanji"]
+    assert sum(1 for _, path, p in calls if path == "/v2/assignments" and "page_after_id" in p) == 2
+    subj = next(p for _, path, p in calls if path == "/v2/subjects" and "ids" in p)
+    assert len(subj["ids"].split(",")) <= 30 + 30
+    kanji = next(p for _, path, p in calls if path == "/v2/subjects" and p.get("types") == "kanji")
+    assert kanji["levels"].startswith("1")        # levels 1..the student's, never every level
 
 
 def test_wanikani_user_payload_has_no_permissions_field():

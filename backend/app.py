@@ -75,6 +75,14 @@ class Hub:
         #: then drops a sentence of an interrupted turn however late it arrives — without this
         #: every sentence said turn 0 and nothing could tell stale audio from fresh.
         self.epoch = 0
+        #: text -> furigana for the chat (backend/annotate.py `Annotator.readings`), or None.
+        self.readings: Callable[[str], list[dict[str, Any]]] | None = None
+
+    def _readings(self, text: str) -> list[dict[str, Any]]:
+        try:
+            return self.readings(text) if self.readings is not None else []
+        except Exception:  # noqa: BLE001 - furigana must never cost a sentence
+            return []
 
     async def join(self, ws: WebSocket) -> None:
         await ws.accept()
@@ -123,7 +131,8 @@ class Hub:
         await self.send(models.State(state=name, turn=self.epoch).model_dump())
 
     async def transcript(self, text: str, accepted: bool = True, reason: str = "") -> None:
-        await self.send(models.SttFinal(text=text, accepted=accepted, reason=reason).model_dump())
+        await self.send(models.SttFinal(text=text, accepted=accepted, reason=reason,
+                                        readings=self._readings(text)).model_dump())
 
     async def speak(self, speech: Speech, turn: int | None = None) -> float:
         """Send one sentence for the browser to play. Returns its duration in seconds.
@@ -159,6 +168,7 @@ class Hub:
             grammar=[{"start": g.start, "end": g.end, "point": g.point}
                      for g in getattr(speech, "grammar", ())],
             target=getattr(speech, "target", ""),
+            readings=self._readings(speech.text),
         ).model_dump(), to=self._ready)
         return speech.duration_ms / 1000.0
 

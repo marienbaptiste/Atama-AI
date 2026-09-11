@@ -9,6 +9,14 @@ export type ClientType = (typeof CLIENT_TYPES)[number];
 export type ServerType = (typeof SERVER_TYPES)[number];
 
 // ------------------------------------------------------------------ shared parts
+/** Furigana for one run of kanji (spec §8b): characters [start, end) of the text, in code points, and its reading in hiragana. `known`: the student has passed every kanji in it on WaniKani — the page hides those by default (FURIGANA=unknown). */
+export interface Reading {
+  start: number;
+  end: number;
+  reading: string;
+  known: boolean;
+}
+
 /** Where she used a grammar point in a `speak` sentence (ADR-036): characters [start, end) of `text`, counted in Unicode code points — the page counts the same way (Array.from). */
 export interface GrammarSpan {
   start: number;
@@ -60,6 +68,7 @@ export interface SttFinalMsg {
   text: string;
   accepted: boolean;
   reason: string;
+  readings: Reading[];
 }
 
 /** One sentence of the tutor's reply, for the subtitle strip. Emotion tags are already stripped by the chunker — a tag must never reach the display or the TTS (ADR-020). */
@@ -80,6 +89,7 @@ export interface SpeakMsg {
   turn: number;
   grammar: GrammarSpan[];
   target: string;
+  readings: Reading[];
 }
 
 /** A mood change not tied to a spoken sentence — the idle face between turns. */

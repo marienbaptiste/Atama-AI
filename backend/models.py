@@ -99,12 +99,25 @@ class SttPartial(_Msg):
     text: str
 
 
+class Reading(_Msg):
+    """Furigana for one run of kanji (spec §8b): characters [start, end) of the text, in code points,
+    and its reading in hiragana. `known`: the student has passed every kanji in it on WaniKani — the
+    page hides those by default (FURIGANA=unknown)."""
+
+    start: int
+    end: int
+    reading: str
+    known: bool = False
+
+
 class SttFinal(_Msg):
     type: Literal["stt_final"] = "stt_final"
     text: str
     #: False when the hallucination filter rejected it; `reason` says which rule fired (§9).
     accepted: bool = True
     reason: str = ""
+    #: Furigana for the chat (backend/annotate.py), computed on the orchestrator, no model call.
+    readings: list[Reading] = []
 
 
 class AssistantText(_Msg):
@@ -150,6 +163,8 @@ class Speak(_Msg):
     #: she wants the student to use next when this sentence asks for it (the page's hint).
     grammar: list[GrammarSpan] = []
     target: str = ""
+    #: Furigana for the chat (backend/annotate.py), computed on the orchestrator, no model call.
+    readings: list[Reading] = []
 
 
 class Emotion(_Msg):

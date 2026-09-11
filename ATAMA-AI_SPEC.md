@@ -460,7 +460,7 @@ Capping it is cheaper than rotating more often.
 - Mic capture via AudioWorklet at 16 kHz mono PCM16 (NOT MediaRecorder/opus — we want raw frames for server VAD).
 - **DON'T** add build complexity: no React, no state library. One page, a few modules.
 
-## 8b. STUDY PANEL (ADR-036 — user request 2026-09-11. Built 2026-09-12: the layout, the chat, the tutor's marks, red grammar, the hint. Not yet: explanations on click, translation, word cards, furigana)
+## 8b. STUDY PANEL (ADR-036 — user request 2026-09-11. Built 2026-09-12: the layout, the chat, the tutor's marks, red grammar, the hint, furigana. Not yet: explanations on click, translation, word cards)
 
 - **Layout.** The avatar takes the left of the page; the conversation runs on the right as a
   message thread — her bubbles on one side, the student's on the other, newest at the bottom,

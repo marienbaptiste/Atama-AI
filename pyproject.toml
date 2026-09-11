@@ -14,6 +14,9 @@ dependencies = [
     "sounddevice>=0.5",       # PortAudio: mic capture and playback
     "faster-whisper>=1.2",    # STT (ADR-004)
     "onnxruntime>=1.20",      # Silero VAD runs on ONNX, not torch (spec §10b: ~2 MB, not a GB)
+    # M3 study panel — furigana in the chat, local, no model call (ADR-036, backend/annotate.py)
+    "fugashi>=1.5.2,<2",      # MeCab tokenizer; verified 2026-09-12 (constants.py)
+    "unidic-lite==1.0.8",     # its dictionary (~50 MB); readings via word.feature.kana
     # M3 — the browser talks to the orchestrator over a WebSocket (spec §8)
     "uvicorn>=0.30",
     "starlette>=0.40",

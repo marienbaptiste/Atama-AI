@@ -28,6 +28,7 @@ from backend import vram as vram_mod
 from backend import usage as usage_api
 from backend import model_tiers
 from backend import session as session_api
+from backend import annotate as annotate_api
 from backend.chunker import SentenceChunker
 from backend.brain import (BrainError, Compacting, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome,
                            TurnComplete)
@@ -76,6 +77,8 @@ async def run(args: argparse.Namespace) -> int:
         print(f"{DIM}SRS sync {time.monotonic() - t0:.1f}s{RESET}")
 
     profile_text = profile_api.render(student)
+    # Furigana for the chat (spec §8b): a local tokenizer, and which kanji WaniKani says are passed.
+    annotator = annotate_api.Annotator(known_kanji=student.wanikani.known_kanji if student.wanikani else ())
 
     # --- memory (spec §6b, ADR-031): catch up on past sessions, then read once --------------
     # Summarising happens HERE, at launch, for any session never summarised — not on exit, which
@@ -125,6 +128,10 @@ async def run(args: argparse.Namespace) -> int:
         from backend import app as web
         hub = web.Hub()
         server_task, url = await web.serve(hub, cfg, registry)   # status chips follow the registry
+        if await asyncio.to_thread(annotator.warm):
+            hub.readings = annotator.readings
+        else:
+            print(f"{DIM}no furigana in the chat: {annotator.error}{RESET}")
         print(f"{BOLD}avatar:{RESET} {url}")
         if getattr(args, "show", False):
             import webbrowser
@@ -268,6 +275,7 @@ async def run(args: argparse.Namespace) -> int:
             profile_api.build, fresh.WANIKANI_TOKEN, fresh.BUNPRO_API_TOKEN, fresh.path("CACHE_DIR") / "srs",
             fresh.SRS_CACHE_TTL_S, fresh.SRS_FETCH_BUDGET_S, registry, force=True)
         profile_text = profile_api.render(student)
+        annotator.known = set(student.wanikani.known_kanji) if student.wanikani else set()
 
     def adopt(new) -> None:
         # After a rotation the replacement is THE session: the one closed at the end, and the one

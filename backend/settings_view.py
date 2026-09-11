@@ -29,6 +29,7 @@ LOCKED: dict[str, str] = {
 CHOICES: dict[str, tuple[str, ...]] = {
     "TURN_MODE": ("ptt", "vad"),
     "SUBTITLES": ("jp", "off"),
+    "FURIGANA": ("all", "unknown", "off"),
     "CLAUDE_EFFORT": ("low", "medium", "high", "xhigh", "max"),
     "BRAIN_PROVIDER": ("claude-cli",),
 }

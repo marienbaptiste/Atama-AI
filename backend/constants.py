@@ -162,6 +162,16 @@ BUNPRO_READ_ENDPOINTS = {
     "forecast_daily": "/user_stats/forecast_daily",
 }
 
+# --- Furigana (spec §8b, backend/annotate.py) ----------------------------------------------
+# fugashi 1.5.2 + unidic-lite 1.0.8, verified 2026-09-12 on Python 3.13 / Windows (wheels, no
+# system MeCab): `Tagger()` loads in 0.33 s; a sentence takes ~0.01 ms. Each word has `.surface`
+# and `.feature` — a namedtuple whose `kana` is the reading in KATAKANA (pos1, lemma, pron, ...
+# also present); symbols give kana "" and a kanji outside the dictionary (𠮷) gives None.
+# Measured misreadings in lesson Japanese: 私 ワタクシ, 日本 ニッポン, 明日 アス, 何を ナン, 日本人's
+# 人 ニン — corrected from backend/data/readings.txt, not in code.
+# WaniKani kanji progress: see backend/srs/wanikani.py (no `passed` filter exists; passed_at is
+# "Timestamp when the user reaches SRS stage 5 for the first time", docs read 2026-09-12).
+
 # --- VOICEVOX / TalkingHead ---------------------------------------------------
 # TalkingHead verified 2026-09-10 (V0.4), against the README and modules/talkinghead.mjs.
 #

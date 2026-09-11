@@ -83,6 +83,7 @@ SCHEMA: tuple[Setting, ...] = (
     # Display
     Setting("TUTOR_PERSONA", "minami", str, "voice", "Which tutor: a name in prompts/ (tanaka, hayashi, minami, mori) or a path. The persona declares its own voice AND its avatar, so this one setting switches character, voice and face together (ADR-026/030). Default is minami because she is the one with a shipped avatar"),
     Setting("SUBTITLES", "jp", str, "display", "jp | off"),
+    Setting("FURIGANA", "unknown", str, "display", "Furigana over kanji in the chat: all | unknown (only kanji you have not yet reached Guru on in WaniKani - the default) | off"),
     Setting("STUDY_PANEL", True, bool, "display", "The conversation as a chat beside the tutor: her grammar points in red, and a hint of what she wants you to use (ADR-036). Off = the tutor full-width, with subtitles"),
     Setting("AUDIO_INPUT_DEVICE", "", str, "audio", "Microphone, by name. Empty = system default. If it is unplugged, or not there at launch, the app uses the system default and switches back when it returns (spec §9)"),
     Setting("AUDIO_OUTPUT_DEVICE", "", str, "audio", "Speakers/headphones for the terminal voice (--speak), by name. Empty = system default. If they are unplugged, or not there at launch, the app uses the system default and switches back when they return (spec §9). On the avatar page her voice plays through the browser, which follows the OS default output"),

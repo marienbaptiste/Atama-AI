@@ -54,7 +54,7 @@ const handlers: Handlers = {
   stt_partial: () => { /* reserved: never sent (models.py SttPartial) */ },
   stt_final: m => {
     if (m.accepted) subtitle(m.text, "you");
-    chat.you(m.text, m.accepted, m.reason);
+    chat.you(m.text, m.accepted, m.reason, m.readings);
     log(`<b>you:</b> ${esc(m.text)}` + (m.accepted ? "" : ` <i>(discarded: ${esc(m.reason)})</i>`),
         m.accepted ? "you" : "err");
   },
@@ -128,6 +128,7 @@ function onSettings(m: SettingsMsg): void {
   const study = v.STUDY_PANEL !== false;
   document.body.classList.toggle("study", study);
   setSubtitles(study ? "off" : v.SUBTITLES);
+  chat.setFurigana(String(v.FURIGANA ?? "unknown"));
   mode = String(v.TURN_MODE || "ptt");
   talk.render();
   headphonesHint();

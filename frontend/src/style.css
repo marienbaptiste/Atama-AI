@@ -137,7 +137,10 @@ body.study #subs{display:none!important}
 #chat-list{flex:1;overflow-y:auto;padding:14px 14px 18px;display:flex;flex-direction:column;gap:8px;
            scroll-behavior:smooth}
 .msg{max-width:86%;padding:9px 14px;border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,.08);
-     font:500 17px/1.65 "Yu Gothic UI","Meiryo","Hiragino Sans",system-ui,sans-serif;word-break:break-word}
+     font:500 17px/2 "Yu Gothic UI","Meiryo","Hiragino Sans",system-ui,sans-serif;word-break:break-word}
+.msg ruby{ruby-position:over}
+.msg rt{font-size:.5em;font-weight:500;color:#7b8494;user-select:none}
+.msg.you rt{color:#4b6bb0}
 .msg.her{align-self:flex-start;background:#fff;border-bottom-left-radius:6px}
 .msg.you{align-self:flex-end;background:#dbeafe;color:#1e3a8a;border-bottom-right-radius:6px}
 .msg.you.dropped{background:#eef0f4;color:#9aa1ab;font-style:italic}

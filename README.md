@@ -874,6 +874,11 @@ and re-check when adding a persona — the terms are per character, not per engi
 **The avatar is not covered by this repo's licence.** Nothing is committed, and whichever GLB you
 supply carries its own terms — the common example avatars are non-commercial only.
 
+**The furigana dictionary.** The chat's readings come from [fugashi](https://github.com/polm/fugashi)
+(MIT and BSD-3-Clause) with [unidic-lite](https://github.com/polm/unidic-lite). UniDic itself is
+©2011–2013 The UniDic Consortium, released under the GPL, the LGPL **or** the BSD licence — used
+here under the BSD terms. Nothing is sent anywhere: the readings are computed on your machine.
+
 **Everything else** — TalkingHead, faster-whisper, Silero VAD — is MIT or equivalent.
 
 ---

@@ -29,3 +29,41 @@ describe("renderSentence", () => {
     expect(renderSentence("こんにちは。")).toBe("こんにちは。");
   });
 });
+
+describe("furigana (spec §8b)", () => {
+  const text = "雨の日に勉強する。";
+  const readings = [{ start: 0, end: 1, reading: "あめ", known: true },
+                    { start: 2, end: 3, reading: "ひ", known: false },
+                    { start: 4, end: 6, reading: "べんきょう", known: false }];
+
+  it("shows none at all when it is off", () => {
+    expect(renderSentence(text, [], readings, "off")).toBe(text);
+  });
+
+  it("shows every kanji's reading on 'all'", () => {
+    const html = renderSentence(text, [], readings, "all");
+    expect(html).toBe("<ruby>雨<rt>あめ</rt></ruby>の<ruby>日<rt>ひ</rt></ruby>に"
+      + "<ruby>勉強<rt>べんきょう</rt></ruby>する。");
+  });
+
+  it("hides the readings of kanji already passed on WaniKani by default", () => {
+    const html = renderSentence(text, [], readings, "unknown");
+    expect(html).not.toContain("あめ");
+    expect(html).toContain("<ruby>日<rt>ひ</rt></ruby>");
+    expect(html).toContain("<ruby>勉強<rt>べんきょう</rt></ruby>");
+  });
+
+  it("puts furigana inside a red grammar mark", () => {
+    const html = renderSentence("雨が降ったら。", [{ start: 2, end: 6, point: "〜たら" }],
+                                [{ start: 2, end: 3, reading: "ふ", known: false }], "unknown");
+    expect(html).toBe('雨が<mark class="gp" tabindex="0" data-point="〜たら">'
+      + "<ruby>降<rt>ふ</rt></ruby>ったら</mark>。");
+  });
+
+  it("ignores readings that overlap or fall outside the sentence", () => {
+    const html = renderSentence("雨。", [], [{ start: 0, end: 9, reading: "x", known: false },
+                                            { start: 0, end: 1, reading: "あめ", known: false },
+                                            { start: 0, end: 1, reading: "again", known: false }], "all");
+    expect(html).toBe("<ruby>雨<rt>あめ</rt></ruby>。");
+  });
+});

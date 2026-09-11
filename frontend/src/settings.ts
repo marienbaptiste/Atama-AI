@@ -98,6 +98,9 @@ const TABS: Tab[] = [
     { title: "On screen", items: [
       { key: "STUDY_PANEL", label: "Conversation beside the tutor", kind: "toggle",
         help: "Her sentences in a chat on the right, grammar points in red, and a hint of what she wants you to use. Off: the tutor full-width, with subtitles." },
+      { key: "FURIGANA", label: "Furigana in the chat", kind: "segmented",
+        options: [["all", "All kanji"], ["unknown", "Not yet Guru"], ["off", "None"]],
+        help: "Readings above kanji. “Not yet Guru” hides them on every kanji you have already reached Guru on in WaniKani." },
       { key: "SUBTITLES", label: "Subtitles", kind: "segmented", options: [["jp", "Japanese"], ["off", "Off"]],
         help: "When the conversation panel is off." },
     ] },
