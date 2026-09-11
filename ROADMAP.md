@@ -810,8 +810,9 @@ once heard), **listening reactions** (attentive once you are really talking, a n
 headphones hint (hands-free only, until the first barge-in). **The emotion is now applied by the
 audio-start callback** — TalkingHead's subtitle hook, which fires when a sentence leaves its queue
 (talkinghead.mjs 1.4, read 2026-09-11) — where the prototype applied it on receipt, a whole
-sentence ahead of the voice. `/` serves `frontend/dist`; `/preview.html` stays until this page is
-validated live; `make run` rebuilds when the source is newer than the build. Headless tests: 33 in
+sentence ahead of the voice. `/` serves `frontend/dist` and is the only page — the prototype
+`preview.html` was removed on 2026-09-11 (user). `make run` / `.\run` builds the page first when its
+source is newer, and stops with a reason if there is no build at all to open. Headless tests: 33 in
 Vitest (the rig table, the reactions, the speech queue with a delayed start and barge-in, the
 dispatcher, the chip colours, push-to-talk). **Gate M3c (the live 10-turn acceptance) is not met.**
 

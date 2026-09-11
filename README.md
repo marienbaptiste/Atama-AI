@@ -231,8 +231,7 @@ rolling p50/p90 go into the session log.
 ### Prerequisites
 
 - Python 3.11+
-- Node 20+ (builds the avatar page; `make run` does it for you — without Node you get the older
-  prototype page)
+- Node 20+ (builds the avatar page; `make run` / `.\run` does it for you)
 - Docker (VOICEVOX only)
 - An NVIDIA GPU with CUDA available to CTranslate2
 - The `claude` CLI, logged in — see [Claude login](#claude-login)
@@ -285,8 +284,8 @@ npm run build           # type-check, then build into frontend/dist (served at /
 
 Its message types are **generated** from `backend/models.py`: after changing a message there, run
 `python -m backend.tools.gen_protocol`. The Python tests fail until you do, and `npm run build`
-fails while any server message has no handler on the page. The old single-file prototype is still
-at `/preview.html` until the new page has been through a live lesson.
+fails while any server message has no handler on the page. If the launcher cannot build the page
+and there is no earlier build, it stops and says why instead of opening an empty tab.
 
 Then open `http://localhost:5173`. On first run the app opens on its **settings page**: paste
 your tokens, press each **Test** button, and the conversation view unlocks once Claude tests

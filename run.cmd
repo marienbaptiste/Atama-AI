@@ -1,5 +1,6 @@
 @echo off
-REM Start everything: containers, wait for VOICEVOX, the tutor, the avatar page.
+REM Start everything: containers, wait for VOICEVOX, build the page if its source changed,
+REM the tutor, and open the page.
 REM Windows has no `make`; this is the one command the README promises.
 REM
 REM `call` matters: without it, Ctrl+C inside python makes cmd.exe ask "Terminate batch

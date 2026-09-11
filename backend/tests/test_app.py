@@ -102,6 +102,18 @@ def test_every_sentence_carries_its_turn_and_a_bargein_closes_it():
         ("state", 1), ("speak", 1), ("bargein", 1), ("speak", 2), ("state", 3), ("speak", 3)]
 
 
+def test_the_root_is_the_built_page_or_says_how_to_build_it(tmp_path, monkeypatch):
+    """One page (the prototype was removed, 2026-09-11): / serves the build, or explains itself."""
+    monkeypatch.setattr(app, "DIST_DIR", tmp_path)
+    client = TestClient(app.build(app.Hub()))
+    missing = client.get("/")
+    assert missing.status_code == 503 and "not built" in missing.text
+    (tmp_path / "index.html").write_text("<title>built</title>", encoding="utf-8")
+    assert client.get("/").text == "<title>built</title>"
+    assert client.get("/preview.html").status_code == 404
+    assert app.page_url("127.0.0.1", 8000) == "http://127.0.0.1:8000/"
+
+
 class Page:
     def __init__(self):
         self.got = []

@@ -19,7 +19,7 @@ from typing import Any, Callable
 
 import uvicorn
 from starlette.applications import Starlette
-from starlette.responses import FileResponse, RedirectResponse
+from starlette.responses import FileResponse, HTMLResponse
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -30,8 +30,16 @@ from backend.speaker import Speech
 STATIC_DIR = config.REPO_ROOT / "frontend" / "public"
 #: The built page (`npm --prefix frontend run build`, ADR-009). Only its index and /assets come
 #: from here; the avatar, the cast and the preview audio stay in public/ and are served from there,
-#: so regenerating them never needs a rebuild. Without a build, / falls back to the prototype.
+#: so regenerating them never needs a rebuild. `.\run` (backend/tools/up.py) builds it first.
 DIST_DIR = config.REPO_ROOT / "frontend" / "dist"
+#: What / answers when the page was never built — e.g. the orchestrator started by hand. A bare
+#: 404 would look like a broken server; this says what to do.
+NOT_BUILT = ("<!doctype html><meta charset=utf-8><title>Page not built</title>"
+             "<body style='font:15px system-ui;margin:3em;line-height:1.6'>"
+             "<h1>The page is not built yet</h1>"
+             "<p>Start with <code>.\\run</code> (Windows) or <code>make run</code>, which builds it, "
+             "or build it yourself: <code>cd frontend</code>, <code>npm ci</code>, "
+             "<code>npm run build</code> — then reload.</p>")
 #: The page reconnects when it has heard nothing for 3 heartbeats (WATCHDOG_MS in src/ws.ts).
 #: Levels and audio usually arrive far more often; this covers a quiet link, e.g. no microphone.
 HEARTBEAT_S = 4.0
@@ -258,7 +266,7 @@ def build(hub: Hub) -> Starlette:
         if page.exists():
             # no-cache: a rebuilt page must never be shadowed by yesterday's copy in the browser.
             return FileResponse(page, headers={"Cache-Control": "no-cache"})
-        return RedirectResponse("/preview.html")
+        return HTMLResponse(NOT_BUILT, status_code=503)
 
     return Starlette(routes=[
         Route("/", index),
@@ -269,8 +277,8 @@ def build(hub: Hub) -> Starlette:
 
 
 def page_url(host: str, port: int) -> str:
-    """The page to open: the built one when it exists, else the prototype."""
-    return f"http://{host}:{port}/" + ("" if (DIST_DIR / "index.html").exists() else "preview.html")
+    """The page to open. There is one page (the prototype was removed, 2026-09-11)."""
+    return f"http://{host}:{port}/"
 
 
 async def serve(hub: Hub, cfg, registry=None) -> tuple[asyncio.Task, str]:

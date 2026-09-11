@@ -60,30 +60,36 @@ def wait_for_voicevox(url: str, seconds: float = 90.0) -> bool:
 FRONTEND = config.REPO_ROOT / "frontend"
 
 
-def ensure_frontend() -> None:
+def ensure_frontend() -> bool:
     """Build the page when it is missing or older than its source (ADR-009).
 
-    Without Node.js the prototype page still works, so this warns rather than fails — the tutor
-    matters more than the page it appears on."""
+    False when there is no page to open at all: the launcher then stops and says why, rather than
+    open a browser tab on nothing. A failed REbuild keeps the previous build, and says so."""
     built = FRONTEND / "dist" / "index.html"
     sources = [FRONTEND / "index.html", FRONTEND / "package.json", *(FRONTEND / "src").rglob("*")]
     newest = max((p.stat().st_mtime for p in sources if p.is_file()), default=0.0)
     if built.exists() and built.stat().st_mtime >= newest:
-        return
+        return True
     npm = shutil.which("npm")
     if not npm:
-        print("npm is not on PATH - opening the prototype page. Install Node.js for the full page.",
-              file=sys.stderr)
-        return
+        return _without_build(built, "npm is not on PATH - install Node.js 20+ (README: Prerequisites)")
     if not (FRONTEND / "node_modules").exists():
         print("installing the page's build tools (once) …", flush=True)
         if subprocess.call([npm, "ci"], cwd=str(FRONTEND)) != 0:
-            print("npm ci failed - opening the prototype page", file=sys.stderr)
-            return
+            return _without_build(built, "npm ci failed (see above)")
     print("building the page …", flush=True)
     if subprocess.call([npm, "run", "build"], cwd=str(FRONTEND)) != 0:
-        print("the page did not build (see above) - opening the last build or the prototype",
-              file=sys.stderr)
+        return _without_build(built, "the page did not build (see above)")
+    return True
+
+
+def _without_build(built, why: str) -> bool:
+    if built.exists():
+        print(f"{why} - opening the previous build of the page", file=sys.stderr)
+        return True
+    print(f"{why} - and there is no earlier build to open. Fix that, then {RUN_HINT} again.",
+          file=sys.stderr)
+    return False
 
 
 def main(argv: list[str]) -> int:
@@ -103,8 +109,8 @@ def main(argv: list[str]) -> int:
               file=sys.stderr)
         return 1
 
-    if not args.text:
-        ensure_frontend()
+    if not args.text and not ensure_frontend():
+        return 1
 
     from backend import repl
     argv_repl = ["repl", *rest] if args.text else [

@@ -85,8 +85,8 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
 ```
 
 **Where the build stands against this diagram (2026-09-11).** The browser page is the Vite +
-TypeScript app in `frontend/` (ADR-009), built into `frontend/dist` and served by `backend/app.py`
-(the prototype `frontend/public/preview.html` stays reachable until the new page is validated live).
+TypeScript app in `frontend/` (ADR-009), built into `frontend/dist` by the launcher and served by
+`backend/app.py`; it is the only page (the prototype `preview.html` was removed, user, 2026-09-11).
 It renders and plays, and sends `control` and `settings` messages. The **microphone is still
 captured by the orchestrator** (`backend/audio.py`, sounddevice, with the device recovery of §9) —
 browser mic streaming (data flow step 1, `audio_chunk`) is not built, and whether it should replace

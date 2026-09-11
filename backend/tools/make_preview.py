@@ -87,8 +87,8 @@ def main(argv: list[str]) -> int:
     # Configured persona first, so the page opens on the tutor you are about to talk to.
     cast.sort(key=lambda row: (not row["configured"], row["id"]))
     (OUT / "cast.json").write_text(json.dumps(cast, ensure_ascii=False), encoding="utf-8")
-    print(f"\nopen frontend/public/preview.html over HTTP, e.g.\n"
-          f"  python -m http.server 8778 --bind 127.0.0.1 --directory frontend/public")
+    print("\nstart the tutor (.\\run on Windows, make run elsewhere): the page's tutor cards come "
+          "from cast.json, and Activity -> Rig -> 'say it' plays these samples")
     return 0
 
 
