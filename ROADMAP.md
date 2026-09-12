@@ -1290,6 +1290,16 @@ subprocess, the speech queue and the server have closed, so VOICEVOX and SearXNG
 everything else. Ctrl+C still leaves them up — that is the "back in a minute" exit, and the
 containers are slow to start. Test in `test_app.py`: nothing happens unless the button was pressed.
 
+**Status 2026-09-12 (evening) — the wait is visible, and New topic asks first** (user). The launch
+prints what it is waiting for and caps the wait at `MEMORY_WAIT_S` (45 s) — past that she starts and
+the summary lands for the next launch, because a tutor that never appears is worse than one a
+lesson behind; the task is cancelled if the lesson ends first. The page shows one bubble with three
+breathing dots and a caption driven by the service chips (`reading back your last lesson…`,
+`loading speech recognition…`, `warming her voice…`), removed by her first sentence. The New topic
+button opens a confirm card instead of firing on a misclick. Checked in headless Chrome: the bubble
+is up with three dots while loading and gone after she speaks; the card sends nothing on "Keep
+going" and `control: new_topic` on "New topic".
+
 ## Next session — plan for 2026-09-13 (set 2026-09-12)
 
 **1. One real lesson on the new page, first.** Refresh study data at the start (Settings → Account)

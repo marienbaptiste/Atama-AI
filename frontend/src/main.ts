@@ -90,6 +90,22 @@ const handlers: Handlers = {
   error: m => log(esc(m.message), "err"),
 };
 
+//: What the chat says while she is still coming up (user, 2026-09-12). The chips already carry
+//: the detail; this turns the loudest of them into one sentence, because a blank panel during a
+//: 40-second launch looks broken. Her first sentence removes it (chat.her).
+const LOADING: Record<string, (m: ServiceStatusMsg) => string | null> = {
+  brain: m => m.state === "starting"
+    ? (/lesson/i.test(m.detail) ? "reading back your last lesson…" : "waking your tutor…")
+    : m.state === "ready" ? "she is thinking of how to start…" : null,
+  stt: m => (m.state === "loading" ? "loading speech recognition…" : null),
+  voicevox: m => (m.state === "loading" ? "warming her voice…" : null),
+};
+
+function waitingFor(m: ServiceStatusMsg): void {
+  const caption = LOADING[m.service]?.(m);
+  if (caption) chat.loading(caption);
+}
+
 function onState(s: typeof state, t: number): void {
   state = s;
   turn = t;
@@ -129,6 +145,7 @@ function onService(m: ServiceStatusMsg): void {
       return;
     default:
       if (status.isService(m.service)) status.showService(m);
+      waitingFor(m);
   }
 }
 
@@ -270,6 +287,7 @@ const link = new Link(handlers, {
     // A reconnect is a new socket: tell the server again that this page can play sound.
     if (unlocked) link.send({ type: "control", action: "ready" });
     live("connected — hold SPACE, or the button, and speak", "on");
+    chat.loading("getting everything ready…");        // until her first sentence lands
     talk.render();
     settings.refresh();
   },
@@ -310,8 +328,22 @@ settings.initSettings({
 });
 
 //: Same as saying 「話題を変えて」: she drops the subject, interrupting herself if need be.
-$("topic").onclick = () => {
-  link.send({ type: "control", action: "new_topic" });
+//: New topic asks first (user, 2026-09-12): it interrupts her and throws away the subject you
+//: were in the middle of, which is a lot to lose to a misclick on a 42px round button.
+$("topic").onclick = e => {
+  e.stopPropagation();                              // or the page-wide handler closes it at once
+  showPop($("topic-pop"), $("topic"), "<small>Change the subject?</small>"
+    + "<p>She drops what you are talking about and finds something new.</p>"
+    + '<div class="row"><button type="button" id="topic-yes">New topic</button>'
+    + '<button type="button" id="topic-no">Keep going</button></div>');
+  $("topic-pop").querySelector<HTMLButtonElement>("#topic-yes")!.onclick = () => {
+    $("topic-pop").hidden = true;
+    link.send({ type: "control", action: "new_topic" });
+    log("asked her for a new topic", "ok");
+  };
+  $("topic-pop").querySelector<HTMLButtonElement>("#topic-no")!.onclick = () => {
+    $("topic-pop").hidden = true;
+  };
   $("topic").blur();                                // or the next SPACE would press it again
 };
 

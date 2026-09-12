@@ -112,9 +112,30 @@ export class Chat {
     for (const line of this.lines) line.el.innerHTML = this.html(line);
   }
 
+  /** She is not here yet: one bubble on her side saying what is still loading, so the wait has a
+   *  face (user, 2026-09-12 — the launch went quiet for half a minute and looked hung). Calling it
+   *  again only changes the words; her first real sentence removes it. */
+  loading(caption: string): void {
+    let el = this.list.querySelector<HTMLElement>(".msg.loading");
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "msg her loading";
+      el.innerHTML = '<i class="dots" aria-hidden="true"><u></u><u></u><u></u></i><span></span>';
+      const made = el;
+      this.append(() => this.list.appendChild(made));
+    }
+    el.querySelector("span")!.textContent = caption;
+  }
+
+  /** Whatever was loading is done, or she is about to speak. */
+  ready(): void {
+    this.list.querySelector<HTMLElement>(".msg.loading")?.remove();
+  }
+
   /** Her sentence, as its audio starts — one bubble each (user, 2026-09-13), with the icon that
    *  asks for its English. Nothing is translated until it is clicked (ADR-036). */
   her(msg: SpeakMsg): void {
+    this.ready();
     const body = this.bubble("her");
     this.show(body, msg.text, msg.grammar, msg.readings, msg.vocab);
     const button = document.createElement("button");

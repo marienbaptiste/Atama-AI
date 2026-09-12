@@ -494,6 +494,13 @@ Capping it is cheaper than rotating more often.
 
 ## 8b. STUDY PANEL (ADR-036 — user request 2026-09-11. Built 2026-09-12: the layout, the chat, the tutor's marks, red grammar, the hint, furigana, the word you used floating behind her. Explanations and translations on click, 2026-09-13. Not yet: word cards)
 
+- **The wait has a face** (user, 2026-09-12). Until her first sentence the chat holds one bubble
+  with three breathing dots and a caption taken from whichever service is still coming up —
+  "reading back your last lesson…", "loading speech recognition…", "warming her voice…", "she is
+  thinking of how to start…". It is removed by her first sentence. A launch that goes quiet for
+  half a minute reads as a hang, and the chips alone were not enough.
+- **New topic asks first** (user, 2026-09-12): the round button opens a confirm card rather than
+  dropping the subject, because it interrupts her and throws away what you were in the middle of.
 - **Layout.** The avatar takes the left of the page; the conversation runs on the right as a
   message thread — her bubbles on one side, the student's on the other, newest at the bottom,
   following the conversation as it grows. `STUDY_PANEL=off` returns to the full-width avatar with

@@ -218,15 +218,25 @@ async def run(args: argparse.Namespace) -> int:
     # had all of it to finish in. She reads it, THEN her prompt is assembled, THEN she is spawned:
     # a tutor who greets you having forgotten yesterday is what this ordering prevents.
     if summary is not None:
+        # Whatever is left of it is waited for HERE, and it is the only thing left to wait for, so
+        # say so: an unexplained pause after "whisper ready" looks like a hang (user, 2026-09-12).
+        # It is also capped — past MEMORY_WAIT_S she carries on and the summary lands for the next
+        # launch, because a tutor that never appears is worse than one a lesson behind.
+        registry.report("brain", "starting", "reading back your last lesson")
+        landed, waited = 0, time.monotonic()
         try:
-            landed = await summary
+            landed = await asyncio.wait_for(asyncio.shield(summary), MEMORY_WAIT_S)
+        except asyncio.TimeoutError:
+            print(f"{DIM}memory: the last lesson is taking longer than {MEMORY_WAIT_S:.0f}s — "
+                  f"starting without it; it will be there next time{RESET}")
         except Exception as exc:  # noqa: BLE001 - memory is best-effort (ADR-031); a summariser
-            landed = 0            # that falls over must cost recall, never the lesson
             print(f"{DIM}memory: could not read the last lesson back ({type(exc).__name__}); "
                   f"carrying on without it{RESET}")
-        rest = len(mem.pending_logs())
-        print(f"{DIM}memory: {'your last lesson is in' if landed else 'nothing new to remember'}"
-              + (f"; {rest} older session(s) will follow in the background{RESET}" if rest else RESET))
+        else:
+            rest = len(mem.pending_logs())
+            print(f"{DIM}memory: {'your last lesson is in' if landed else 'nothing new to remember'}"
+                  f" ({time.monotonic() - waited:.0f}s)"
+                  + (f"; {rest} older session(s) will follow in the background{RESET}" if rest else RESET))
     if mem is not None:
         memory_text = mem.render()
 
@@ -367,6 +377,8 @@ async def run(args: argparse.Namespace) -> int:
         finally:
             if catchup is not None:
                 catchup.cancel()
+            if summary is not None and not summary.done():
+                summary.cancel()      # it outran the launch's patience; do not outlive the lesson
             await explainer.aclose()
             if voice is not None:
                 await voice.aclose()
@@ -400,6 +412,8 @@ async def run(args: argparse.Namespace) -> int:
     finally:
         if catchup is not None:
             catchup.cancel()
+        if summary is not None and not summary.done():
+            summary.cancel()
         await explainer.aclose()
         if voice is not None:
             await voice.aclose()
@@ -490,6 +504,12 @@ async def _check_microphone(cfg) -> bool:
 #: A tutor switch that has not brought up the new session by then has failed: say so, keep the old
 #: tutor. Starting one normally takes a couple of seconds (measured 1.2 s, 2026-09-11).
 SWITCH_TIMEOUT_S = 90.0
+
+#: How long the launch waits for the last lesson's summary once everything else is warm. It runs
+#: from the top of the launch, so this is only what is LEFT of it; the same summary has taken 13.7 s
+#: and 52.6 s, so the cap is generous. Past it she starts anyway and the summary lands for the next
+#: launch — a tutor that never appears is worse than one a lesson behind (user, 2026-09-12).
+MEMORY_WAIT_S = 45.0
 
 
 def _compaction_text(ev: Compacting) -> str:
