@@ -106,9 +106,11 @@ code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:4px}
 #dock .round svg{width:20px;height:20px}
 #dock .round:hover:not(:disabled){background:#f4f6f9}
 #dock .round:disabled{opacity:.45;cursor:default}
+/* The line under the dock. Plain white like the dock itself (user, 2026-09-12: green was
+   jarring) - it says what the keys do, and only trouble earns a colour. */
 #live{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:12;font:600 12px system-ui;
-      color:#b6bec8;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.6)}
-#live[data-tone="on"]{color:#9be0a8}  #live[data-tone="warn"]{color:#ffc46b}
+      color:rgba(255,255,255,.82);white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.75)}
+#live[data-tone="on"]{color:rgba(255,255,255,.82)}  #live[data-tone="warn"]{color:#ffc46b}
 #hint{position:fixed;left:50%;bottom:104px;transform:translateX(-50%);z-index:11;font:12px system-ui;
       color:#fff;background:rgba(242,163,58,.85);padding:4px 12px;border-radius:999px}
 

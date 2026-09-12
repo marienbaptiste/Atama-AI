@@ -52,6 +52,7 @@ class ClaudeCliBrain:
         allowed_tools: Iterable[str] = (),
         model: str | None = None,
         replace_system_prompt: bool | None = None,
+        effort: str | None = None,
     ):
         self._cfg = cfg
         self._registry = registry
@@ -60,6 +61,12 @@ class ClaudeCliBrain:
         self._system_prompt = system_prompt
         self._allowed_tools = tuple(allowed_tools)
         self._model = model or cfg.CLAUDE_MODEL
+        #: Thinking budget. The tutor gets the configured one; the side workers (summariser,
+        #: explanations) pass "low" because a one-shot JSON extraction has nothing to deliberate
+        #: about — NOT for speed: measured 2026-09-12, one summary took 13.7 s at medium and
+        #: 52.6 s at low, so that call's latency is variance, not effort (which is also why the
+        #: launch no longer waits for it).
+        self._effort = cfg.CLAUDE_EFFORT if effort is None else effort
         replace = getattr(cfg, "CLAUDE_REPLACE_SYSTEM_PROMPT", True) if replace_system_prompt is None else replace_system_prompt
         self._prompt_flag = "--system-prompt-file" if replace else "--append-system-prompt-file"
         self._session_id = str(uuid.uuid4())
@@ -181,9 +188,9 @@ class ClaudeCliBrain:
         argv += ["--model", self._model]
         if self._cfg.CLAUDE_FALLBACK_MODEL:
             argv += ["--fallback-model", self._cfg.CLAUDE_FALLBACK_MODEL]
-        if self._cfg.CLAUDE_EFFORT:
+        if self._effort:
             # The CLI lever for spec §10's "extended thinking OFF": deliberation is silence.
-            argv += ["--effort", self._cfg.CLAUDE_EFFORT]
+            argv += ["--effort", self._effort]
         if resume:
             argv += ["--resume", self._session_id]
         else:

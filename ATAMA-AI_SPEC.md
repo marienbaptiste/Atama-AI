@@ -348,6 +348,13 @@ is abandoned.
   does not know it. A tutor who says 「あれ、なんだっけ」 beats one that stalls.
 - **Write in the gap.** The turn record is appended when `TurnComplete` fires, never while a turn
   is in flight.
+- **The launch is one wait, not several** (amended 2026-09-12, user). The summary of the last
+  lesson starts at the top of `run()` and runs while the SRS snapshot, the page, VOICEVOX and
+  Whisper all come up; it is awaited at the bottom, immediately before her system prompt is
+  assembled and her session spawned. She therefore never speaks having forgotten yesterday, and
+  the student never waits twice for the same seconds. A session nobody spoke in is marked
+  summarised without a model call, and an answer of "there is nothing here" is not asked again —
+  three such logs were re-read at every launch (live, 2026-09-12).
 - **Summarise at the next launch** (amended 2026-09-10), as a separate short-lived `Brain` on a
   cheap model (`MEMORY_SUMMARY_MODEL`, default `haiku`) whose input is a text-only excerpt of the
   turn log — deterministic and re-runnable. Originally this ran at session end with the next launch

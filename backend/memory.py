@@ -337,6 +337,17 @@ class Memory:
                          "<!-- What this tutor has said about themselves. Edit or delete any line: a wrong",
                          _keep(tutor, TUTOR_FACTS))
 
+    def mark_done(self, session: str, date: str) -> None:
+        """Record a session as summarised without changing any memory — for one with nothing in
+        it. The topics row IS the bookkeeping (there is no second file), so an empty row is how a
+        log stops being pending."""
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+            with _LOCK, self.topics_jsonl.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"date": date, "session": session, "topics": []}) + "\n")
+        except OSError:
+            pass
+
     def _brief_date(self) -> str:
         """The date of the brief on disk — it is written as "(YYYY-MM-DD) …"."""
         head = _read(self.brief_md)[:12]
@@ -360,22 +371,42 @@ class Memory:
             if on_log is not None:
                 on_log(log, at, len(queue))
             excerpt = excerpt_of(log)
-            if not excerpt:
+            if not has_a_lesson(excerpt):
+                # A launch where the student never spoke: she greeted, nobody answered. There is
+                # nothing to remember, and asking a model to say so costs the CLI's cold start
+                # every launch from then on (2026-09-12: the newest pending log was 73 chars and
+                # the launch reported "0 summarised"). Mark it done so it is never retried.
+                self.mark_done(log.stem.split("-", 3)[-1], log.stem[:10])
                 continue
             try:
                 reply = await ask(instructions + "\n\n" + excerpt)
             except Exception:           # noqa: BLE001 - best-effort by contract
                 continue
             summary = parse_summary(reply)
+            session, date = log.stem.split("-", 3)[-1], log.stem[:10]
             if summary is None:
+                # It answered, but not in JSON. That is the model, not the lesson, and it will do
+                # the same next launch — so stop asking. Only a *failed call* (the except above)
+                # stays pending, because that one is worth retrying.
+                self.mark_done(session, date)
                 continue
-            date = log.stem[:10]
-            if self.apply_summary(log.stem.split("-", 3)[-1], date, summary):
+            if self.apply_summary(session, date, summary):
                 landed += 1
+            else:
+                # It answered, and its answer was "there is nothing here" (an empty brief and no
+                # topics). Retrying that every launch is what made five old sessions cost a model
+                # call every time the app started (user, 2026-09-12). One answer is enough.
+                self.mark_done(session, date)
         return landed
 
 
 # ---------------------------------------------------------------------- helpers
+def has_a_lesson(excerpt: str) -> bool:
+    """Whether a transcript is worth a summariser call: the student has to have said something.
+    Her own greeting to an empty room is not a lesson."""
+    return any(line.startswith("STUDENT: ") and line[9:].strip() for line in excerpt.splitlines())
+
+
 def excerpt_of(log: Path, limit: int = EXCERPT_MAX_CHARS) -> str:
     """Text-only transcript of one session, newest turns kept if it must be cut."""
     lines: list[str] = []

@@ -202,6 +202,52 @@ def test_a_memory_from_before_the_split_belongs_to_whoever_is_teaching_now(tmp_p
     assert "猫の話をした。" in m.render() and "engineer" in m.render()
 
 
+def test_a_session_nobody_spoke_in_is_never_asked_about(tmp_path):
+    """Three old launches where the tutor greeted an empty room were re-summarised at every start,
+    each costing a model call and the first one the CLI's cold start (live, 2026-09-12)."""
+    m = mem(tmp_path)
+    m.session_id = "quiet"
+    m.record_turn(student="", tutor_sentences=[{"text": "こんにちは。"}])
+    m.session_id = "now"
+    asked = []
+
+    async def ask(prompt):
+        asked.append(prompt)
+        return '{"brief": "x", "topics": ["y"]}'
+
+    assert asyncio.run(m.summarise_pending(ask, "sum")) == 0
+    assert asked == []                       # not one call spent on it
+    assert m.pending_logs() == []            # and it never comes back
+
+
+def test_an_answer_of_nothing_is_not_asked_twice(tmp_path):
+    """A lesson the summariser judges empty is done with; only a failed CALL stays pending."""
+    m = mem(tmp_path)
+    m.session_id = "short"
+    m.record_turn(student="はい", tutor_sentences=[{"text": "こんにちは。"}])
+    m.session_id = "now"
+    calls = []
+
+    async def empty(prompt):
+        calls.append(1)
+        return '{"brief": "", "topics": []}'
+
+    assert asyncio.run(m.summarise_pending(empty, "sum")) == 0
+    assert len(calls) == 1 and m.pending_logs() == []
+
+    m2, broken = mem(tmp_path, session="other"), []
+
+    async def fails(prompt):
+        broken.append(1)
+        raise RuntimeError("rate limited")
+
+    m2.session_id = "again"
+    m2.record_turn(student="はい", tutor_sentences=[{"text": "はい。"}])
+    m2.session_id = "now"
+    assert asyncio.run(m2.summarise_pending(fails, "sum")) == 0
+    assert len(m2.pending_logs()) == 1       # a failed call is worth retrying, and stays
+
+
 # ---------------------------------------------------------------- summarising
 def test_a_malformed_summary_changes_nothing(tmp_path):
     """A failed summarise must leave yesterday's memory intact, not truncate it to nothing."""

@@ -93,15 +93,18 @@ async def run(args: argparse.Namespace) -> int:
     for secret in cfg.secrets().values():
         registry.register_secret(secret)
 
-    # --- launch: SRS snapshot -> student profile (spec §5, ADR-024) -------------
     print(f"{BOLD}atama-AI · M1 text REPL{RESET}")
     _first_run_notes(cfg, args)
+    mem = memory_api.Memory.from_config(cfg) if cfg.MEMORY_ENABLED else None   # per tutor
+
+    # --- launch: SRS snapshot -> student profile (spec §5, ADR-024) -------------
     if args.no_srs:
         student = profile_api.StudentProfile()
         print(f"{DIM}SRS skipped (--no-srs){RESET}")
     else:
         t0 = time.monotonic()
-        student = profile_api.build(
+        student = await asyncio.to_thread(
+            profile_api.build,
             cfg.WANIKANI_TOKEN, cfg.BUNPRO_API_TOKEN,
             cfg.path("CACHE_DIR") / "srs", cfg.SRS_CACHE_TTL_S, cfg.SRS_FETCH_BUDGET_S,
             registry, force=args.refresh,
@@ -114,51 +117,18 @@ async def run(args: argparse.Namespace) -> int:
     # Explanations and translations, only when the student clicks one (spec §8b, ADR-036).
     explainer = explain_api.Explainer(cfg)
 
-    # --- memory (spec §6b, ADR-031): catch up on past sessions, then read once --------------
-    # Summarising happens HERE, at launch, for any session never summarised — not on exit, which
-    # has to be instant. It is the init time the student already waits through for Whisper.
-    mem, memory_text = None, ""
-    if cfg.MEMORY_ENABLED:
-        mem = memory_api.Memory.from_config(cfg)      # per tutor: <state>/memory/<persona>
-        pending = mem.pending_logs()
-        if pending:
-            # Only the newest here — it is the one she greets with. The rest are caught up in the
-            # background once the student is talking: five pending sessions held the launch for
-            # 80 seconds and looked like a hang (2026-09-12).
-            print(f"{DIM}memory: summarising the last lesson with {cfg.MEMORY_SUMMARY_MODEL}…{RESET}", flush=True)
-            landed = await _summarise(cfg, mem, limit=1)
-            rest = len(pending) - landed
-            print(f"{DIM}memory: {landed} summarised"
-                  + (f"; {rest} older session(s) continue in the background{RESET}" if rest > 0 else RESET))
-        memory_text = mem.render()
+    # --- memory (spec §6b, ADR-031) ------------------------------------------------------
+    # The summary of the last lesson is what she greets with, so she must have read it before she
+    # says a word — but it is a model call whose latency is variance, not work (13.7 s and 52.6 s
+    # on two runs of the same summary, 2026-09-12). So it starts HERE, at the top of the launch,
+    # and runs while Whisper loads, VOICEVOX warms and the page comes up; it is awaited at the
+    # bottom, just before her prompt is built. Nothing waits twice for the same seconds.
+    memory_text, summary = "", None
+    if mem is not None and mem.pending_logs():
+        print(f"{DIM}memory: reading back your last lesson ({cfg.MEMORY_SUMMARY_MODEL}) while "
+              f"everything loads…{RESET}", flush=True)
+        summary = asyncio.create_task(_summarise(cfg, mem, limit=1))
 
-    rendered = prompt.build(profile_text, persona=cfg.TUTOR_PERSONA, memory=memory_text)
-    profile_api.debug_snapshot(student, profile_text, cfg.path("LOG_DIR"), dt.date.today().isoformat())
-    sections = " · ".join(f"{k} {v}" for k, v in rendered.sections.items())
-    print(f"{DIM}prompt {rendered.tokens} tokens ({sections})"
-          f"{' · TRUNCATED: ' + ', '.join(rendered.truncated) if rendered.truncated else ''}{RESET}")
-
-    # --- brain (ADR-027: the REPL talks to the interface, not to Claude) --------
-    tools = mcp_config.allowed_tools(cfg)
-    mcp_json = mcp_config.write(cfg) if tools else None
-    # Each tier is the NEWEST model the CLI accepts, not whatever its bare alias maps to: the
-    # `sonnet` alias ran claude-sonnet-4-6 while claude-sonnet-5 works (2026-09-10, model_tiers.py).
-    tiers = model_tiers.Resolver.from_config(cfg)
-    tutor_model = await asyncio.to_thread(tiers.resolve, str(cfg.CLAUDE_MODEL))
-    brain = brain_api.create(
-        cfg, registry=registry, model=tutor_model,
-        mcp_config=mcp_json,
-        mcp_ready_markers=mcp_config.markers(cfg) if mcp_json else None,
-        system_prompt=rendered.text,
-        allowed_tools=tools,
-    )
-    if mem is not None:
-        mem.session_id = brain.session_id     # the turn log is named after the session it records
-    try:
-        await brain.start()
-    except RuntimeError as exc:
-        print(f"\n{BOLD}cannot start the brain:{RESET} {exc}\n", file=sys.stderr)
-        return 2
     # --- mouth (spec §7): synthesis of sentence N+1 overlaps playback of N -------
     # --- the browser, if it is watching (spec §8) --------------------------------
     hub, server_task = None, None
@@ -229,15 +199,59 @@ async def run(args: argparse.Namespace) -> int:
         except Exception as exc:  # noqa: BLE001 - a load failure must be legible, not a traceback
             registry.report("stt", "error", cfg.WHISPER_MODEL, f"{type(exc).__name__}: {exc}")
             print(f"{BOLD}cannot load Whisper:{RESET} {exc}", file=sys.stderr)
+            # Nothing has been spawned yet: the tutor is built after this, deliberately, so a
+            # failed load costs a launch and not a live session.
             if voice is not None:
                 await voice.aclose()
-            await brain.aclose()
+            if summary is not None:
+                summary.cancel()
             return 2
         if not await _check_microphone(cfg):
             if voice is not None:
                 await voice.aclose()
-            await brain.aclose()
+            if summary is not None:
+                summary.cancel()
             return 2
+
+    # --- her mind, built last (2026-09-12) -------------------------------------------------
+    # Everything else is warm by now, and the summary that started at the top of the launch has
+    # had all of it to finish in. She reads it, THEN her prompt is assembled, THEN she is spawned:
+    # a tutor who greets you having forgotten yesterday is what this ordering prevents.
+    if summary is not None:
+        landed = await summary
+        rest = len(mem.pending_logs())
+        print(f"{DIM}memory: {'your last lesson is in' if landed else 'nothing new to remember'}"
+              + (f"; {rest} older session(s) will follow in the background{RESET}" if rest else RESET))
+    if mem is not None:
+        memory_text = mem.render()
+
+    rendered = prompt.build(profile_text, persona=cfg.TUTOR_PERSONA, memory=memory_text)
+    profile_api.debug_snapshot(student, profile_text, cfg.path("LOG_DIR"), dt.date.today().isoformat())
+    sections = " · ".join(f"{k} {v}" for k, v in rendered.sections.items())
+    print(f"{DIM}prompt {rendered.tokens} tokens ({sections})"
+          f"{' · TRUNCATED: ' + ', '.join(rendered.truncated) if rendered.truncated else ''}{RESET}")
+
+    # --- brain (ADR-027: the REPL talks to the interface, not to Claude) --------
+    tools = mcp_config.allowed_tools(cfg)
+    mcp_json = mcp_config.write(cfg) if tools else None
+    # Each tier is the NEWEST model the CLI accepts, not whatever its bare alias maps to: the
+    # `sonnet` alias ran claude-sonnet-4-6 while claude-sonnet-5 works (2026-09-10, model_tiers.py).
+    tiers = model_tiers.Resolver.from_config(cfg)
+    tutor_model = await asyncio.to_thread(tiers.resolve, str(cfg.CLAUDE_MODEL))
+    brain = brain_api.create(
+        cfg, registry=registry, model=tutor_model,
+        mcp_config=mcp_json,
+        mcp_ready_markers=mcp_config.markers(cfg) if mcp_json else None,
+        system_prompt=rendered.text,
+        allowed_tools=tools,
+    )
+    if mem is not None:
+        mem.session_id = brain.session_id     # the turn log is named after the session it records
+    try:
+        await brain.start()
+    except RuntimeError as exc:
+        print(f"\n{BOLD}cannot start the brain:{RESET} {exc}\n", file=sys.stderr)
+        return 2
 
     print(registry.table())
     print(f"{DIM}type Japanese and press enter · /status /prompt /profile /quit{RESET}\n")
@@ -457,13 +471,10 @@ async def _check_microphone(cfg) -> bool:
         return True
     device = cfg.AUDIO_INPUT_DEVICE or "system default"
     if level < audio_mod.SILENT_RMS:
-        print(f"\n{BOLD}The microphone ({device}) looks muted{RESET} — rms {level:.6f} over one second, "
-              f"which is digital silence rather than a quiet room. It opened, so the device exists.\n"
-              f"  1. the physical mute on the headset (on many, flipping the boom up mutes it)\n"
-              f"  2. Settings > Privacy & security > Microphone > 'Let desktop apps access your microphone'\n"
-              f"  3. Settings > System > Sound > Input > device level is not 0\n"
-              f"  4. `python -m backend.audio` — a device listed only under WDM-KS is not selectable\n"
-              f"Starting anyway — the meter will show whether you are being heard.\n")
+        # One line, not a checklist: it printed at every launch, and the cause is almost
+        # always the switch on the headset (user, 2026-09-12).
+        print(f"{BOLD}microphone ({device}) is silent{RESET} - rms {level:.6f}, which is a mute, "
+              f"not a quiet room. Check the headset switch; the meter shows when you are heard.")
     else:
         print(f"{DIM}microphone ready: {device} · rms {level:.4f}{RESET}")
     return True

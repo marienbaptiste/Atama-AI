@@ -56,8 +56,11 @@ MEMORY_MAX_TOKENS = 400
 #: two in every turn now). The template is ~1771 tokens of the total; the next section to grow
 #: should pay for itself in the lesson, because this is latency (§10). 2950 -> 3150 the same day
 #: for the memory section's own rise (see MEMORY_MAX_TOKENS): a tutor who forgets your name every
-#: week is not a tutor you keep.
-TOTAL_MAX_TOKENS = 3150
+#: week is not a tutor you keep. 3150 -> 3250 the same evening, for the rule that stops her
+#: INVENTING one — she greeted the student by a name nobody had told her (live, 2026-09-12).
+#: The template is now ~1954 tokens and this has to stop: ROADMAP 22's next-session item 6 is to
+#: rewrite these rules shorter, not to raise the ceiling again. It is latency (§10).
+TOTAL_MAX_TOKENS = 3250
 #: A ROTATED session's handoff (ADR-032): the lesson so far, from the turn log. Only rotated
 #: sessions carry it, so it has its own budget on top of TOTAL_MAX_TOKENS rather than squeezing
 #: the sections every session needs. Spent only when a long lesson has earned a fresh window.

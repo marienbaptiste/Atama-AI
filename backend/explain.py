@@ -105,7 +105,7 @@ class Explainer:
         self._turns = 0
         model = await asyncio.to_thread(model_tiers.Resolver.from_config(self.cfg).resolve,
                                         str(self.cfg.EXPLAIN_MODEL))
-        worker = brain_api.create(self.cfg, registry=None, allowed_tools=(), model=model,
+        worker = brain_api.create(self.cfg, registry=None, allowed_tools=(), model=model, effort="low",
                                   system_prompt=SYSTEM)
         await worker.start()
         self._worker = worker

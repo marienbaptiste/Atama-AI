@@ -1260,6 +1260,30 @@ in two runs, then 3.7 s and 5.9 s for the next on the same worker: the cost is t
 request, not the model's generation. It is already off the critical path — the launch summarises
 the newest session and the rest catch up in the background.
 
+**Status 2026-09-12 (from the first real launches) — four findings, all fixed.**
+1. *She greeted the student by a name nobody had given her* (「マリアンさん」). Not from the memory
+   files, not from the profile, and not in any earlier transcript — the first occurrence anywhere
+   is that greeting. Probed the subprocess with the tutor's own isolation: asked what account the
+   session is logged in as, the CLI answers the user's e-mail address, and the model read a name
+   out of it. Nothing of ours leaked; it is the CLI's own auth context, which §4's allowlist and
+   empty cwd cannot strip. `prompts/tutor.md` now forbids inventing a name, country, job or family
+   that the memory section does not carry, and says an e-mail or account name is not an
+   introduction. She also invented a cat: new things about herself must now be offered as news,
+   not as shared history, and they land in her `facts.md` for next time.
+2. *"0 summarised", every launch.* Three of the five pending logs were launches where the student
+   never spoke: they can never produce a summary, so they were retried at every start, one model
+   call each and the CLI's 25-40 s cold start on the first. A log with no student turn is now
+   marked done without a call, and an answer of "there is nothing here" — or one that is not JSON
+   — is not asked again; only a failed CALL stays pending. Pending went 5 → 0 on this machine.
+3. *The line under the dock was green.* It is white now, like the dock (user: "green is jarring").
+4. *The launch waited a minute on the summary, alone.* The same summary took 13.7 s and 52.6 s on
+   two runs at the same effort, so its latency is variance, not work — lowering the effort made it
+   slower, not faster. The fix the user asked for is ordering, not a smaller model: the summary now
+   starts at the top of `run()` and runs while SRS, the page, VOICEVOX and Whisper come up, and is
+   awaited just before her prompt is built and her session spawned (so the brain is now created
+   LAST). She still never greets having forgotten yesterday, and the launch is one wait instead of
+   two. The microphone checklist is one line now, also by request.
+
 ## Next session — plan for 2026-09-13 (set 2026-09-12)
 
 **1. One real lesson on the new page, first.** Refresh study data at the start (Settings → Account)

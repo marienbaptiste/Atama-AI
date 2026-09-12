@@ -12,9 +12,10 @@ remember it next time. Read the transcript below and reply with ONE JSON object 
   each: grammar they got wrong more than once, a word they used unprompted, what they find hard.
   Who they are goes in "student_facts" instead. Leave it empty rather than guess.
 - "student_facts": at most 3 DURABLE facts about the student, in English, one short line each —
-  the kind of thing a friend remembers and would be embarrassed to forget: their name, the city or
-  country they live in, their job or studies, their family, their pets, a hobby they care about, a
-  trip they are planning. Still true in a month, or leave it out. Not their mood today, not what
+  the kind of thing a friend remembers and would be embarrassed to forget. **If they gave their
+  name anywhere in this transcript, that is the first fact and it is never left out: write it as
+  "Name: X".** Then the city or country they live in, their job or studies, their family, their
+  pets, a hobby they care about, a trip they are planning. Still true in a month, or leave it out. Not their mood today, not what
   they got wrong — that is "notes".
 - "tutor_facts": at most 3 things the TUTOR said about THEIR OWN life in this lesson, in English,
   one short line each: the cat's name, the neighbourhood they live in, what they did at the
