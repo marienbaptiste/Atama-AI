@@ -110,7 +110,7 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
                                                             reads the SRS snapshot)
 
   run.cmd / up.py  : docker up → wait ready → build the page if stale → orchestrator → open page
-  stop.cmd / down.py, or the page's stop button (control quit): clean shutdown
+  stop.cmd / down.py, or the page's stop button (control quit): tutor, server AND containers
 ```
 
 **Today** the page (`frontend/`, Vite + TypeScript) shows the tutor with lip-sync and her face
@@ -294,7 +294,9 @@ it, builds the avatar page if its source is newer than the last build (the first
 SPACE and talk** — press it while she is talking to interrupt her, and hold **ALT GR** while
 recording to drop what you just said.
 Ctrl+C stops the tutor and leaves the containers running — they are slow to start and cheap to
-keep, so `make stop` is separate and deliberate.
+keep, so `make stop` is separate and deliberate. The **stop button on the page** is the other
+kind of exit: it means "I am done for today", so it takes the containers down too, exactly as
+`make stop` / `.\stop` would.
 
 Neither works? Both are plain modules: `python -m backend.tools.up` and
 `python -m backend.tools.down`.

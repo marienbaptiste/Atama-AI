@@ -1284,6 +1284,12 @@ the newest session and the rest catch up in the background.
    LAST). She still never greets having forgotten yesterday, and the launch is one wait instead of
    two. The microphone checklist is one line now, also by request.
 
+**Status 2026-09-12 — the page's stop button is a full stop** (user). `control: quit` sets
+`Hub.quit_requested`; both of the REPL's shutdown paths then run `backend.tools.down` after the
+subprocess, the speech queue and the server have closed, so VOICEVOX and SearXNG go down with
+everything else. Ctrl+C still leaves them up — that is the "back in a minute" exit, and the
+containers are slow to start. Test in `test_app.py`: nothing happens unless the button was pressed.
+
 ## Next session — plan for 2026-09-13 (set 2026-09-12)
 
 **1. One real lesson on the new page, first.** Refresh study data at the start (Settings → Account)

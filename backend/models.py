@@ -50,8 +50,9 @@ class Control(_Msg):
     """
 
     type: Literal["control"] = "control"
-    #: `quit` shuts the orchestrator down cleanly — the claude subprocess, the speech queue and
-    #: this socket. It is NOT `stop`, which is already the push-to-talk release edge; overloading
+    #: `quit` shuts everything down cleanly — the claude subprocess, the speech queue, this
+    #: socket, and then the containers, because the page's stop button means "I am done for today"
+    #: (user, 2026-09-12). Ctrl+C in the terminal leaves the containers up on purpose. It is NOT `stop`, which is already the push-to-talk release edge; overloading
     #: it would make every released key a request to exit.
     #: `new_topic` is the page's "New topic" button: she drops the current subject and finds a
     #: fresh one, exactly as if the student had said 「話題を変えて」.

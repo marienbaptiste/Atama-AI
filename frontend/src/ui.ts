@@ -85,8 +85,8 @@ export function showEnded(): void {
   if (document.getElementById("ended")) return;
   const cover = document.createElement("div");
   cover.id = "ended";
-  cover.innerHTML = "<div><b>Session ended</b><br>The tutor and the server have stopped.<br>"
-    + "Start again from the terminal with the run command, then reload this page.</div>";
+  cover.innerHTML = "<div><b>Session ended</b><br>The tutor, the server and the containers have "
+    + "stopped.<br>Start again from the terminal with the run command, then reload this page.</div>";
   document.body.appendChild(cover);
 }
 

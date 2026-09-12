@@ -369,6 +369,7 @@ async def run(args: argparse.Namespace) -> int:
             if server_task is not None:
                 from backend import app as web
                 await web.shutdown(server_task)
+            await _stop_containers(hub)
         return 0
 
     try:
@@ -401,6 +402,7 @@ async def run(args: argparse.Namespace) -> int:
         if server_task is not None:
             from backend import app as web
             await web.shutdown(server_task)
+        await _stop_containers(hub)
     return 0
 
 
@@ -495,6 +497,21 @@ def _compaction_text(ev: Compacting) -> str:
     sizes = f" {ev.pre_tokens:,} → {ev.post_tokens:,} tokens" if ev.pre_tokens and ev.post_tokens else ""
     took = f" in {ev.duration_ms / 1000:.1f} s" if ev.duration_ms else ""
     return f"Claude condensed the conversation{who}:{sizes}{took}"
+
+
+async def _stop_containers(hub) -> None:
+    """Take the containers down, but only if the page's stop button asked for it.
+
+    The page's button means "I am done for today" (user, 2026-09-12), so it does what the stop
+    script does — VOICEVOX and SearXNG go too. Ctrl+C deliberately does NOT: that is the "back in a
+    minute" exit, and the containers are slow to start and cheap to keep (backend/tools/up.py).
+    """
+    if hub is None or not getattr(hub, "quit_requested", False):
+        return
+    from backend.tools.down import main as compose_down
+
+    print(f"{DIM}stopping the containers, as the page asked…{RESET}", flush=True)
+    await asyncio.to_thread(compose_down, [])
 
 
 async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=None, account=None,
@@ -800,9 +817,14 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
             # produces no audio are different problems, and they look identical otherwise.
             print(chr(13) + DIM + "[browser: " + action + "]" + RESET + " " * 30, end="", flush=True)
             if action == "quit":
-                # The page's stop button. Stopping the loop ends _listen, and run()'s finally
-                # then closes the claude subprocess, the speech queue and this server in order.
-                print(chr(13) + BOLD + "stop requested from the page - shutting down" + RESET, flush=True)
+                # The page's stop button means "I am done", not "pause the tutor" (user,
+                # 2026-09-12): stopping the loop ends _listen, run()'s finally closes the claude
+                # subprocess, the speech queue and this server, and then the containers go down
+                # too - exactly what `.\stop` does. Ctrl+C still leaves them up, because that is
+                # the "carry on in a minute" exit.
+                print(chr(13) + BOLD + "stop requested from the page - shutting everything down"
+                      + RESET, flush=True)
+                hub.quit_requested = True
                 loop.stop()
                 return
             import numpy as np

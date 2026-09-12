@@ -4,7 +4,8 @@ r"""Start everything, in one command.
 
 Brings up the containers, waits until VOICEVOX can actually answer, then runs the tutor with the
 browser avatar and opens it. Ctrl+C stops the tutor and leaves the containers running, because
-they are slow to start and cheap to keep; `make stop` (or `.\stop` on Windows) takes them down.
+they are slow to start and cheap to keep; `make stop` (or `.\stop` on Windows) takes them down —
+and so does the page's stop button, which means "I am done for today" (user, 2026-09-12).
 
 Waiting is the point of this file. `docker compose up -d` returns as soon as the container is
 created, not when the engine inside it is listening, so starting the app immediately means the

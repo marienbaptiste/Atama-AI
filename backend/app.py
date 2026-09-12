@@ -87,6 +87,10 @@ class Hub:
         #: word the tutor liked (`Annotator.grammar_only`). None until the REPL wires it.
         self.grammar: Callable[[str, list[dict[str, Any]]], list[dict[str, Any]]] | None = None
 
+        #: True once the page's stop button has been pressed: the REPL then takes the containers
+        #: down as well, which is what that button means (user, 2026-09-12).
+        self.quit_requested = False
+
         #: The student's own study list (backend/study.py): their words in a sentence, blue on the
         #: page, and what kind of thing a `[used:…]` names. Replaced on a Refresh.
         self.study: Any = None

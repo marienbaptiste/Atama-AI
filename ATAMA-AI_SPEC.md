@@ -73,7 +73,7 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
                           └──────────────┘             └──► Bunpro MCP (3 read tools,
                                                             reads the SRS snapshot)
   run.cmd / up.py  : docker up → wait ready → build the page if stale → orchestrator → open page
-  stop.cmd / down.py, or the page's stop button (control quit): clean shutdown
+  stop.cmd / down.py, or the page's stop button (control quit): tutor, server AND containers
               ▲                                        ▲
               │ style id                               │ persona text
         ┌─────┴────────────────────────────────────────┴──────┐

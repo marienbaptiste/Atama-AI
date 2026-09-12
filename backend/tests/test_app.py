@@ -238,3 +238,27 @@ def test_service_changes_reach_the_pages_from_any_thread_and_on_a_heartbeat():
     assert ("voicevox", "warm") in sent and ("wanikani", "stale") in sent
     assert sent.count(("voicevox", "warm")) >= 2                # the heartbeat re-sent it unchanged
     assert hub.last_status["wanikani"]["state"] == "stale"      # and a late page will see it
+
+
+def test_the_page_asks_for_a_full_stop_not_a_pause():
+    """The stop button means "I am done for today": the REPL reads `quit_requested` and takes the
+    containers down too, which Ctrl+C deliberately does not (user, 2026-09-12)."""
+    import asyncio
+
+    from backend import repl
+
+    hub = app.Hub()
+    assert hub.quit_requested is False
+
+    stopped = []
+    asyncio.run(repl._stop_containers(hub))          # nobody pressed it: nothing happens
+    assert stopped == []
+
+    hub.quit_requested = True
+    import backend.tools.down as down
+    real, down.main = down.main, lambda argv: stopped.append(argv) or 0
+    try:
+        asyncio.run(repl._stop_containers(hub))
+    finally:
+        down.main = real
+    assert stopped == [[]]
