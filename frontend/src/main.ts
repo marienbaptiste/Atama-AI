@@ -5,7 +5,7 @@ import "./style.css";
 import { Avatar, type CastEntry } from "./avatar";
 import { Chat } from "./chat";
 import { Talk } from "./mic";
-import type { ExplanationMsg, ServiceStatusMsg, SettingsMsg, SpeakMsg, TimingMsg } from "./protocol.gen";
+import type { ExplanationMsg, ServiceStatusMsg, SettingsMsg, SpeakMsg, TimingMsg, VocabSpan } from "./protocol.gen";
 import { Backchannel } from "./rig";
 import { loadSamples, mountRigPanel } from "./rigpanel";
 import * as settings from "./settings";
@@ -34,7 +34,8 @@ let persona = "";
 //: the student answers, i.e. when her next turn starts.
 let goal = "";
 const chat = new Chat($("chat-list"), (point, mark) => showPoint(point, mark),
-                      sentence => askExplain("sentence", sentence));
+                      sentence => askExplain("sentence", sentence),
+                      (word, mark) => showWord(word, mark));
 //: EXPLAIN_LANGUAGE: the language a grammar explanation comes back in (a translation is English).
 let explainLang: "en" | "ja" = "en";
 
@@ -244,6 +245,17 @@ function askExplain(kind: "grammar" | "sentence", text: string, context = ""): v
   if (!link.send({ type: "explain", kind, text, context, lang: explainLang })) {
     log("not connected — nothing to ask", "err");
   }
+}
+
+//: One of their own words, clicked (user, 2026-09-12). Everything on the card came with the
+//: sentence — their reading, the English WaniKani gives it, and where it is in their SRS — so
+//: this costs nothing and answers at once. On'yomi and kun'yomi wait for the offline dictionary.
+function showWord(word: VocabSpan, mark: HTMLElement): void {
+  const bits = [word.reading && `<p class="rd">${esc(word.reading)}</p>`,
+                word.meaning && `<p>${esc(word.meaning)}</p>`,
+                word.stage && `<p class="stage">${esc(word.stage)} on WaniKani</p>`];
+  showPop($("word-pop"), mark, `<small>Your vocabulary</small><b>${esc(word.word)}</b>`
+    + (bits.filter(Boolean).join("") || "<p>No reading stored for this one.</p>"));
 }
 
 function showPoint(point: string, mark: HTMLElement): void {

@@ -22,6 +22,9 @@ export interface VocabSpan {
   start: number;
   end: number;
   word: string;
+  reading: string;
+  meaning: string;
+  stage: string;
 }
 
 /** Where she used a grammar point in a `speak` sentence (ADR-036): characters [start, end) of `text`, counted in Unicode code points — the page counts the same way (Array.from). */

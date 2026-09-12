@@ -1385,8 +1385,9 @@ derive each client from it instead of emitting TypeScript directly.
 the tutor's inline marks, red grammar, the hint (point 1), and furigana from local data — the
 tokenizer and the student's WaniKani kanji progress (point 3's readings, point 4's `FURIGANA` and
 `STUDY_PANEL`). Explanations and translations on click (point 2) followed on 2026-09-13:
-`backend/explain.py`, one cached answer per grammar point and language, and per sentence. Word
-cards (the rest of point 3) are not built yet. Spec §8b.
+`backend/explain.py`, one cached answer per grammar point and language, and per sentence. Word cards are built for their own vocabulary
+(2026-09-12); the offline dictionary — on'yomi/kun'yomi, and words outside WaniKani — is the rest
+of point 3. Spec §8b.
 
 **Context.** User request: the tutor on the left, the conversation on the right like a messaging
 app; every important grammar point in red, clickable for its rule in Japanese or English (a
@@ -1416,7 +1417,11 @@ subscription whose limit is a five-hour window. The user asked for the smart way
    paid for once, and only if someone asks.
 3. **Vocabulary is local, with zero LLM cost**: the student's WaniKani data first (already cached,
    read-only — no new calls, ADR-021/024), then an offline dictionary (KANJIDIC2 / JMdict), with a
-   Japanese tokenizer for word boundaries and furigana. These are new pinned dependencies; the
+   Japanese tokenizer for word boundaries and furigana. **Built 2026-09-12 for the words that are
+   theirs**: a blue word's card — its kana reading, the English WaniKani gives it, and its SRS
+   stage — rides along with the sentence in `speak.vocab`, so the click costs nothing and answers
+   at once. What still needs the dictionary is on'yomi/kun'yomi per kanji, and any word that is
+   not one of their WaniKani items. These are new pinned dependencies; the
    packages and their APIs are verified before any code uses them (ADR-015).
 4. Settings: `EXPLAIN_LANGUAGE` (`en` | `ja`), `FURIGANA`, `STUDY_PANEL`.
 

@@ -43,7 +43,9 @@ export function renderSentence(text: string, grammar: readonly GrammarSpan[] = [
   let open: GrammarSpan | VocabSpan | undefined;
   const tagFor = (s: GrammarSpan | VocabSpan) =>
     "point" in s ? `<mark class="gp" tabindex="0" data-point="${esc(s.point)}">`
-                 : `<mark class="vw" data-word="${esc(s.word)}">`;
+                 : `<mark class="vw" tabindex="0" data-word="${esc(s.word)}"`
+                   + ` data-reading="${esc(s.reading)}" data-meaning="${esc(s.meaning)}"`
+                   + ` data-stage="${esc(s.stage)}">`;
   for (let i = 0; i < chars.length;) {
     const r = ruby.get(i);
     const end = r ? r.end : i + 1;
@@ -86,11 +88,23 @@ export class Chat {
 
   constructor(private readonly list: HTMLElement,
               private readonly onPoint: (point: string, mark: HTMLElement) => void,
-              private readonly onTranslate: (sentence: string) => void = () => {}) {
+              private readonly onTranslate: (sentence: string) => void = () => {},
+              private readonly onWord: (word: VocabSpan, mark: HTMLElement) => void = () => {}) {
+    // A click lands on a grammar point (red) or on one of their own words (blue). Both open a
+    // card; the word's card is already in the message (user, 2026-09-12).
     const open = (target: EventTarget | null) => {
-      const mark = (target as HTMLElement | null)?.closest?.<HTMLElement>("mark.gp");
-      if (mark) this.onPoint(mark.dataset.point || "", mark);
-      return !!mark;
+      const el = target as HTMLElement | null;
+      const point = el?.closest?.<HTMLElement>("mark.gp");
+      if (point) {
+        this.onPoint(point.dataset.point || "", point);
+        return true;
+      }
+      const word = el?.closest?.<HTMLElement>("mark.vw");
+      if (word) {
+        this.onWord(this.wordOf(word), word);
+        return true;
+      }
+      return false;
     };
     list.addEventListener("scroll", () => {
       if (Date.now() - this.jumped < 400) return;        // our own jump, still settling
@@ -144,6 +158,13 @@ export class Chat {
     button.title = "Translate this sentence";
     button.textContent = TRANSLATE;
     body.parentElement!.appendChild(button);
+  }
+
+  /** What the page knows about a blue word: its own dataset, filled when the span was rendered. */
+  private wordOf(mark: HTMLElement): VocabSpan {
+    return { start: 0, end: 0, word: mark.dataset.word || mark.textContent || "",
+             reading: mark.dataset.reading || "", meaning: mark.dataset.meaning || "",
+             stage: mark.dataset.stage || "" };
   }
 
   /** The plain sentence an element sits in — not what is on screen, which carries furigana. */

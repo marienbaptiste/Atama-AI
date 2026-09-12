@@ -532,6 +532,11 @@ Capping it is cheaper than rotating more often.
   already loaded for furigana: a span whose every token is a noun, with a point not named as a
   pattern, is dropped before the page sees it. Narrow on purpose — a dropped point costs more than
   a stray word.
+- **A blue word is clickable too** (user, 2026-09-12), and its card needs no dictionary: the kana
+  reading, the English meaning and the WaniKani stage travel with the sentence in `speak.vocab`,
+  because they are the student's own items and we already hold them. Red and blue both wear a
+  dotted underline in their own colour, which is what says "click me". On'yomi and kun'yomi per
+  kanji still wait for KANJIDIC2 (ADR-036 point 3).
 - **Her sentences.** Grammar spans in **red**, clickable for the rule in `EXPLAIN_LANGUAGE`
   (`en` default, or `ja`). Words clickable for a card: the reading, on'yomi and kun'yomi of each
   kanji, the English meaning, and — when it is on WaniKani — its SRS stage. A **translate icon**

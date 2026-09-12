@@ -1341,9 +1341,11 @@ student. A low rate is prompt wording, not plumbing (ROADMAP 17, gate M3f).
 **4. Translate icon per sentence.** DONE 2026-09-13 on her sentences. Still to decide: whether the
 student's own sentences get one too.
 
-**5. Word cards (ADR-036 point 3).** Reading, on'yomi/kun'yomi, meaning, and the WaniKani stage.
-Needs an offline dictionary (JMdict/KANJIDIC): verify the package, its size and its licence, show
-the choice, then wire it to the tokenizer already in `backend/annotate.py`.
+**5. Word cards (ADR-036 point 3).** HALF DONE 2026-09-12: a blue word opens a card with its kana
+reading, English meaning and WaniKani stage, all of which ride with the sentence — no dictionary,
+no round trip. What is left needs one: on'yomi/kun'yomi per kanji, and words outside their WaniKani
+items. JMdict_e.gz (10.6 MB) and kanjidic2.xml.gz (1.5 MB) from EDRDG are verified reachable and
+are CC BY-SA; download at setup into `.cache/`, never committed, credited in the README.
 
 **6. Prompt size.** 2950 tokens after the three teaching notes of 2026-09-12 and rising with every
 rule (ADR-011, §10). Re-measure a turn and tighten the wording rather than let it drift — the

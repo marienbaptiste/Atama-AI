@@ -39,6 +39,18 @@ class Item:
     kind: str          # "vocab" | "grammar"
     reading: str = ""
     meaning: str = ""
+    #: WaniKani's SRS stage, 1-4 Apprentice, 5-6 Guru. Shown on the word card as its name.
+    stage: int = 0
+
+
+#: WaniKani's own names for the stages (STAGE_BUCKETS in srs/wanikani.py), for the word card.
+_STAGES = {1: "Apprentice 1", 2: "Apprentice 2", 3: "Apprentice 3", 4: "Apprentice 4",
+           5: "Guru 1", 6: "Guru 2", 7: "Master", 8: "Enlightened", 9: "Burned"}
+
+
+def stage_name(stage: int) -> str:
+    """"Apprentice 2" for 2, "" for anything that is not a WaniKani stage."""
+    return _STAGES.get(int(stage or 0), "")
 
 
 def normalise(phrase: str) -> str:
@@ -100,7 +112,8 @@ class Study:
                     continue
                 seen.add(word)
                 items.append(Item(word, "vocab", str(getattr(vocab, "reading", "") or ""),
-                                  str(getattr(vocab, "meaning", "") or "")))
+                                  str(getattr(vocab, "meaning", "") or ""),
+                                  int(getattr(vocab, "srs_stage", 0) or 0)))
             bp = getattr(profile, "bunpro", None)
             # in_play is everything still in their SRS (ghost, beginner, adept, seasoned); the
             # other two are its head, and the fallback on an older snapshot.
@@ -131,7 +144,9 @@ class Study:
                 if any(taken[m.start():m.end()]):
                     continue
                 taken[m.start():m.end()] = [True] * (m.end() - m.start())
-                out.append({"start": m.start(), "end": m.end(), "word": item.text})
+                out.append({"start": m.start(), "end": m.end(), "word": item.text,
+                            "reading": item.reading, "meaning": item.meaning,
+                            "stage": stage_name(item.stage)})
         return sorted(out, key=lambda s: s["start"])
 
     def kind_of(self, phrase: str) -> str:

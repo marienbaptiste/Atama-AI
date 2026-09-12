@@ -177,12 +177,15 @@ body.study #subs{display:none!important}
 .msg.you.dropped{background:#f1f3f6;color:#9aa1ab;font-style:italic;box-shadow:none}
 /* Red is grammar, blue is a word from their own lessons - one not yet Guru'd (user, 2026-09-12).
    Grammar wins where they overlap: two nested marks would be a box inside a box. */
-mark.gp{background:none;color:#e8453c;font-weight:700;cursor:pointer;border-bottom:2px dotted rgba(232,69,60,.45);
-        border-radius:3px;outline:none}
+/* Both are clickable, and the dotted line under each says so in its own colour — red for a
+   grammar point, blue for one of their words (user, 2026-09-12). Same weight, same discretion. */
+mark.gp,mark.vw{background:none;cursor:pointer;border-radius:3px;outline:none;
+                border-bottom:2px dotted currentColor;padding-bottom:1px}
+mark.gp{color:#e8453c;font-weight:700}
+mark.vw{color:#2563eb;font-weight:600}
 mark.gp:hover,mark.gp:focus{background:rgba(232,69,60,.08)}
-mark.vw{background:none;color:#2563eb;font-weight:600;border-bottom:2px solid rgba(37,99,235,.22);
-        border-radius:3px}
-.msg.you mark.vw{color:#1d4ed8;border-bottom-color:rgba(29,78,216,.3)}
+mark.vw:hover,mark.vw:focus{background:rgba(37,99,235,.08)}
+.msg.you mark.vw{color:#1d4ed8}
 .pop{position:fixed;z-index:20;max-width:300px;padding:10px 14px;border-radius:14px;background:#fff;color:var(--ink);
      box-shadow:0 10px 30px rgba(0,0,0,.28);font:13px/1.5 system-ui}
 .pop small{display:block;color:var(--sub);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
@@ -354,3 +357,8 @@ mark.vw{background:none;color:#2563eb;font-weight:600;border-bottom:2px solid rg
 .pop .row button:hover{background:#f1f3f6}
 .pop .row button#topic-yes{background:var(--accent);border-color:var(--accent);color:#fff}
 .pop .row button#topic-yes:hover{filter:brightness(1.06)}
+
+/* The word card: their reading, what it means, and where it sits in their SRS. */
+#word-pop b{color:#2563eb}
+#word-pop .rd{font:600 15px/1.4 var(--jp);color:var(--ink);margin:2px 0 4px}
+#word-pop .stage{margin-top:6px;font-size:11.5px;color:#8b93a1}

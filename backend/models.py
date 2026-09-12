@@ -130,11 +130,20 @@ class Reading(_Msg):
 class VocabSpan(_Msg):
     """Where a word the student is still learning appears in a sentence (spec §8b, user
     2026-09-12): characters [start, end) in code points, blue on the page. From the WaniKani
-    snapshot already on disk (backend/study.py) — no model call, no fetch."""
+    snapshot already on disk (backend/study.py) — no model call, no fetch.
+
+    The card rides along: `reading`, `meaning` and `stage` are what WaniKani already knows about
+    this item, so clicking the word costs nothing and answers instantly (user, 2026-09-12). A few
+    dozen bytes per span; the alternative is a round trip per click for data we already hold."""
 
     start: int
     end: int
     word: str
+    #: Kana reading, English meaning, and the WaniKani SRS stage name ("Apprentice 2"). Empty when
+    #: the word came from somewhere without them.
+    reading: str = ""
+    meaning: str = ""
+    stage: str = ""
 
 
 class SttFinal(_Msg):
