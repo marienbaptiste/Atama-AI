@@ -357,8 +357,11 @@ async def serve(hub: Hub, cfg, registry=None) -> tuple[asyncio.Task, str]:
     host, port = str(cfg.HOST), int(cfg.PORT)
     # timeout_graceful_shutdown matters: uvicorn otherwise waits indefinitely for open
     # connections to close, and the browser's WebSocket is exactly such a connection.
+    # ws: "websockets-sansio" is the implementation uvicorn 0.52 keeps; the old "websockets" one
+    # printed a deprecation warning at every launch (user, 2026-09-12). Verified present in
+    # uvicorn.config.WS_PROTOCOLS for uvicorn 0.52.4 / websockets 17.1, the pinned pair.
     server = uvicorn.Server(uvicorn.Config(build(hub), host=host, port=port,
-                                           log_level="warning", ws="websockets",
+                                           log_level="warning", ws="websockets-sansio",
                                            timeout_graceful_shutdown=2))
     task = asyncio.create_task(server.serve())
     task.server = server  # type: ignore[attr-defined]  - shutdown() needs it to exit gracefully
