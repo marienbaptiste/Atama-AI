@@ -198,6 +198,20 @@ class VoiceLoop:
         self._ptt_open = True
         self._state("listening")
 
+    def ptt_cancel(self) -> bool:
+        """Throw away what is being recorded: the student changed their mind mid-sentence.
+
+        ALT GR on the page (spec §8). Unlike `ptt_end` nothing becomes a turn, and the talk key
+        can then be released without sending anything — the next press starts clean. True if there
+        was a recording to drop.
+        """
+        if not self.ptt or not self._ptt_open:
+            return False
+        self._ptt_open = False
+        self._ptt_buf = []
+        self._state("listening")
+        return True
+
     def ptt_end(self) -> None:
         """Key up. Everything collected becomes the turn — no silence window, no guessing."""
         if not self.ptt or not self._ptt_open:

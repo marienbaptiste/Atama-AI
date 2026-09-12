@@ -1330,8 +1330,7 @@ the tutor's inline marks, red grammar, the hint (point 1), and furigana from loc
 tokenizer and the student's WaniKani kanji progress (point 3's readings, point 4's `FURIGANA` and
 `STUDY_PANEL`). Explanations and translations on click (point 2) followed on 2026-09-13:
 `backend/explain.py`, one cached answer per grammar point and language, and per sentence. Word
-cards (the rest of
-point 3) are not built yet. Spec §8b.
+cards (the rest of point 3) are not built yet. Spec §8b.
 
 **Context.** User request: the tutor on the left, the conversation on the right like a messaging
 app; every important grammar point in red, clickable for its rule in Japanese or English (a
@@ -1349,6 +1348,12 @@ subscription whose limit is a five-hour window. The user asked for the smart way
    2026-09-12) — she is the only one who can judge that. A few output tokens
    a turn, no extra call, no added latency. The chunker strips both before TTS and before the
    subtitle text, exactly like emotion tags (ADR-020), and sends the spans with the sentence.
+   **Red is grammar only** (user, 2026-09-12, after a lesson in which a noun went red and 〜てみよう
+   did not): the prompt now defines what a grammar point is and lists the conjugations most often
+   missed, and `Annotator.grammar_only` drops a mark whose every token is a noun unless the point
+   is named as a pattern (〜…, as Bunpro writes it). The guard is deliberately narrow — it reuses
+   the tokenizer already loaded for furigana, costs nothing, and a missed drop is a stray red word
+   while an over-eager one would hide a real point.
 2. **Explanations and translations only on click**, from a one-shot side call: `claude -p` on the
    haiku tier (the CLI, never the API — ADR-001), no tools, under §4's isolation rules, off the
    critical path, and **cached on disk** per grammar point and language, and per sentence. Each is

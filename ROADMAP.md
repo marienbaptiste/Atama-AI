@@ -1206,6 +1206,41 @@ samples. Checked in real-time headless Chrome. **Not validated live.** Chat poli
 (user): one bubble per sentence, Noto Sans JP with the OS fallbacks, and the panel restyled to the
 console-home look.
 
+**Status 2026-09-12 (late) — six notes from the user after looking at the page, all done.**
+1. *Red is grammar, not vocabulary.* A noun had gone red and 〜てみよう had not been marked at all.
+   `prompts/tutor.md` now defines a grammar point, shows the whole inflected form being wrapped
+   ({{食べてみよう|〜てみる}}), and lists the forms it was forgetting (volitional, 〜てみる, 〜ておく,
+   〜てしまう, 〜ている, potential, passive, causative, 〜たい, 〜すぎる, 〜たことがある, 〜なければならない,
+   〜ながら, 〜ので, 〜たら/〜ば/〜なら, 〜ても, 〜と思う) — and says a noun, a plain verb, an adverb, a name
+   or a number is never a point. Belt and braces: `Annotator.grammar_only` drops a mark whose every
+   token is a noun unless the point is named as a pattern (〜…), using the tokenizer already loaded
+   for furigana (`test_annotate.py`, four cases).
+2. *Produce, not only hear.* She now asks the student to use a named point **every second or third
+   turn**, and returns to a dodged one a turn later instead of dropping it.
+3. *Her new words.* The profile's "Recent WaniKani vocab (prefer these)" list is now a per-turn
+   instruction: one or two of those exact words in every turn, chosen over the synonym she would
+   otherwise use. Cost of 1–3: TOTAL_MAX_TOKENS 2650 → 2950, the template ~1771 tokens.
+4. *A cancel key.* **ALT GR** during a hold drops what is being recorded: `VoiceLoop.ptt_cancel()`
+   empties the buffer and closes the hold, so releasing SPACE afterwards sends nothing and the next
+   press starts clean (`control: cancel`, `test_voice_loop.py`, `mic.test.ts`). The right-hand ALT
+   because Chrome claims SPACE with the left one. The spec had predicted this key (§9b); it exists
+   now. The status line under the talk button says so instead of repeating "hold SPACE".
+5. *The settings cog moved into the status pill*, at its right end: floating over the scene it was
+   in the way of both the avatar and the chat.
+6. *The chat.* It stopped a line short of the bottom — `scroll-behavior:smooth` fired scroll events
+   on the way down, which read as the student scrolling away, and furigana, the webfont and a
+   translation each grow a bubble after it was scrolled to. It now jumps now, next frame, and once
+   the fonts settle, keeps following unless the student scrolls up, and ignores its own scroll
+   events. Wider (680px / 48vw) and bigger (20px). Checked in real-time headless Chrome:
+   14 bubbles, the last flush with the bottom, 404px of scrollback above it, ALT GR reaching the
+   server as `cancel` and the release sending nothing.
+
+**Measured the same day — Haiku is not slow, the first call is.** The memory summariser (haiku,
+one `claude -p` worker reused for every pending log) took 24.6 s and 39.6 s for its first summary
+in two runs, then 3.7 s and 5.9 s for the next on the same worker: the cost is the CLI's first
+request, not the model's generation. It is already off the critical path — the launch summarises
+the newest session and the rest catch up in the background.
+
 ## Next session — plan for 2026-09-13 (set 2026-09-12)
 
 **1. One real lesson on the new page, first.** Refresh study data at the start (Settings → Account)
@@ -1217,21 +1252,18 @@ tutor switch fails again, the `[tutor]` lines in the terminal are the evidence t
 plus the same measure for the study marks — how often she tags grammar, sets a target, credits the
 student. A low rate is prompt wording, not plumbing (ROADMAP 17, gate M3f).
 
-**3. Explanations on click (ADR-036 point 2).** Clicking a red grammar point still only names it.
-Build: client `explain` → a one-shot `claude -p` on the haiku tier under §4 rules, cached under
-`.cache/explain/` per point and language, back as `explanation`. Settings: `EXPLAIN_LANGUAGE`
-(en | ja). Tests: one call per uncached request, none for a cached one, a failed call says so
-instead of spinning.
+**3. Explanations on click (ADR-036 point 2).** DONE 2026-09-13.
 
-**4. Translate icon per sentence.** Same cached path, the English under her sentence. Decide whether
-it also appears on the student's own sentences.
+**4. Translate icon per sentence.** DONE 2026-09-13 on her sentences. Still to decide: whether the
+student's own sentences get one too.
 
 **5. Word cards (ADR-036 point 3).** Reading, on'yomi/kun'yomi, meaning, and the WaniKani stage.
 Needs an offline dictionary (JMdict/KANJIDIC): verify the package, its size and its licence, show
 the choice, then wire it to the tokenizer already in `backend/annotate.py`.
 
-**6. Prompt size.** 2650 tokens and rising with every rule (ADR-011, §10). Re-measure a turn and
-tighten the wording rather than let it drift.
+**6. Prompt size.** 2950 tokens after the three teaching notes of 2026-09-12 and rising with every
+rule (ADR-011, §10). Re-measure a turn and tighten the wording rather than let it drift — the
+elicitation, marking and vocabulary rules now say some of the same things twice.
 
 **7. Latency re-measure on Sonnet 5.** The 5.0 s gate (M3d, ADR-033) was last measured on
 Sonnet 4.6. Run the 20-turn harness once there is a real lesson to measure.

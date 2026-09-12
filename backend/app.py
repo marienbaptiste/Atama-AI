@@ -83,6 +83,19 @@ class Hub:
         #: text -> furigana for the chat (backend/annotate.py `Annotator.readings`), or None.
         self.readings: Callable[[str], list[dict[str, Any]]] | None = None
 
+        #: (text, marks) -> the marks that are really grammar, red being for grammar and not for a
+        #: word the tutor liked (`Annotator.grammar_only`). None until the REPL wires it.
+        self.grammar: Callable[[str, list[dict[str, Any]]], list[dict[str, Any]]] | None = None
+
+    def _grammar(self, text: str, speech: Any) -> list[dict[str, Any]]:
+        """Her grammar marks for the page, minus any the guard reads as plain vocabulary."""
+        marks = [{"start": g.start, "end": g.end, "point": g.point}
+                 for g in getattr(speech, "grammar", ())]
+        try:
+            return self.grammar(text, marks) if self.grammar is not None else marks
+        except Exception:  # noqa: BLE001 - same contract as the readings hook
+            return marks
+
     def _readings(self, text: str) -> list[dict[str, Any]]:
         try:
             return self.readings(text) if self.readings is not None else []
@@ -170,8 +183,7 @@ class Hub:
             text=speech.text,
             emotion=speech.emotion,
             turn=turn,
-            grammar=[{"start": g.start, "end": g.end, "point": g.point}
-                     for g in getattr(speech, "grammar", ())],
+            grammar=self._grammar(speech.text, speech),
             target=getattr(speech, "target", ""),
             used=getattr(speech, "used", ""),
             readings=self._readings(speech.text),

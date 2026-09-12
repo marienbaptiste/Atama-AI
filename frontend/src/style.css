@@ -11,7 +11,7 @@
    live on body: a var() is resolved where it is declared, so --stage-mid declared on :root would
    never see body.study's --chat-w (it centred the dock on the page, 2026-09-11). */
 body{--chat-w:0px;--stage-mid:calc((100% - var(--chat-w)) / 2)}
-body.study{--chat-w:min(460px,40vw)}
+body.study{--chat-w:min(680px,48vw)}
 html,body{margin:0;height:100%;background:#15171a;color:#e6e6e6;
           font:13px system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
 button,select{font:inherit}
@@ -73,12 +73,13 @@ code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:4px}
 #svc-pop .row span{color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #svc-pop .err{grid-column:2/-1;color:#d63a31;white-space:normal}
 
-#cog{position:fixed;top:14px;right:14px;z-index:15;width:48px;height:48px;border-radius:50%;
-     padding:0;display:grid;place-items:center;background:rgba(255,255,255,.8);cursor:pointer;
-     border:1px solid rgba(255,255,255,.9);box-shadow:var(--shadow);
-     backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:transform .3s}
-#cog:hover{background:#fff;transform:rotate(45deg)}
-#cog svg{width:26px;height:26px}
+/* Settings lives in the status pill, at its right end: a floating circle over the scene was in
+   the way of the tutor and of the chat (the user, 2026-09-12). Its own hairline separates it from
+   the gauges, and it still turns under the pointer. */
+#cog{margin-left:4px;padding:0 2px 0 8px;border:0;border-left:1px solid var(--line);background:none;
+     display:grid;place-items:center;cursor:pointer;flex:none;transition:transform .3s}
+#cog:hover,#cog:focus-visible{transform:rotate(45deg)}
+#cog svg{width:19px;height:19px}
 
 /* ---- subtitles, the dock, the live line */
 #subs{position:fixed;left:50%;bottom:122px;transform:translateX(-50%);z-index:11;max-width:min(760px,90vw);
@@ -129,7 +130,6 @@ code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:4px}
 
 /* ---- the conversation */
 #meters,#svc-pop,#subs,#dock,#live,#hint{left:var(--stage-mid)}
-#cog{right:calc(var(--chat-w) + 14px)}
 #chat{display:none;position:fixed;top:14px;right:14px;bottom:14px;width:calc(var(--chat-w) - 28px);z-index:12;
       flex-direction:column;border-radius:28px;color:var(--ink);overflow:hidden;
       /* Near-opaque: frosted glass over the dark stage went grey, and the console-home look is a
@@ -145,24 +145,26 @@ body.study #subs{display:none!important}
              letter-spacing:.1em;text-transform:uppercase;color:var(--sub)}
 #chat header::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--accent);
              box-shadow:0 0 0 3px rgba(232,69,60,.16)}
-#chat-list{flex:1;overflow-y:auto;padding:4px 16px 20px;display:flex;flex-direction:column;gap:10px;
-           scroll-behavior:smooth;scrollbar-width:thin;scrollbar-color:rgba(20,30,50,.18) transparent}
+/* No scroll-behavior:smooth here: an animated jump fires scroll events on the way down, which
+   read as the student scrolling away, and the chat then stopped a line short (2026-09-12). */
+#chat-list{flex:1;overflow-y:auto;padding:4px 16px 22px;display:flex;flex-direction:column;gap:10px;
+           overflow-anchor:none;scrollbar-width:thin;scrollbar-color:rgba(20,30,50,.18) transparent}
 #chat-list::-webkit-scrollbar{width:8px}
 #chat-list::-webkit-scrollbar-thumb{background:rgba(20,30,50,.18);border-radius:999px}
 /* One bubble per sentence (user, 2026-09-13). Squircles on frosted glass, like the rest of the UI. */
 .msg{max-width:88%;padding:11px 16px;border-radius:22px;word-break:break-word;
-     font:400 18px/2.05 var(--jp);font-feature-settings:"palt" 1;letter-spacing:.01em;
+     font:400 20px/2.0 var(--jp);font-feature-settings:"palt" 1;letter-spacing:.01em;
      box-shadow:0 3px 12px rgba(16,24,40,.10)}
 .msg ruby{ruby-position:over}
 .msg rt{font:600 .46em/1.3 var(--jp);color:#98a2af;letter-spacing:.04em;user-select:none}
 .msg.you rt{color:#8296c6}
-.msg.her{align-self:flex-start;background:#fff;border-bottom-left-radius:9px;position:relative;padding-right:40px}
-.msg .tr{position:absolute;right:9px;bottom:8px;width:24px;height:24px;padding:0;border:none;cursor:pointer;
-     border-radius:50%;background:#eef1f6;color:#7b8494;font:700 12px/24px var(--jp)}
+.msg.her{align-self:flex-start;background:#fff;border-bottom-left-radius:9px;position:relative;padding-right:42px}
+.msg .tr{position:absolute;right:9px;bottom:8px;width:26px;height:26px;padding:0;border:none;cursor:pointer;
+     border-radius:50%;background:#eef1f6;color:#7b8494;font:700 13px/26px var(--jp)}
 .msg .tr:hover{background:#e2e8f1;color:var(--ink)}
 .msg .tr.on{background:var(--accent);color:#fff}
 .msg .en{margin-top:7px;padding-top:7px;border-top:1px dashed rgba(20,30,50,.12);
-     font:400 13.5px/1.65 system-ui,"Segoe UI",sans-serif;color:#5b6472}
+     font:400 14.5px/1.6 system-ui,"Segoe UI",sans-serif;color:#5b6472}
 .msg .en.bad{color:#d63a31}
 .msg.you{align-self:flex-end;border-bottom-right-radius:9px;color:#20386e;
      background:linear-gradient(180deg,#edf3ff,#dfe9ff)}

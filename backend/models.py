@@ -55,9 +55,11 @@ class Control(_Msg):
     #: it would make every released key a request to exit.
     #: `new_topic` is the page's "New topic" button: she drops the current subject and finds a
     #: fresh one, exactly as if the student had said 「話題を変えて」.
+    #: `cancel`: ALT GR during a recording — what was captured is dropped and the talk key can
+    #: be released without sending anything (spec §8). It is not `stop`, which sends the turn.
     #: `ready`: the page has been touched, so the browser will let it play sound (autoplay
     #: policy). The server holds her voice until a page says so.
-    action: Literal["start", "stop", "bargein_ack", "resync", "quit", "new_topic", "ready"]
+    action: Literal["start", "stop", "cancel", "bargein_ack", "resync", "quit", "new_topic", "ready"]
 
 
 class SettingsUpdate(_Msg):

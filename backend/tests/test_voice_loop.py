@@ -294,6 +294,27 @@ def test_a_stray_tap_is_not_an_utterance():
     asyncio.run(scenario())
 
 
+def test_alt_gr_drops_the_recording_and_the_release_sends_nothing():
+    """The student changed their mind mid-sentence: nothing is transcribed, and letting the talk
+    key go afterwards must not turn the last seconds into a turn (the user, 2026-09-12)."""
+    async def scenario():
+        loop, brain, _, _ = ptt_loop()
+        loop.ptt_begin()
+        loop._ptt_buf.extend(speech(1.0))
+        assert loop.ptt_cancel() is True
+        assert loop._ptt_buf == [] and loop._ptt_open is False
+        loop.ptt_end()                                    # the key comes up after the cancel
+        assert loop._turn_task is None and brain.turns == []
+
+        assert loop.ptt_cancel() is False                 # nothing to drop a second time
+        loop.ptt_begin()                                  # and the next press is a clean one
+        loop._ptt_buf.extend(speech(1.0))
+        loop.ptt_end()
+        await loop._turn_task
+        assert brain.turns == ["こんにちは。"]
+    asyncio.run(scenario())
+
+
 def test_pressing_while_the_tutor_speaks_is_an_unambiguous_bargein():
     """No threshold guesswork: nobody holds a talk key by accident. This is why ptt is steadier
     than vad on laptop speakers, where the tutor's own voice can trigger the detector."""

@@ -47,3 +47,45 @@ def test_without_a_tokenizer_there_is_less_furigana_never_an_error():
 
 def test_katakana_becomes_hiragana():
     assert annotate.to_hiragana("ベンキョウー") == "べんきょうー"
+
+
+# ------------------------------------------------------------- red is for grammar, not vocabulary
+def mark(text, span, point=""):
+    start = text.index(span)
+    return {"start": start, "end": start + len(span), "point": point or span}
+
+
+def test_a_plain_word_is_not_a_grammar_point():
+    """The tutor marked a noun red (the user, 2026-09-12). Red is grammar, so the tokenizer has
+    the last word: one noun, one name, one number, gone."""
+    a = annotate.Annotator(overrides={})
+    text = "竹の先生は東京で二時に話します。"
+    for span in ("竹", "先生", "東京", "二時"):
+        assert a.grammar_only(text, [mark(text, span)]) == [], span
+
+
+def test_a_real_point_is_kept_however_short():
+    a = annotate.Annotator(overrides={})
+    for text, span in (("雨が降ったら行きません。", "降ったら"),
+                       ("食べてみようと思います。", "食べてみよう"),
+                       ("行くつもりです。", "つもり"),
+                       ("読めますか。", "読めます"),
+                       ("行かない。", "行かない")):
+        assert a.grammar_only(text, [mark(text, span)]) == [mark(text, span)], span
+
+
+def test_a_point_named_as_a_pattern_is_taken_at_its_word():
+    """The tutor names points as Bunpro does. 〜中 over 勉強中 is every token a noun, and still
+    grammar — the name says so, so the guard keeps it."""
+    a = annotate.Annotator(overrides={})
+    text = "勉強中です。"
+    assert a.grammar_only(text, [mark(text, "勉強中", "〜中")]) == [mark(text, "勉強中", "〜中")]
+    assert a.grammar_only(text, [mark(text, "勉強中", "study")]) == []
+
+
+def test_without_a_tokenizer_every_mark_stands():
+    a = annotate.Annotator(overrides={})
+    a.error = "no dictionary"                     # _get() then returns None, as on a broken install
+    text = "竹の先生。"
+    assert a.grammar_only(text, [mark(text, "竹")]) == [mark(text, "竹")]
+    assert a.grammar_only(text, []) == []

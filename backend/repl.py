@@ -138,6 +138,7 @@ async def run(args: argparse.Namespace) -> int:
         hub.explain = explainer.explain
         if await asyncio.to_thread(annotator.warm):
             hub.readings = annotator.readings
+            hub.grammar = annotator.grammar_only
         else:
             print(f"{DIM}no furigana in the chat: {annotator.error}{RESET}")
         print(f"{BOLD}avatar:{RESET} {url}")
@@ -773,7 +774,12 @@ async def _listen(cfg, brain, voice, stt, hub=None, mem=None, switch_persona=Non
                     ack("off", "hands-free mode is on - just speak")
                     return
                 loop.ptt_begin()
-                ack("recording", "listening - release to send")
+                ack("recording", "listening - release to send, ALT GR to cancel")
+            elif action == "cancel":
+                # The student started a sentence and wants it gone. Dropping it here means they can
+                # let the talk key go without the microphone's last seconds becoming a turn.
+                if loop.ptt_cancel():
+                    ack("cancelled", "dropped - nothing was sent, press SPACE to start again")
             elif action == "stop":
                 buf = list(loop._ptt_buf)
                 frames = len(buf)

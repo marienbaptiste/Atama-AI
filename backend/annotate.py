@@ -23,6 +23,20 @@ _KANJI_RUN = re.compile(_KANJI.pattern + "+")
 #: Iteration marks repeat the kanji before them; they are never "a kanji you know" on their own.
 _MARKS = "々〆"
 
+#: Red in the chat is grammar (the user, 2026-09-12), so a mark whose every token is one of these
+#: — a noun, a counter or suffix on it, an interjection — is a word the tutor liked, not a point
+#: worth teaching. Deliberately narrow: verbs, adjectives, adverbs, pronouns and 連体詞 stay out,
+#: because 「できる」「ない」「あまり」「これ」「この」 are single tokens AND real Bunpro points.
+_WORD_POS = ("名詞", "接尾辞", "感動詞")
+#: Nouns that only ever appear bound to a clause. unidic tags them 名詞,普通名詞 like any other
+#: noun, but 「つもり」 on its own IS the grammar point, so the guard leaves them alone. Kana only:
+#: 中, 方, 間, 際 are words as often as patterns, and the point's own name separates those.
+_BOUND_NOUNS = frozenset("こと もの つもり はず ため わけ ところ とおり うち あいだ ほう まま "
+                         "ごろ ばかり くらい ぐらい おかげ せい たび かわり".split())
+#: How Bunpro names a pattern, and what the tutor is told to copy: a point named 〜中 is a claim
+#: that this is a form, not a word, and the guard takes the tutor at its word.
+_PATTERN_NAME = ("〜", "～", "~", "ー")
+
 
 def to_hiragana(text: str) -> str:
     """Katakana to hiragana (the tokenizer reads in katakana); anything else unchanged."""
@@ -88,7 +102,36 @@ class Annotator:
         except Exception:  # noqa: BLE001 - furigana is a nicety; the sentence matters more
             return []
 
+    def grammar_only(self, text: str, marks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The marks of `text` that are really grammar: red is for grammar, so a span that is one
+        plain word is dropped before the page ever sees it.
+
+        The tutor is told this in `prompts/tutor.md`, but a word it finds useful still slips
+        through, so the tokenizer has the last word. Conservative on purpose — nothing but nouns in
+        the span, the point not named as a pattern, no bound noun — because dropping a real point
+        costs more than leaving a stray word red. Never raises: with no tokenizer, every mark
+        stands."""
+        if not marks:
+            return marks
+        try:
+            return [m for m in marks
+                    if not self._is_word(text[int(m["start"]):int(m["end"])], str(m.get("point", "")))]
+        except Exception:  # noqa: BLE001 - the guard is a nicety; the marks matter more
+            return marks
+
     # ----------------------------------------------------------------- private
+    def _is_word(self, span: str, point: str) -> bool:
+        """Vocabulary, not grammar: every token a noun-ish one, and nothing claiming to be a form."""
+        span, point = span.strip(), point.strip()
+        tagger = self._get()
+        if tagger is None or not span or point.startswith(_PATTERN_NAME) or span in _BOUND_NOUNS:
+            return False
+        words = list(tagger(span))
+        kinds = [(getattr(w.feature, "pos1", "") or "") for w in words]
+        return (bool(words) and "名詞" in kinds and all(k in _WORD_POS for k in kinds)
+                and not any(w.surface in _BOUND_NOUNS for w in words))
+
+
     def _get(self) -> Any:
         with self._lock:
             if self._tagger is None and not self.error:

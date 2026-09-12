@@ -115,10 +115,13 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
 
 **Today** the page (`frontend/`, Vite + TypeScript) shows the tutor with lip-sync and her face
 changing as each sentence starts, subtitles, the status bar and the settings panel; you hold
-SPACE to talk and press it again to interrupt her. Your **microphone is captured by the
+SPACE to talk, press it again to interrupt her, and hold **ALT GR** mid-sentence to throw away
+what you are recording (the right-hand ALT — Chrome keeps SPACE with the left one). Nothing is
+transcribed and nothing is sent: let SPACE go, press it again, start over. Your **microphone is captured by the
 orchestrator** (sounddevice, with unplug recovery), not the browser, so step 1 below is not how it
 works yet. **The conversation panel** (ADR-036, Settings → Display): the tutor sits on the left
-and the conversation runs on the right as a chat. Grammar points she uses show in **red**, and
+and the conversation runs on the right as a chat. Grammar points she uses show in **red** — grammar only: a conjugation, an auxiliary or a
+pattern, never a word she happens to like — and
 the **lightbulb** lights up when she wants you to use a particular form or word — click it to see
 which. Kanji carry **furigana** (Settings → Display: all, only the ones you have not reached Guru
 on, or none). When you use something you have been learning **correctly**, she says so and the
@@ -270,7 +273,8 @@ un                          # start everything and open the avatar
 `make run` brings up the containers, waits until VOICEVOX genuinely answers rather than assuming
 it, builds the avatar page if its source is newer than the last build (the first time it also runs
 `npm ci` in `frontend/`), starts the tutor with the browser avatar, and opens the page. **Hold
-SPACE and talk** — press it while she is talking to interrupt her.
+SPACE and talk** — press it while she is talking to interrupt her, and hold **ALT GR** while
+recording to drop what you just said.
 Ctrl+C stops the tutor and leaves the containers running — they are slow to start and cheap to
 keep, so `make stop` is separate and deliberate.
 
@@ -385,7 +389,7 @@ bar shows it and the configured fallback model carries the conversation.
 Configuration lives in the app's **settings page** and is stored in `settings.json` (repo
 root, git-ignored, mode `0600`). There is no `.env` to edit.
 
-**Built today:** the cog at the top right of the avatar page (or `/#settings`, `/#settings/sound`) opens
+**Built today:** the cog at the right end of the status bar (or `/#settings`, `/#settings/sound`) opens
 a frosted panel generated from `config.py`: every key, grouped, typed, with its description.
 Tabs: Account, Brain, Voice, Sound, Display, Advanced. Save writes `settings.json`. The
 **microphone and output pickers list what is plugged in right now** (the list refreshes as you

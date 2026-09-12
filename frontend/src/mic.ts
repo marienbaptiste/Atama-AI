@@ -8,7 +8,12 @@
  *  Barge-in, push-to-talk: a press while she talks is unambiguous, so the page stops her HERE,
  *  before the server has even heard of it, and the server's `bargein` then confirms and closes the
  *  turn (M3b wants the voice gone in < 300 ms; this is one function call after the key event).
- *  Hands-free, the server's VAD decides and the page stops on its `bargein`. */
+ *  Hands-free, the server's VAD decides and the page stops on its `bargein`.
+ *
+ *  ALT GR during a hold CANCELS the recording (the user, 2026-09-12; the right-hand ALT, because
+ *  Chrome takes SPACE with the left one): the captured audio is
+ *  dropped server-side, and because the hold is over as far as this module is concerned, releasing
+ *  the talk key sends nothing. Press again to retry. */
 import type { ServiceStatusMsg } from "./protocol.gen";
 import { live, log } from "./ui";
 
@@ -29,7 +34,7 @@ export const ACK_MS = 2500;
 const TROUBLE = ["silent", "empty", "short", "busy", "off"];
 
 export interface TalkDeps {
-  send(action: "start" | "stop"): boolean;
+  send(action: "start" | "stop" | "cancel"): boolean;
   connected(): boolean;
   /** Talking is off while the settings panel is up. */
   blocked(): boolean;
@@ -56,6 +61,13 @@ export class Talk {
       if (e.code !== "Space" || e.repeat || this.d.blocked() || !spaceIsOurs(e.target)) return;
       e.preventDefault();
       this.press(true, e.timeStamp);
+    });
+    // ALT GR while holding: drop it. Checked before the release handler ever runs, so the talk key
+    // can be let go in peace. On Windows AltGr also reports a left CONTROL, which is ignored here.
+    addEventListener("keydown", e => {
+      if (e.code !== "AltRight" || e.repeat || !this.talking) return;
+      e.preventDefault();
+      this.cancel();
     });
     // Release ALWAYS ends the turn, even if focus moved mid-hold, or the mic stays open.
     addEventListener("keyup", e => {
@@ -88,6 +100,16 @@ export class Talk {
       log("that press never reached the tutor — reconnecting", "err");
       this.d.deadLink();
     }, ACK_MS);
+    this.render();
+  }
+
+  /** Drop the recording in progress: nothing is sent, and the release is a no-op. */
+  cancel(): void {
+    if (!this.talking) return;
+    this.talking = false;
+    clearTimeout(this.ackTimer);
+    this.d.send("cancel");
+    live("dropped - press SPACE to start again");
     this.render();
   }
 

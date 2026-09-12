@@ -62,6 +62,11 @@ const TRANSLATE = "訳";
 
 export class Chat {
   private furigana: Furigana = "unknown";
+  /** Whether new lines scroll into view: false once the student scrolls up to reread. */
+  private following = true;
+  /** When we last scrolled the list ourselves, so our own scroll events do not read as the
+   *  student scrolling away from the bottom. */
+  private jumped = 0;
   /** Every line shown, so a change of the furigana setting re-reads the conversation so far. */
   private lines: Line[] = [];
 
@@ -73,6 +78,10 @@ export class Chat {
       if (mark) this.onPoint(mark.dataset.point || "", mark);
       return !!mark;
     };
+    list.addEventListener("scroll", () => {
+      if (Date.now() - this.jumped < 400) return;        // our own jump, still settling
+      this.following = this.atBottom();
+    }, { passive: true });
     list.addEventListener("click", e => {
       const button = (e.target as HTMLElement | null)?.closest?.<HTMLButtonElement>("button.tr");
       if (button) { e.stopPropagation(); this.translate(button); return; }
@@ -120,6 +129,7 @@ export class Chat {
       if (!en) continue;
       en.textContent = answer || error || "no answer";
       en.classList.toggle("bad", !answer);
+      this.stick();                      // the English grows the bubble after it was scrolled to
     }
   }
 
@@ -170,8 +180,31 @@ export class Chat {
   }
 
   private append(add: () => void): void {
-    const near = this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < FOLLOW_PX;
+    if (this.atBottom()) this.following = true;
     add();
-    if (near) this.list.scrollTop = this.list.scrollHeight;
+    if (this.following) this.stick();
+  }
+
+  private atBottom(): boolean {
+    return this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < FOLLOW_PX;
+  }
+
+  /** Ride the bottom until the line has its final height.
+   *
+   *  One jump was not enough and the chat kept stopping a line short (the user, 2026-09-12):
+   *  furigana adds a row above the text, the Japanese webfont swaps in after the bubble is in the
+   *  DOM, and a translation appears under a sentence later still — each one grows the content after
+   *  the scroll already happened. So jump now, on the next frame, and once the fonts have settled,
+   *  and keep the flag so anything that grows later (`setTranslation`) rides down too. */
+  private stick(): void {
+    const jump = () => {
+      if (!this.following) return;
+      this.jumped = Date.now();
+      this.list.scrollTop = this.list.scrollHeight;
+    };
+    jump();
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(jump);
+    if (typeof setTimeout === "function") setTimeout(jump, 150);
+    document?.fonts?.ready?.then?.(jump);
   }
 }

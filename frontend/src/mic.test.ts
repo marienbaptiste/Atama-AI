@@ -39,6 +39,25 @@ describe("the talk key", () => {
     expect(sent).toEqual(["start", "stop"]);
   });
 
+  it("drops the recording on ALT GR, and the release then sends nothing", () => {
+    const { t, sent } = talk();
+    t.press(true);
+    t.cancel();
+    expect(sent).toEqual(["start", "cancel"]);
+    expect(t.talking).toBe(false);
+    t.press(false);                              // the key comes up after the cancel
+    expect(sent).toEqual(["start", "cancel"]);
+    t.press(true);                               // and the next press is a clean one
+    t.press(false);
+    expect(sent).toEqual(["start", "cancel", "start", "stop"]);
+  });
+
+  it("has nothing to cancel when no key is down", () => {
+    const { t, sent } = talk();
+    t.cancel();
+    expect(sent).toEqual([]);
+  });
+
   it("stops her locally on the press, before the server hears of it, and times it", () => {
     const { t, interrupts } = talk();
     t.press(true, performance.now());

@@ -46,8 +46,13 @@ MEMORY_MAX_TOKENS = 220
 #: Raised 2350 -> 2550 on 2026-09-11 for the study-mark rules (ADR-036): the tutor tags her grammar
 #: and what she wants the student to use, so the page can show them with no extra model call. Same
 #: trade, same test. 2550 -> 2650 on 2026-09-12 for the `[used:]` mark — what the student got right,
-#: floated behind her (user). The template is ~1465 tokens of the total.
-TOTAL_MAX_TOKENS = 2650
+#: floated behind her (user). 2650 -> 2950 on 2026-09-12, three notes from the user in one
+#: session: vocabulary was going red and conjugations were being missed (the mark rule now says
+#: what grammar is, and lists the forms it forgot), the student was asked to produce grammar too
+#: rarely (every second or third turn now), and her own new WaniKani words barely appeared (one or
+#: two in every turn now). The template is ~1771 tokens of the total; the next section to grow
+#: should pay for itself in the lesson, because this is latency (§10).
+TOTAL_MAX_TOKENS = 2950
 #: A ROTATED session's handoff (ADR-032): the lesson so far, from the turn log. Only rotated
 #: sessions carry it, so it has its own budget on top of TOTAL_MAX_TOKENS rather than squeezing
 #: the sections every session needs. Spent only when a long lesson has earned a fresh window.

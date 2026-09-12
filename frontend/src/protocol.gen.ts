@@ -35,7 +35,7 @@ export interface AudioChunkMsg {
 /** Turn-taking and session control. */
 export interface ControlMsg {
   type: "control";
-  action: "start" | "stop" | "bargein_ack" | "resync" | "quit" | "new_topic" | "ready";
+  action: "start" | "stop" | "cancel" | "bargein_ack" | "resync" | "quit" | "new_topic" | "ready";
 }
 
 /** Partial update of any key in the `config.py` schema, secrets included (§11). */

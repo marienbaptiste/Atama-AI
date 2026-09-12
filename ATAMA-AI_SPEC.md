@@ -440,9 +440,9 @@ Capping it is cheaper than rotating more often.
 
 - TalkingHead init with the GLB avatar, lipsyncModules can be empty (we always pass visemes explicitly).
 - WebSocket client with auto-reconnect. Message protocol (define as typed constants shared in one place, mirrored in Python pydantic models; a contract test asserts the two sets are identical):
-  - client→server: `audio_chunk` (base64 PCM16), `control` (`start`, `stop`, `bargein_ack`, `resync`, `quit` — `start`/`stop` are the push-to-talk edges; `quit` shuts the orchestrator down cleanly from the page, and is deliberately not `stop`; `new_topic` is the page's New topic button — she drops the subject, interrupting herself if need be, and searches for a fresh one exactly as if the student had said 「話題を変えて」), `settings` (partial update of **any** key in the `config.py` schema, secrets included — §11; the server validates, persists to `settings.json`, applies live where possible, and replies with the applied `settings` echo in which secrets appear only as `{set, hint}`. `model` takes effect by respawning the claude subprocess with `--resume`, reported via `service_status: claude=restarting`; token changes re-run the session-start SRS fetch), `settings_test` (`{service}` — runs that service's real check and reports through `service_status`).
+  - client→server: `audio_chunk` (base64 PCM16), `control` (`start`, `stop`, `cancel`, `bargein_ack`, `resync`, `quit` — `start`/`stop` are the push-to-talk edges, and `cancel` is **ALT GR during a hold** (the right-hand ALT: Chrome claims SPACE with the left one): what has been recorded is dropped, the talk key can then be released without sending anything, and the next press starts clean (user, 2026-09-12); `quit` shuts the orchestrator down cleanly from the page, and is deliberately not `stop`; `new_topic` is the page's New topic button — she drops the subject, interrupting herself if need be, and searches for a fresh one exactly as if the student had said 「話題を変えて」), `settings` (partial update of **any** key in the `config.py` schema, secrets included — §11; the server validates, persists to `settings.json`, applies live where possible, and replies with the applied `settings` echo in which secrets appear only as `{set, hint}`. `model` takes effect by respawning the claude subprocess with `--resume`, reported via `service_status: claude=restarting`; token changes re-run the session-start SRS fetch), `settings_test` (`{service}` — runs that service's real check and reports through `service_status`).
   - server→client: `state` (`listening|thinking|speaking`), `stt_final`, `assistant_text` (for subtitle display), `speak` (`{audio_b64, visemes[], vtimes[], vdurations[], text, emotion}`), `emotion`, `bargein`, `srs_profile` (for a collapsible debug panel), `service_status` (§5b), `settings` (echo), `timing` (per-turn stage breakdown, §10), `error`. `stt_partial` is **reserved**: STT runs on complete utterances, so partials are not produced in M2–M5; the type exists so a streaming-STT experiment does not need a protocol change.
-- UI: avatar full-viewport, waist-up camera framing; subtitle strip (toggle: JP / off — there is no English text source, since the tutor speaks only Japanese and 「英語で」 already gets an English explanation *spoken*; an EN subtitle mode would need a translation path and its latency cost, so it is explicitly out of scope until someone asks for it); mic state indicator; session timer; **service status bar** (§5b); settings drawer (voice speed, VAD sensitivity, model, subtitles); a one-line "headphones recommended" hint until the first successful barge-in.
+- UI: avatar full-viewport, waist-up camera framing; subtitle strip (toggle: JP / off — there is no English text source, since the tutor speaks only Japanese and 「英語で」 already gets an English explanation *spoken*; an EN subtitle mode would need a translation path and its latency cost, so it is explicitly out of scope until someone asks for it); mic state indicator; session timer; **service status bar** (§5b) with the settings button at its right end — a floating cog over the scene was in the way of both the avatar and the study panel (user, 2026-09-12); settings drawer (voice speed, VAD sensitivity, model, subtitles); a one-line "headphones recommended" hint until the first successful barge-in.
 - Idle life: auto-blink (random 2–6 s), subtle procedural sway, `lookAt` camera. **Eye contact is held at ~0.9 idle and speaking** (`avatarIdleEyeContact` / `avatarSpeakingEyeContact`, both [0,1]): TalkingHead defaults to 0.2/0.5, which makes the tutor look away most of the time and reads as evasive rather than attentive. Not 1.0 — unbroken eye contact is a stare (verified 2026-09-10). **Listening reactions:** while `state=listening` and the server reports speech (VAD `speech_start`), the avatar shifts to an attentive pose and gives a small nod on each detected pause ≥ 300 ms — the あいづち a human tutor would give. While `thinking`, a subtle "considering" idle (gaze up-and-away, slight head tilt).
 - **Emotion → rig.** One table, in `frontend/src/avatar.ts`, pinned against the TalkingHead README's actual mood and gesture names (**V0.4**):
 
@@ -466,6 +466,13 @@ Capping it is cheaper than rotating more often.
   message thread — her bubbles on one side, the student's on the other, newest at the bottom,
   following the conversation as it grows. `STUDY_PANEL=off` returns to the full-width avatar with
   subtitles.
+- **Red is grammar, and only grammar** (user, 2026-09-12). A conjugation, an auxiliary or a
+  pattern, wrapped whole — 〜てみよう is marked from the stem, not from its tail. A noun, a plain
+  verb or adjective, a name or a number is vocabulary and is never red, whatever the tutor thinks
+  of the word. The prompt says so, and `Annotator.grammar_only` enforces it with the tokenizer
+  already loaded for furigana: a span whose every token is a noun, with a point not named as a
+  pattern, is dropped before the page sees it. Narrow on purpose — a dropped point costs more than
+  a stray word.
 - **Her sentences.** Grammar spans in **red**, clickable for the rule in `EXPLAIN_LANGUAGE`
   (`en` default, or `ja`). Words clickable for a card: the reading, on'yomi and kun'yomi of each
   kanji, the English meaning, and — when it is on WaniKani — its SRS stage. A **translate icon**
@@ -527,7 +534,10 @@ and `--resume` replays the session *including* the garbage. So:
   undo exists here: either accept the polluted turn, or reset.
 - **Push-to-talk makes this mostly moot**, which is a strong argument for it: releasing the key is
   the commit point, so an abandoned press (drag off the button, or a cancel key) throws the audio
-  away before STT ever runs. In `vad` mode the commit happens on its own, which is exactly why the
+  away before STT ever runs. The cancel key exists and is **ALT GR** — the right-hand ALT, since Chrome takes SPACE with the
+  left one (user, 2026-09-12):
+  `VoiceLoop.ptt_cancel()` empties the buffer and closes the hold, so the release that follows is a
+  no-op and nothing is transcribed, let alone sent. In `vad` mode the commit happens on its own, which is exactly why the
   discard button is needed there.
 
 ### 9c. Starting over — clearing the whole conversation (M3)

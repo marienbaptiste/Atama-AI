@@ -96,7 +96,8 @@ function onState(s: typeof state, t: number): void {
   const ptt = mode === "ptt";
   live(s === "thinking" ? "she is thinking…"
     : s === "speaking" ? (ptt ? "she is speaking — hold SPACE to interrupt" : "she is speaking")
-    : (ptt ? "your turn — hold SPACE and speak" : "your turn — just speak"), s === "listening" ? "on" : "");
+    : (ptt ? "hold ALT GR to cancel what you are saying" : "your turn — just speak"),
+    s === "listening" ? "on" : "");
 }
 
 function onService(m: ServiceStatusMsg): void {
