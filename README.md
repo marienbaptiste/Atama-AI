@@ -134,7 +134,7 @@ conversation on the right as a chat:
   their level**, Bunpro's scale for both: ghost grey, beginner dark teal, adept navy, seasoned
   purple, expert pink, master rose (a WaniKani Apprentice word is beginner, Guru adept, and so on;
   a leech keeps its stage colour and says "leech" on its card). The word itself is in that colour,
-  and so is the marquee under it, a dashed line on the move; grammar's is thicker than a word's.
+  and so is the marquee under it, a still dashed line; grammar's is thicker than a word's.
   The − / + in the chat header make the text bigger or smaller (remembered). What you say is
   read the same way: a form or word of yours in your own bubble is marked and floats, and it
   counts for the study plan whether or not she credits it. Click a grammar point for the rule, in English or Japanese (Settings → Display); click a

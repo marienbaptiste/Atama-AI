@@ -637,7 +637,7 @@ is possible — it only brings an item back sooner, never later. Progress depend
   Enlightened → expert, Burned → master). A leech keeps its stage colour and is named a leech on
   its card — "ghost" is Bunpro's word, and a WaniKani word called a ghost made no sense (user,
   2026-09-12). The text of the mark is in its level's colour and so is the **marquee** under it, a
-  dashed line whose dashes creep along; grammar's is thicker than a word's, so the kind stays
+  dashed line, not animated; grammar's is thicker than a word's, so the kind stays
   readable. The chat header carries − / + for the text size (12–26 px in steps of two,
   remembered per browser) in place of a legend: the cards name the level anyway (user,
   2026-09-12). A
