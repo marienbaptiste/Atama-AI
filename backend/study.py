@@ -25,7 +25,7 @@ GURU_STAGE = 5
 #: Marking every occurrence of a one-character word (人, 日) would paint the whole conversation.
 MIN_CHARS = 2
 #: A cap, so a huge unlock list cannot slow the per-sentence scan.
-MAX_ITEMS = 120
+MAX_ITEMS = 220
 #: Bunpro writes its points as 〜たら, ～ている, 「ので」; the tutor names them the same way. None of
 #: that punctuation survives into a comparison.
 _TRIM = re.compile(r"[〜～\s「」『』（）()【】・]+")
@@ -102,7 +102,11 @@ class Study:
                 items.append(Item(word, "vocab", str(getattr(vocab, "reading", "") or ""),
                                   str(getattr(vocab, "meaning", "") or "")))
             bp = getattr(profile, "bunpro", None)
-            for point in list(getattr(bp, "ghosts", []) or []) + list(getattr(bp, "weak_grammar", []) or []):
+            # in_play is everything still in their SRS (ghost, beginner, adept, seasoned); the
+            # other two are its head, and the fallback on an older snapshot.
+            for point in (list(getattr(bp, "in_play", []) or [])
+                          + list(getattr(bp, "ghosts", []) or [])
+                          + list(getattr(bp, "weak_grammar", []) or [])):
                 title = str(getattr(point, "title", "") or "")
                 if title and normalise(title) not in {normalise(i.text) for i in items}:
                     items.append(Item(title, "grammar", meaning=str(getattr(point, "meaning", "") or "")))

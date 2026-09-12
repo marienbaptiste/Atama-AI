@@ -1315,6 +1315,16 @@ turns. Also fixed: the loading bubble came back mid-lesson saying "she is thinki
 start", because the §5b status heartbeat re-sends `brain: ready` every few seconds — it is now
 shown only before her first sentence.
 
+**Status 2026-09-12 — every unlearned form, not two ghosts** (user: "she must use all the forms I
+haven't Guru'd or mastered, with a preference for the all new fresh stuff"). The Bunpro fetcher
+reads the beginner, adept and seasoned levels beside the ghosts (three more GETs, launch and
+Refresh only, ADR-024): 2 + 10 points became **68 in play**, ordered weakest first. The profile
+renders them in that order — ten with meanings, the rest by title — and `prompts/tutor.md` says to
+go through the list rather than orbit the top of it. `backend/study.py` matches all 68 for the red
+marks' verification and the float's colour. Cost: `TOTAL_MAX_TOKENS` 3250 → 3400, and the template
+is now ~1985 tokens: **the next session's first job is to rewrite these rules shorter**, not to
+raise the ceiling again (item 6 below).
+
 ## Next session — plan for 2026-09-13 (set 2026-09-12)
 
 **1. One real lesson on the new page, first.** Refresh study data at the start (Settings → Account)

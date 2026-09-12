@@ -54,13 +54,17 @@ MEMORY_MAX_TOKENS = 400
 #: what grammar is, and lists the forms it forgot), the student was asked to produce grammar too
 #: rarely (every second or third turn now), and her own new WaniKani words barely appeared (one or
 #: two in every turn now). The template is ~1771 tokens of the total; the next section to grow
-#: should pay for itself in the lesson, because this is latency (§10). 2950 -> 3150 the same day
+#: should pay for itself in the lesson, because this is latency (§10). 3250 -> 3400 on 2026-09-12
+#: for "go through their grammar list, do not orbit the top of it" (user) — the profile now carries
+#: every form still in their SRS, not two ghosts. The template is ~1985 tokens and the rules repeat
+#: themselves in places: the next session's job is to rewrite them shorter (ROADMAP 22, item 6),
+#: not to raise this again. 2950 -> 3150 the same day
 #: for the memory section's own rise (see MEMORY_MAX_TOKENS): a tutor who forgets your name every
 #: week is not a tutor you keep. 3150 -> 3250 the same evening, for the rule that stops her
 #: INVENTING one — she greeted the student by a name nobody had told her (live, 2026-09-12).
 #: The template is now ~1954 tokens and this has to stop: ROADMAP 22's next-session item 6 is to
 #: rewrite these rules shorter, not to raise the ceiling again. It is latency (§10).
-TOTAL_MAX_TOKENS = 3250
+TOTAL_MAX_TOKENS = 3400
 #: A ROTATED session's handoff (ADR-032): the lesson so far, from the turn log. Only rotated
 #: sessions carry it, so it has its own budget on top of TOTAL_MAX_TOKENS rather than squeezing
 #: the sections every session needs. Spent only when a long lesson has earned a fresh window.

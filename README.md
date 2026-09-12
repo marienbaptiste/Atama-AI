@@ -6,6 +6,11 @@
 exactly where you are in your WaniKani and Bunpro studies, and adapts its vocabulary and
 grammar to match.
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="The atama-AI page: the 3D sensei on the left with push-to-talk, the Japanese conversation with furigana on the right, and the status bar above" width="900">
+</p>
+<p align="center"><em>Sensei mid-conversation — status bar, push-to-talk, and the transcript with furigana and per-sentence translation.</em></p>
+
 Everything runs on one laptop except Claude inference. No cloud STT, no cloud TTS, no
 database, no accounts — one user, local files. **It never writes to your SRS accounts.**
 

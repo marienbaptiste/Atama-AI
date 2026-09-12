@@ -106,5 +106,7 @@ def test_manual_refresh_forces_fetch_even_when_fresh(tmp_path):
         return bunpro_handler(r)
 
     p = pf.build("", "tok-b", tmp_path, 3600, 5, reg, client_overrides={"bunpro": {"transport": httpx.MockTransport(h), "sleep": lambda s: None}}, force=True)
-    assert p.sources["bunpro"] == "ok" and len(hits) == 6  # exactly the six launch/refresh calls, once
+    # Exactly the launch/refresh calls, once each: the four fixed ones plus one per level still
+    # being learned (beginner, adept, seasoned — user, 2026-09-12), plus the forecast.
+    assert p.sources["bunpro"] == "ok" and len(hits) == 5 + len(bp.IN_PLAY_LEVELS)
     assert (tmp_path / "status.json").exists()

@@ -505,6 +505,13 @@ Capping it is cheaper than rotating more often.
   message thread — her bubbles on one side, the student's on the other, newest at the bottom,
   following the conversation as it grows. `STUDY_PANEL=off` returns to the full-width avatar with
   subtitles.
+- **Everything still in their SRS is in play** (user, 2026-09-12): "she must use all the forms I
+  haven't Guru'd or mastered, with a preference for the all new fresh stuff". Bunpro is read for
+  ghosts *and* the beginner, adept and seasoned levels (three more GETs at launch and Refresh only,
+  ADR-024), which took this student from 2 ghosts + 10 beginner points to **68 points in play**.
+  The profile lists them weakest first — the first ten with their meanings, the rest by title,
+  which is all she needs to use a form — and the prompt tells her to work THROUGH the list rather
+  than orbit the top of it. The chat matches all of them, not only the ones that fit the prompt.
 - **Blue is one of their own words** (user, 2026-09-12): **every** vocabulary item the student has
   not yet Guru'd (WaniKani stage < 5 — not only the newest thirty, which left her a palette of 21
   words and 13 % of her sentences carrying one) and the grammar they have not mastered, from the

@@ -48,6 +48,11 @@ def _vocab_line(v: wk.Vocab) -> str:
     return f"{v.characters}（{v.reading}）{v.meaning}"
 
 
+#: How many of the still-being-learned grammar points reach the prompt. Past the first ten only
+#: their titles go in, which is what she needs to use the form (spec §5, ADR-011's budget).
+GRAMMAR_SHOWN = 34
+
+
 def _gp_line(g: bp.GrammarPoint) -> str:
     return f"{g.title}（{g.meaning}）"
 
@@ -76,8 +81,14 @@ def render(profile: StudentProfile) -> str:
         lines.append(f"Bunpro grammar: studying {b.current_jlpt()}. Progress: {prog}. Due now: {b.due_grammar} grammar, {b.due_vocab} vocab.")
         if b.ghosts:
             lines.append("Bunpro ghost reviews (their weakest grammar — work these in): " + "、".join(_gp_line(g) for g in b.ghosts[:15]))
-        if b.weak_grammar:
-            lines.append("Grammar still at beginner stage: " + "、".join(_gp_line(g) for g in b.weak_grammar[:15]))
+        # Everything still in their SRS, weakest first, so she can work through all of it rather
+        # than the same two ghosts (user, 2026-09-12). Titles only past the first few: the point
+        # is coverage, and a title is enough for her to use the form.
+        rest = [g for g in b.in_play if g.srs != "ghost"] or b.weak_grammar
+        if rest:
+            lines.append("Grammar they are still learning, weakest first — USE THESE, and prefer "
+                         "the newest: " + "、".join(_gp_line(g) for g in rest[:10])
+                         + ("、" + "、".join(g.title for g in rest[10:GRAMMAR_SHOWN]) if len(rest) > 10 else ""))
     else:
         lines.append("Bunpro: not connected.")
 

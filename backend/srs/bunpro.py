@@ -24,6 +24,13 @@ from backend.srs.http import SrsClient
 P = constants.BUNPRO_API_PREFIX
 E = constants.BUNPRO_READ_ENDPOINTS
 SRS_LEVELS = ("beginner", "adept", "seasoned", "expert", "master")
+#: What still counts as "being learned" rather than settled: everything the student has not taken
+#: past Seasoned. She works through all of it, weakest first — ghosts, then beginner, then adept,
+#: then seasoned (user, 2026-09-12: "all the forms I haven't Guru'd or mastered, with a preference
+#: for the all new fresh stuff").
+IN_PLAY_LEVELS = ("beginner", "adept", "seasoned")
+#: Kept per level. The prompt shows the first handful of each; the chat matches every one.
+LEVEL_LIMIT = 40
 JLPT_KEYS = ("5", "4", "3", "2", "1")
 
 
@@ -46,6 +53,9 @@ class BunproProfile:
     srs_grammar: dict[str, int] = field(default_factory=dict)              # level -> count
     ghosts: list[GrammarPoint] = field(default_factory=list)
     weak_grammar: list[GrammarPoint] = field(default_factory=list)         # beginner-stage points
+    #: Everything still in the SRS rather than settled, weakest first: ghosts, beginner, adept,
+    #: seasoned. What she is asked to work through, and what the chat matches (user, 2026-09-12).
+    in_play: list[GrammarPoint] = field(default_factory=list)
     forecast_tomorrow_grammar: int = 0
     forecast_later_grammar: int = 0
 
@@ -127,6 +137,13 @@ def parse(raw: dict[str, Any]) -> BunproProfile:
     p.srs_grammar = {k: _i(ov.get(k)) for k in (*SRS_LEVELS, "ghost")}
     p.ghosts = _points(_d(raw.get("ghost_grammar")), "ghost", 15)
     p.weak_grammar = _points(_d(raw.get("srs_level_beginner_grammar")), "beginner", 15)
+    seen = set()
+    for level in ("ghost", *IN_PLAY_LEVELS):
+        key = "ghost_grammar" if level == "ghost" else f"srs_level_{level}_grammar"
+        for point in _points(_d(raw.get(key)), level, LEVEL_LIMIT):
+            if point.title and point.title not in seen:
+                seen.add(point.title)
+                p.in_play.append(point)
     fc = _d(_d(raw.get("forecast_daily")).get("grammar"))
     p.forecast_tomorrow_grammar = int(fc.get("tomorrow") or 0)
     p.forecast_later_grammar = int(fc.get("later") or 0)
@@ -137,14 +154,18 @@ def parse(raw: dict[str, Any]) -> BunproProfile:
 def fetch_raw(client: SrsClient) -> dict[str, Any]:
     """GET every endpoint the profile needs. Individual failures are recorded, not raised."""
     raw: dict[str, Any] = {"_errors": {}}
-    # Six calls, ONLY at app launch / manual refresh (spec §5 fetch policy). With BUNPRO_MIN_INTERVAL_S
-    # spacing this fits the 10 s budget. The MCP tools never call Bunpro; they read this snapshot.
+    # Eight calls, ONLY at app launch / manual refresh (spec §5 fetch policy). With
+    # BUNPRO_MIN_INTERVAL_S spacing this fits the 10 s budget. The MCP tools never call Bunpro;
+    # they read this snapshot. adept and seasoned joined beginner on 2026-09-12 (user: "she must
+    # use all the forms I haven't Guru'd or mastered"): those three levels are what is still in
+    # the student's SRS rather than settled, and the tutor is asked to work through all of them.
     calls = [
         ("user", E["user"], None),
         ("due", E["due"], None),
         ("jlpt_progress", E["jlpt_progress"], None),
         ("ghost_grammar", E["ghost_level_details"], {"reviewable_type": "Grammar"}),
-        ("srs_level_beginner_grammar", E["srs_level_details"], {"reviewable_type": "Grammar", "level": "beginner"}),
+        *[(f"srs_level_{level}_grammar", E["srs_level_details"],
+           {"reviewable_type": "Grammar", "level": level}) for level in IN_PLAY_LEVELS],
         ("forecast_daily", E["forecast_daily"], None),
     ]
     for name, path, params in calls:
