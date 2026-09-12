@@ -218,7 +218,12 @@ async def run(args: argparse.Namespace) -> int:
     # had all of it to finish in. She reads it, THEN her prompt is assembled, THEN she is spawned:
     # a tutor who greets you having forgotten yesterday is what this ordering prevents.
     if summary is not None:
-        landed = await summary
+        try:
+            landed = await summary
+        except Exception as exc:  # noqa: BLE001 - memory is best-effort (ADR-031); a summariser
+            landed = 0            # that falls over must cost recall, never the lesson
+            print(f"{DIM}memory: could not read the last lesson back ({type(exc).__name__}); "
+                  f"carrying on without it{RESET}")
         rest = len(mem.pending_logs())
         print(f"{DIM}memory: {'your last lesson is in' if landed else 'nothing new to remember'}"
               + (f"; {rest} older session(s) will follow in the background{RESET}" if rest else RESET))
