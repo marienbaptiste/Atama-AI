@@ -46,6 +46,7 @@ avatarReady.then(a => { avatar = a; mountRigPanel(a); },
 function onSentence(msg: SpeakMsg, preview: boolean): void {
   subtitle(msg.text, "her");
   if (preview) return;                              // a rig-panel sample, not the conversation
+  hasSpoken = true;                                 // no more "still loading" for this session
   chat.her(msg);
   if (msg.target) setGoal(msg.target);
   if (msg.used) {                                   // you used it, and she noticed
@@ -64,6 +65,14 @@ const handlers: Handlers = {
   stt_final: m => {
     if (m.accepted) subtitle(m.text, "you");
     chat.you(m.text, m.accepted, m.reason, m.readings, m.vocab);
+    // You used one of your own words: float it now, without waiting for her to notice (user,
+    // 2026-09-12 — "when I use a form well it doesn't always float"). Her own [used:] credit
+    // still arrives with her reply and floats too; that one can also be a grammar point, which
+    // nothing here can detect. One per turn, the longest match, so a sentence is not a shower.
+    if (m.accepted && m.vocab.length) {
+      const best = [...m.vocab].sort((a, b) => b.word.length - a.word.length)[0];
+      floatWord(best.word, "vocab");
+    }
     log(`<b>you:</b> ${esc(m.text)}` + (m.accepted ? "" : ` <i>(discarded: ${esc(m.reason)})</i>`),
         m.accepted ? "you" : "err");
   },
@@ -101,7 +110,13 @@ const LOADING: Record<string, (m: ServiceStatusMsg) => string | null> = {
   voicevox: m => (m.state === "loading" ? "warming her voice…" : null),
 };
 
+//: Only before her first sentence. The status heartbeat re-sends every service every few seconds
+//: (§5b), so without this the bubble came back mid-lesson saying she was thinking of how to start
+//: (user, 2026-09-12).
+let hasSpoken = false;
+
 function waitingFor(m: ServiceStatusMsg): void {
+  if (hasSpoken) return;
   const caption = LOADING[m.service]?.(m);
   if (caption) chat.loading(caption);
 }
@@ -287,7 +302,7 @@ const link = new Link(handlers, {
     // A reconnect is a new socket: tell the server again that this page can play sound.
     if (unlocked) link.send({ type: "control", action: "ready" });
     live("connected — hold SPACE, or the button, and speak", "on");
-    chat.loading("getting everything ready…");        // until her first sentence lands
+    if (!hasSpoken) chat.loading("getting everything ready…");   // until her first sentence lands
     talk.render();
     settings.refresh();
   },

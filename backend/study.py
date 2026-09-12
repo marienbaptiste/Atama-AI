@@ -2,8 +2,10 @@
 
 Red is grammar; **blue is a word from their own lessons** (user, 2026-09-12). Which words those
 are is already on disk: the WaniKani snapshot fetched at launch (ADR-024 — no new call is made
-here, ever) lists their recent unlocks and their leeches with an SRS stage, and Bunpro's ghosts
-and beginner-stage points are the grammar they have not mastered. "Not yet Guru'd" is stage < 5
+here, ever) lists every vocabulary item still below Guru — not only the newest thirty, because 13 % of her
+sentences carried one of the student's words when that was all she had (measured from the turn
+logs, 2026-09-12) — and Bunpro's ghosts and beginner-stage points are the grammar they have not
+mastered. "Not yet Guru'd" is stage < 5
 (`wanikani.STAGE_BUCKETS`), which is WaniKani's own line between learning and learned.
 
 Matching is plain longest-first string search over the sentence, with no model call and no
@@ -44,14 +46,40 @@ def normalise(phrase: str) -> str:
     return _TRIM.sub("", str(phrase or "")).strip()
 
 
+#: Verb and adjective endings that inflect: 気に入る -> 気に入ります, 難しい -> 難しかった. Dropping the
+#: last character leaves a prefix every inflection of that word starts with, which is all the match
+#: needs — it is looking for "one of theirs, in play", not parsing morphology.
+_INFLECTS = "るういくぐすつぬぶむ"
+
+
+def written_forms(item: "Item") -> list[str]:
+    """How this word can appear in a sentence: as WaniKani writes it, as its kana reading (she
+    writes 竹 as たけ when the kanji is above their level), and as the prefix every inflection
+    shares — 勉強する also matches 勉強します, 難しい also matches 難しかった."""
+    forms = [item.text]
+    reading = (item.reading or "").replace("、", " ").split()
+    forms += [r for r in reading[:1] if r and r != item.text]
+    for base in list(forms):
+        stem = base[:-2] if base.endswith("する") else (base[:-1] if base[-1:] in _INFLECTS else "")
+        if len(stem) >= MIN_CHARS:
+            forms.append(stem)
+    return [f for f in dict.fromkeys(forms) if len(f) >= MIN_CHARS]
+
+
 class Study:
     """The student's own words and grammar points, and where they appear in a sentence."""
 
     def __init__(self, items: Iterable[Item] = ()) -> None:
         self.items: list[Item] = list(items)[:MAX_ITEMS]
-        #: Longest first, so 勉強する is marked before 勉強.
-        self._vocab = sorted((i for i in self.items if i.kind == "vocab"),
-                             key=lambda i: len(i.text), reverse=True)
+        #: Every written form of every word, longest first, so 勉強する is marked before 勉強 and
+        #: an inflected 気に入ります is caught by its stem.
+        forms: dict[str, Item] = {}
+        for item in self.items:
+            if item.kind != "vocab":
+                continue
+            for form in written_forms(item):
+                forms.setdefault(form, item)
+        self._forms = sorted(forms.items(), key=lambda kv: len(kv[0]), reverse=True)
         self._by_key = {normalise(i.text): i for i in self.items}
 
     @classmethod
@@ -61,7 +89,11 @@ class Study:
         try:
             wk = getattr(profile, "wanikani", None)
             seen: set[str] = set()
-            for vocab in list(getattr(wk, "recent_unlocks", []) or []) + list(getattr(wk, "leeches", []) or []):
+            # in_progress is everything below Guru; the other two are subsets of it on a fresh
+            # snapshot and the fallback on an old one.
+            for vocab in (list(getattr(wk, "in_progress", []) or [])
+                          + list(getattr(wk, "recent_unlocks", []) or [])
+                          + list(getattr(wk, "leeches", []) or [])):
                 word = str(getattr(vocab, "characters", "") or "")
                 if (len(word) < MIN_CHARS or word in seen
                         or int(getattr(vocab, "srs_stage", 0) or 0) >= GURU_STAGE):
@@ -79,13 +111,19 @@ class Study:
         return cls(items)
 
     def spans(self, text: str) -> list[dict[str, Any]]:
-        """Every word of theirs in `text`: [{start, end, word}] over code points, no overlaps."""
-        if not text or not self._vocab:
+        """Every word of theirs in `text`: [{start, end, word}] over code points, no overlaps.
+
+        A word is matched as WaniKani writes it, as its kana reading (she writes 竹 as たけ when the
+        kanji is above their level — the prompt tells her to), and by its stem, so 「気に入ります」
+        and 「勉強しました」 count as 気に入る and 勉強する. Longest form first; the span keeps the
+        text's own characters, and `word` is the dictionary form the card would show.
+        """
+        if not text or not self._forms:
             return []
         taken = [False] * len(text)
         out: list[dict[str, Any]] = []
-        for item in self._vocab:
-            for m in re.finditer(re.escape(item.text), text):
+        for form, item in self._forms:
+            for m in re.finditer(re.escape(form), text):
                 if any(taken[m.start():m.end()]):
                     continue
                 taken[m.start():m.end()] = [True] * (m.end() - m.start())

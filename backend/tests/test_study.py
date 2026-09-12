@@ -71,3 +71,34 @@ def test_no_srs_data_is_no_colour_and_no_crash():
     s = study.Study.from_profile(profile_api.StudentProfile())
     assert s.items == [] and s.spans("勉強します。") == [] and s.kind_of("勉強") == ""
     assert study.Study.from_profile(None).items == []
+
+
+# --------------------------------------------------- she writes them as she likes (user feedback)
+def test_a_word_counts_however_she_writes_it():
+    """13 % of her sentences carried one of their words when only the exact spelling matched
+    (measured from the turn logs, 2026-09-12): kana and inflections were being missed."""
+    s = study.Study([study.Item("気に入る", "vocab", "きにいる"),
+                     study.Item("勉強する", "vocab", "べんきょうする"),
+                     study.Item("難しい", "vocab", "むずかしい"),
+                     study.Item("竹の子", "vocab", "たけのこ")])
+    for text, word in (("この本が気に入りました。", "気に入る"),
+                       ("毎日勉強しています。", "勉強する"),
+                       ("漢字は難しかったですね。", "難しい"),
+                       ("たけのこが好きです。", "竹の子")):
+        spans = s.spans(text)
+        assert [x["word"] for x in spans] == [word], (text, spans)
+
+
+def test_a_stem_too_short_to_be_a_word_is_not_matched():
+    """Dropping the ending must not leave a single character that appears everywhere."""
+    s = study.Study([study.Item("見る", "vocab", "みる")])
+    assert study.written_forms(study.Item("見る", "vocab", "みる")) == ["見る", "みる"]
+    assert s.spans("見せてください。") == []
+
+
+def test_everything_below_guru_is_in_play_not_only_the_newest():
+    w = wk.WaniKaniProfile(level=12)
+    w.in_progress = [vocab("公園", 1), vocab("勉強", 2), vocab("先生", 6)]
+    w.recent_unlocks = [vocab("公園", 1)]
+    s = study.Study.from_profile(profile_api.StudentProfile(wanikani=w))
+    assert {i.text for i in s.items if i.kind == "vocab"} == {"公園", "勉強"}

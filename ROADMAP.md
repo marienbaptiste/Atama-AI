@@ -1300,6 +1300,21 @@ button opens a confirm card instead of firing on a misclick. Checked in headless
 is up with three dots while loading and gone after she speaks; the card sends nothing on "Keep
 going" and `control: new_topic` on "New topic".
 
+**Status 2026-09-12 (measured, not guessed) — why the blue was rare.** The user said her words and
+the floating word were both too rare, so it was counted over every session of the day: 301 of her
+sentences, **13 %** carrying one of the student's not-yet-Guru'd words, 12 grammar marks in all, 9
+`[used:]` credits over 62 student turns. Three causes, all fixed: (1) only the newest 30 unlocks
+were fetched, so her palette was 21 words — the fetcher now asks for every vocabulary assignment
+below Guru (one more id list on the same GET, launch and Refresh only, ADR-024), giving 58;
+(2) matching was exact, so 「気に入ります」, 「勉強しました」 and a kana 「たけのこ」 all missed — a word now
+matches as written, as its kana reading, and by the prefix every inflection shares; (3) the float
+waited for her `[used:]` tag, so the page now floats one of the student's own words the moment the
+transcript arrives, her credit still floating separately (and it is the only one that can be a
+grammar point). Re-measured on the SAME transcripts: 13 % → **21 %** of her sentences, 65 % of her
+turns. Also fixed: the loading bubble came back mid-lesson saying "she is thinking of how to
+start", because the §5b status heartbeat re-sends `brain: ready` every few seconds — it is now
+shown only before her first sentence.
+
 ## Next session — plan for 2026-09-13 (set 2026-09-12)
 
 **1. One real lesson on the new page, first.** Refresh study data at the start (Settings → Account)

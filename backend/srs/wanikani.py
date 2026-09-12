@@ -35,6 +35,12 @@ STAGE_BUCKETS = {1: "apprentice", 2: "apprentice", 3: "apprentice", 4: "apprenti
                  5: "guru", 6: "guru", 7: "master", 8: "enlightened", 9: "burned"}
 RECENT_LIMIT = 30
 LEECH_LIMIT = 15
+#: Every vocabulary item still below Guru, for the chat's blue words (spec §8b). The prompt still
+#: shows only the 30 most recent — this list is for matching, not for reading, so it can be wider.
+#: Capped so a student with hundreds in Apprentice cannot make the subjects URL unreasonable.
+IN_PROGRESS_LIMIT = 150
+#: WaniKani reaches Guru at stage 5: below that, the student is still learning the item.
+GURU_STAGE = 5
 
 
 @dataclass
@@ -55,6 +61,9 @@ class WaniKaniProfile:
     reviews_available_now: int = 0
     stage_counts: dict[str, int] = field(default_factory=dict)   # apprentice/guru/master/enlightened/burned
     recent_unlocks: list[Vocab] = field(default_factory=list)
+    #: Everything still below Guru (not only the newest 30): what the chat paints blue, and what
+    #: the tutor is asked to reuse. Not rendered into the prompt — that stays the recent list.
+    in_progress: list[Vocab] = field(default_factory=list)
     leeches: list[Vocab] = field(default_factory=list)
     #: Kanji passed (Guru reached at least once) — the chat hides their furigana. Not in the prompt.
     known_kanji: list[str] = field(default_factory=list)
@@ -108,8 +117,15 @@ def parse(raw: dict[str, Any]) -> WaniKaniProfile:
             p.recent_unlocks.append(Vocab(**sub, srs_stage=int(a.get("srs_stage") or 0),
                                           incorrect=int(st.get("meaning_incorrect") or 0) + int(st.get("reading_incorrect") or 0)))
 
-    # Leeches: low stage + most incorrect answers (review_statistics filtered to <80% correct upstream).
     stage_by_sid = {int(a["subject_id"]): int(a.get("srs_stage") or 0) for a in assignments if "subject_id" in a}
+    for sid, sub in subjects.items():
+        stage = stage_by_sid.get(sid, GURU_STAGE)
+        if stage < GURU_STAGE:
+            p.in_progress.append(Vocab(**sub, srs_stage=stage,
+                                       incorrect=int((stats.get(sid, {}).get("meaning_incorrect")) or 0)
+                                       + int((stats.get(sid, {}).get("reading_incorrect")) or 0)))
+
+    # Leeches: low stage + most incorrect answers (review_statistics filtered to <80% correct upstream).
     leech_rows = sorted(
         (st for sid, st in stats.items() if stage_by_sid.get(sid, 9) <= 6),
         key=lambda st: int(st.get("meaning_incorrect") or 0) + int(st.get("reading_incorrect") or 0),
@@ -171,6 +187,11 @@ def fetch_raw(client: SrsClient) -> dict[str, Any]:
     ids = {int(a["subject_id"]) for a in recent[:RECENT_LIMIT]}
     stats = (raw.get("review_statistics") or {}).get("data") or []
     ids |= {int(r["data"]["subject_id"]) for r in stats[:LEECH_LIMIT * 2] if isinstance(r.get("data"), dict)}
+    # Everything still being learned, so the chat can colour it and the tutor can reuse it — 13%
+    # of her sentences carried one of the student's words when only the newest 30 were fetched
+    # (measured from the turn logs, 2026-09-12). Same endpoint, same GET, one id list.
+    learning = [a for a in assignments if 0 < int(a.get("srs_stage") or 0) < GURU_STAGE and a.get("subject_id")]
+    ids |= {int(a["subject_id"]) for a in learning[:IN_PROGRESS_LIMIT]}
     if ids:
         step("subjects", lambda: client.get("/v2/subjects", {"ids": ",".join(map(str, sorted(ids)))}))
     # The chat's furigana (spec §8b): which kanji the student has passed, and their characters.
