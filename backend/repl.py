@@ -88,7 +88,7 @@ async def run(args: argparse.Namespace) -> int:
     # has to be instant. It is the init time the student already waits through for Whisper.
     mem, memory_text = None, ""
     if cfg.MEMORY_ENABLED:
-        mem = memory_api.Memory.from_config(cfg)
+        mem = memory_api.Memory.from_config(cfg)      # per tutor: <state>/memory/<persona>
         pending = mem.pending_logs()
         if pending:
             # Only the newest here — it is the one she greets with. The rest are caught up in the
@@ -241,7 +241,9 @@ async def run(args: argparse.Namespace) -> int:
         answering until this one is up, so a failed switch leaves a tutor rather than nobody."""
         nonlocal brain
         fresh = config.load()
-        text = prompt.build(profile_text, persona=name, memory=memory_text).text
+        # The new tutor reads THEIR memory of this student, not the one the last tutor had.
+        text = prompt.build(profile_text, persona=name,
+                            memory=mem.for_persona(name).render() if mem is not None else "").text
         new = brain_api.create(fresh, registry=registry, mcp_config=mcp_json,
                                model=await asyncio.to_thread(tiers.resolve, str(fresh.CLAUDE_MODEL)),
                                mcp_ready_markers=mcp_config.markers(fresh) if mcp_json else None,
@@ -256,6 +258,10 @@ async def run(args: argparse.Namespace) -> int:
             voice.tts = tts_new
         old, brain = brain, new
         if mem is not None:
+            # A different tutor is a different memory (user, 2026-09-12): their own last lesson,
+            # their own life; the student's own facts follow them across. Changed IN PLACE,
+            # because the turn recorder and the rotation handoff already hold this object.
+            mem.switch_to(name)
             mem.session_id = new.session_id
         await old.aclose()
         return new

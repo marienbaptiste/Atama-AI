@@ -34,7 +34,10 @@ PROFILE_MAX_TOKENS = 600
 #: Cross-session memory (spec §6b, ADR-031): last-session brief, recent topics, student notes.
 #: Deliberately small — it is read on every turn as cached prompt, so its cost is tokens, not
 #: latency, and the point is a tutor who remembers the gist, not one who replays the transcript.
-MEMORY_MAX_TOKENS = 220
+#: 220 -> 400 on 2026-09-12: the two of them now remember each other — the student's name, where
+#: they live, their cat, and everything the tutor has claimed about her own life (spec §6b). Ten
+#: facts and six, one line each, is what "they have met before" costs.
+MEMORY_MAX_TOKENS = 400
 #: Whole assembled prompt. Template is ~700 tokens, so this leaves room for both sections.
 #: Ceiling for template + both sections. Raised 2000 -> 2100 on 2026-09-09: the explicit
 #: correction policy and the elicitation rule grew the static template to ~1050 tokens, and at
@@ -51,8 +54,10 @@ MEMORY_MAX_TOKENS = 220
 #: what grammar is, and lists the forms it forgot), the student was asked to produce grammar too
 #: rarely (every second or third turn now), and her own new WaniKani words barely appeared (one or
 #: two in every turn now). The template is ~1771 tokens of the total; the next section to grow
-#: should pay for itself in the lesson, because this is latency (§10).
-TOTAL_MAX_TOKENS = 2950
+#: should pay for itself in the lesson, because this is latency (§10). 2950 -> 3150 the same day
+#: for the memory section's own rise (see MEMORY_MAX_TOKENS): a tutor who forgets your name every
+#: week is not a tutor you keep.
+TOTAL_MAX_TOKENS = 3150
 #: A ROTATED session's handoff (ADR-032): the lesson so far, from the turn log. Only rotated
 #: sessions carry it, so it has its own budget on top of TOTAL_MAX_TOKENS rather than squeezing
 #: the sections every session needs. Spent only when a long lesson has earned a fresh window.

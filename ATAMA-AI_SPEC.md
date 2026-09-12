@@ -62,7 +62,7 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
                                            │  │   claude -p (haiku)       │
         ┌─────────────┐                    │  ├─ TTS client → VOICEVOX    │
         │ VOICEVOX    │◄──HTTP─────────────┤  ├─ SRS fetcher (WK/Bunpro)  │
-        │ (Docker)    │  :50021            │  ├─ Memory + rotation        │
+        │ (Docker)    │  :50021            │  ├─ Memory/tutor + rotation  │
         └─────────────┘                    │  └─ Status registry          │
         ┌─────────────┐                    └───────────┬──────────────────┘
         │ SearxNG     │◄──HTTP :8888──┐                │ stdin/stdout
@@ -82,6 +82,15 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
         │   persona text        ──► --system-prompt-file      │
         └─────────────────────────────────────────────────────┘
               one file per tutor; TUTOR_PERSONA selects it
+
+        <state>/memory/                     what is true of the student
+        ├─ student.md      (how they learn) ──┐ shared by every tutor
+        ├─ about-me.md     (who they are)   ──┤
+        └─ <tutor>/                           ├──► {{memory}} in the prompt
+           ├─ facts.md     (this tutor's own life)      │
+           ├─ last-session.md                           │
+           └─ topics.jsonl (do not open on these) ──────┘
+              switching TUTOR_PERSONA switches the drawer
 ```
 
 **Where the build stands against this diagram (2026-09-11).** The browser page is the Vite +
@@ -307,14 +316,30 @@ while the avatar is still playing synthesised audio and the orchestrator is idle
 best-effort and cancellable: if the student speaks, the conversation wins and the background work
 is abandoned.
 
-### Four tiers of memory
+### Five tiers of memory
 
 | tier | where | read | written | budget |
 |---|---|---|---|---|
 | turn log | `logs/sessions/<date>-<session>.jsonl` | never by the tutor | appended in the speaking gap | — |
 | student notes | `<state>/memory/student.md` | session start → prompt | summarised at next launch | `MEMORY_MAX_TOKENS` |
-| last-session brief | `<state>/memory/last-session.md` | session start → prompt | summarised at next launch | shares the above |
-| recent topics | `<state>/memory/topics.jsonl` | session start → prompt | summarised at next launch | shares the above |
+| about the student | `<state>/memory/about-me.md` | session start → prompt | summarised at next launch | shares the above |
+| last-session brief | `<state>/memory/<tutor>/last-session.md` | session start → prompt | summarised at next launch | shares the above |
+| recent topics | `<state>/memory/<tutor>/topics.jsonl` | session start → prompt | summarised at next launch | shares the above |
+| about this tutor | `<state>/memory/<tutor>/facts.md` | session start → prompt | summarised at next launch | shares the above |
+
+- **They know each other** (user, 2026-09-12). Two short lists carry the relationship: what is
+  durably true of the student — their name, the country they live in, their work, their cat — and
+  what this tutor has said about **their own** life, so they do not acquire a second pet next week.
+  Ten lines and six, one fact each, hand-editable; over the cap the oldest survive (a name is
+  learned in the first lesson and must not be pushed out by last Tuesday's cake) with the newest
+  few always given a slot. A tutor is a man or a woman depending on the chosen voice, so their
+  facts are written without pronouns.
+- **Memory is per tutor** (user, 2026-09-12). What is true of the student is shared by everyone who
+  teaches them; a lesson, though, happened between two particular people, and a tutor's own life is
+  their own. So `<state>/memory/<tutor>/` holds the brief, the topics and that tutor's facts, and
+  switching `TUTOR_PERSONA` — at launch or live from the settings panel — switches the whole
+  drawer. The turn log records who taught each lesson, and only that tutor summarises it. A memory
+  written before the split belongs to whoever is teaching when it is first read.
 
 - **Read once, at session start.** Both files are rendered into the system prompt beside the soul
   (§6) and the SRS profile (§5), through the same budgeting that truncates at a line boundary and

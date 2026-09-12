@@ -98,7 +98,7 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
                                            │  │   claude -p (haiku)       │
         ┌─────────────┐                    │  ├─ TTS client → VOICEVOX    │
         │ VOICEVOX    │◄──HTTP─────────────┤  ├─ SRS fetcher (WK/Bunpro)  │
-        │ (Docker)    │  :50021            │  ├─ Memory + rotation        │
+        │ (Docker)    │  :50021            │  ├─ Memory/tutor + rotation  │
         └─────────────┘                    │  └─ Status registry          │
         ┌─────────────┐                    └───────────┬──────────────────┘
         │ SearxNG     │◄──HTTP :8888──┐                │ stdin/stdout
@@ -603,9 +603,12 @@ Sensei remembers you between lessons, and none of it costs you a pause mid-conve
 - **Written in the gaps.** Turn records are appended while the avatar is still speaking. The
   summary that becomes next lesson's memory is written when you next launch, so exiting stays
   instant.
-- **`memory/student.md` is yours to edit.** It lives outside the repo, is never committed, and is
-  plain markdown — a wrong memory recalled confidently is worse than none, and the fix is a text
-  editor.
+- **You know each other.** Two short lists are kept and read back each lesson: what is durably true
+  of you — your name, your country, your work, your cat — and what *that* tutor has said about
+  their own life, so they never acquire a second pet. Small on purpose: ten lines and six.
+- **`memory/student.md` and `memory/about-me.md` are yours to edit.** They live outside the repo,
+  are never committed, and are plain markdown — a wrong memory recalled confidently is worse than
+  none, and the fix is a text editor.
 - **Long lessons don't stall.** When the conversation approaches the model's context limit, the
   session is rotated during the avatar's speaking time rather than letting the CLI compact
   mid-sentence. You should never notice it happen.
@@ -810,12 +813,19 @@ once at launch and written between turns — never while you are waiting for her
 | file | what it holds |
 |------|---------------|
 | `logs/sessions/<date>-<session>.jsonl` | every turn, one JSON line each — also your Anki mine |
-| `~/.atama-ai/memory/last-session.md` | a sentence or two on how the last lesson went |
-| `~/.atama-ai/memory/topics.jsonl` | a few subjects per lesson, so she doesn't open on the same thing twice |
-| `~/.atama-ai/memory/student.md` | what she believes about you — **edit it freely** |
+| `~/.atama-ai/memory/student.md` | how you learn — what you keep getting wrong, what you used unprompted. **Edit it freely** |
+| `~/.atama-ai/memory/about-me.md` | who you are: your name, where you live, your work, your cat. Ten lines, yours to edit |
+| `~/.atama-ai/memory/<tutor>/last-session.md` | a sentence or two on how your last lesson with *that* tutor went |
+| `~/.atama-ai/memory/<tutor>/topics.jsonl` | a few subjects per lesson, so they don't open on the same thing twice |
+| `~/.atama-ai/memory/<tutor>/facts.md` | what that tutor has told you about their own life, so they stay the same person |
 
-The first two paths are on Windows; elsewhere the state directory is `~/.local/state/atama-ai`.
-None of it lives in the repository, so none of it can be committed.
+The first path is in the repo; the rest are the Windows state directory — elsewhere it is
+`~/.local/state/atama-ai`. None of it lives in the repository, so none of it can be committed.
+
+**Memory is per tutor.** Who you are is shared: change teacher and they still know your name and
+that you live in Belgium. What you *did together* is not — a new tutor was not at last Tuesday's
+lesson and has their own cat, their own neighbourhood, their own weekend. Switching the tutor in
+Settings → Voice switches the whole drawer, mid-lesson included.
 
 Past lessons are summarised **when you next launch**, by a small cheap model (`haiku` by default),
 which is why launch occasionally says `memory: catching up on 1 past session(s)`. Exiting stays

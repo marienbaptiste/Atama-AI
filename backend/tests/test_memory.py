@@ -27,7 +27,8 @@ def test_turn_record_carries_every_schema_key_even_when_unknown(tmp_path):
     m.record_turn(student="こんにちは", tutor_sentences=[{"text": "はい。", "emotion": "happy",
                                                           "synth_ms": None}])
     [row] = rows(m.log_path())
-    assert set(row) == {"ts", "session", "turn", "student", "tutor", "tools", "latency", "usage"}
+    assert set(row) == {"ts", "session", "persona", "turn", "student", "tutor", "tools",
+                        "latency", "usage"}
     assert set(row["student"]) >= {"text", "audio_ms", "stt_ms"}
     assert set(row["latency"]) >= {"ttft_ms", "first_audio_ms", "voice_to_voice_ms"}
     assert row["tutor"]["text"] == "はい。" and row["session"] == "s1" and row["turn"] == 1
@@ -89,6 +90,104 @@ def test_editor_comments_in_student_notes_never_reach_the_prompt(tmp_path):
     m.apply_summary("a", "2026-09-01", {"brief": "x", "topics": [], "notes": ["Likes trains."]})
     assert "Edit freely" in m.student_md.read_text(encoding="utf-8")
     assert "Edit freely" not in m.render() and "Likes trains." in m.render()
+
+
+# ------------------------------------------------------ what the two of them know (user request)
+def test_both_sides_of_the_memory_reach_the_prompt(tmp_path):
+    """A tutor the student has met before: their name and life, and the tutor's own claims."""
+    m = mem(tmp_path)
+    m.apply_summary("a", "2026-09-01", {"brief": "x", "topics": ["猫"],
+                                        "student_facts": ["Called Baptiste", "Lives in Belgium"],
+                                        "tutor_facts": ["Has a cat called モチ"]})
+    text = m.render()
+    assert "WHAT YOU TWO ALREADY KNOW" in text
+    assert "Baptiste" in text and "Belgium" in text and "モチ" in text
+    assert m.facts() == (["Called Baptiste", "Lives in Belgium"], ["Has a cat called モチ"])
+
+
+def test_a_fact_is_learned_once_however_it_is_worded(tmp_path):
+    m = mem(tmp_path)
+    m.apply_summary("a", "2026-09-01", {"brief": "x", "topics": ["猫"],
+                                        "student_facts": ["Lives in Belgium"]})
+    m.apply_summary("b", "2026-09-02", {"brief": "y", "topics": ["猫"],
+                                        "student_facts": ["lives in Belgium.", "Has a dog"]})
+    assert m.facts()[0] == ["Lives in Belgium", "Has a dog"]
+
+
+def test_the_first_things_learned_survive_a_full_list(tmp_path):
+    """The name is learned in lesson one and must not be pushed out by a month of small talk —
+    while the newest few always get a slot, or the memory freezes the day it fills up."""
+    m = mem(tmp_path)
+    m.apply_summary("a", "2026-09-01", {"brief": "x", "topics": ["猫"],
+                                        "student_facts": ["Called Baptiste"]})
+    for i in range(memory_api.STUDENT_FACTS + 4):
+        m.apply_summary(f"s{i}", "2026-09-02", {"brief": "x", "topics": ["猫"],
+                                                "student_facts": [f"Ate cake number {i}"]})
+    shown = m.render()
+    assert "Called Baptiste" in shown
+    assert f"Ate cake number {memory_api.STUDENT_FACTS + 3}" in shown
+    assert "Ate cake number 8" not in shown           # the middle is what gets dropped
+    student, _ = m.facts()
+    assert len(memory_api._keep(student, memory_api.STUDENT_FACTS)) == memory_api.STUDENT_FACTS
+
+
+def test_the_facts_files_are_editable_and_their_comments_stay_out_of_the_prompt(tmp_path):
+    m = mem(tmp_path)
+    m.apply_summary("a", "2026-09-01", {"brief": "x", "topics": ["猫"],
+                                        "student_facts": ["Called Baptiste"],
+                                        "tutor_facts": ["Lives in Kanazawa"]})
+    assert "Edit or delete any line" in m.about_md.read_text(encoding="utf-8")
+    assert "Edit or delete any line" not in m.render()
+    m.facts_md.write_text("# About the tutor\n", encoding="utf-8")   # deleted by hand
+    assert m.facts() == (["Called Baptiste"], [])
+    assert "Kanazawa" not in m.render() and "Baptiste" in m.render()
+
+
+def test_a_summary_with_no_facts_leaves_the_ones_on_disk_alone(tmp_path):
+    m = mem(tmp_path)
+    m.apply_summary("a", "2026-09-01", {"brief": "x", "topics": ["猫"], "student_facts": ["Called Baptiste"]})
+    m.apply_summary("b", "2026-09-02", {"brief": "y", "topics": ["寿司"]})
+    assert m.facts()[0] == ["Called Baptiste"]
+
+
+def test_each_tutor_has_their_own_memory_and_the_student_is_shared(tmp_path):
+    """Switch tutor and you meet someone who was not there last Tuesday — but who still knows
+    your name (user, 2026-09-12)."""
+    shared = tmp_path / "memory"
+    minami = Memory(root=shared / "minami", sessions=tmp_path / "sessions", persona="minami", shared=shared)
+    minami.apply_summary("a", "2026-09-01", {"brief": "猫の話をした。", "topics": ["猫"],
+                                             "student_facts": ["Called Baptiste"],
+                                             "tutor_facts": ["Has a cat called モチ"]})
+    mori = minami.for_persona("mori")
+    assert mori.facts() == (["Called Baptiste"], [])      # the student, not the other tutor's cat
+    assert "モチ" not in mori.render() and "Baptiste" in mori.render()
+    assert "猫の話をした。" not in mori.render()             # nor the lesson they were not at
+    assert "モチ" in minami.render()
+
+
+def test_a_lesson_is_summarised_by_the_tutor_who_taught_it(tmp_path):
+    shared, sessions = tmp_path / "memory", tmp_path / "sessions"
+    minami = Memory(root=shared / "minami", sessions=sessions, session_id="now",
+                    persona="minami", shared=shared)
+    minami.session_id = "old"
+    minami.record_turn(student="こんにちは", tutor_sentences=[{"text": "はい。"}])
+    minami.session_id = "now"
+    mori = minami.for_persona("mori")
+    assert [p.name for p in minami.pending_logs()] == [minami.sessions.glob("*.jsonl").__next__().name]
+    assert mori.pending_logs() == []
+
+
+def test_a_memory_from_before_the_split_belongs_to_whoever_is_teaching_now(tmp_path):
+    shared = tmp_path / "memory"
+    shared.mkdir(parents=True)
+    (shared / "last-session.md").write_text("(2026-09-01) 猫の話をした。\n", encoding="utf-8")
+    (shared / "student.md").write_text("- Works as an engineer.\n", encoding="utf-8")
+    m = Memory(root=shared / "minami", sessions=tmp_path / "sessions", persona="minami", shared=shared)
+    m.migrate()
+    assert (shared / "minami" / "last-session.md").exists()
+    assert not (shared / "last-session.md").exists()
+    assert (shared / "student.md").exists()               # the student stays everyone's
+    assert "猫の話をした。" in m.render() and "engineer" in m.render()
 
 
 # ---------------------------------------------------------------- summarising

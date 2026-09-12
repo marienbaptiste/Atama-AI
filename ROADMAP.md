@@ -1046,6 +1046,24 @@ test described above, and rotation (ADR-032), which stays last by design. **Not 
 yet:** close and reopen after a real lesson and confirm she opens from the brief without repeating
 the topic.
 
+**Status 2026-09-12 — a fifth tier, and one drawer per tutor** (user: "give the teacher some
+memory… remember if we talked about her pet already, what is my name, which country I live in",
+then "memory per persona"). Two short hand-editable lists: `about-me.md` — what is durably true of
+the student, shared by the whole cast — and `<tutor>/facts.md`, what THAT tutor has claimed about
+their own life, so a switch of voice is a switch of person and not a tutor with two cats. Caps 10
+and 6, one line each, deduped on the letters; over the cap the oldest survive with the newest
+three always given a slot, so a name learned in lesson one is not pushed out by a month of cake.
+The brief and the topics moved under `<state>/memory/<tutor>/` too, the turn log records the
+persona so only its own tutor summarises a lesson, a pre-persona memory migrates to whoever is
+teaching when it is first read, and a live tutor switch moves the memory in place. The summariser
+prompt asks for both fact lists and writes the tutor's own without pronouns — the tutor is a man
+or a woman depending on the chosen voice. Cost: `MEMORY_MAX_TOKENS` 220 → 400, total 2950 → 3150.
+Tests: seven new ones in `test_memory.py` (both sides render, one fact however worded, the first
+facts survive a full list, the files are editable and their comments stay out of the prompt, a
+summary with no facts leaves disk alone, each tutor's own drawer, a lesson summarised by the tutor
+who taught it, the migration). **Not validated live** — the first real check is two lessons with
+the same tutor, then switching.
+
 **Known risk.** Rotation is the only feature in this milestone that can break a working
 conversation, and its failure mode is subtle — a tutor that quietly forgets. Ship the log, the
 start-of-session read and the summariser first; rotation is on by default at 0.7 of the

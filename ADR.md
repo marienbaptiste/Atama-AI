@@ -1019,7 +1019,7 @@ need to share one voice — in which case the declaration moves back out to conf
 
 ## ADR-031 — Memory is read once at session start and written in the gaps; never retrieved mid-turn
 
-**Status:** Accepted (2026-09-09); **amended 2026-09-10** — a recent-topics tier, and summarising moves to the next launch (see *Amendment* below). Extends ADR-024's principle to a second kind of expensive work.
+**Status:** Accepted (2026-09-09); **amended 2026-09-10** — a recent-topics tier, and summarising moves to the next launch (see *Amendment* below); **amended 2026-09-12** — a fifth tier, and memory split per tutor (see *Amendment 2*). Extends ADR-024's principle to a second kind of expensive work.
 See spec §6b.
 
 **Context.** Spec §6 and ADR-028 already tell Sensei to open "from what she knows about them or
@@ -1116,6 +1116,33 @@ its budget without losing things that matter. The next step then is scoping by t
 start — still a start-of-session read, still not per-turn retrieval.
 
 ---
+
+**Amendment 2 (2026-09-12, user request) — they know each other, and each tutor knows them
+separately.**
+
+*Context.* The brief and the topics made the lessons continuous, but not the relationship: the
+tutor did not know the student's name, where they lived, or whether they had already talked about
+the tutor's cat. The user asked for a memory that is "not a really long one" but enough that the
+two feel like they have met — and then, seeing it, that it be per tutor.
+
+*Decision.* A fifth tier, two short hand-editable lists, read like the others at session start and
+written by the same summariser: durable facts about the student (10) and about the tutor's own
+claimed life (6). One line each, dedup on the letters so a rewording is not learned twice, and
+when the list is full the OLDEST survive with the newest few always given a slot — a name is
+learned in lesson one and must outlive a month of small talk. Tutor facts are written without
+pronouns: the tutor is a man or a woman depending on the voice the student chose.
+
+*And the drawer is per tutor.* `<state>/memory/<tutor>/` holds the brief, the topics and that
+tutor's facts; `student.md` and `about-me.md` stay shared, because the student is the same person
+whoever teaches them. The turn log records who taught each lesson so only that tutor summarises
+it, and switching `TUTOR_PERSONA` — live, from the settings panel — switches the memory in place.
+
+*Cost.* `MEMORY_MAX_TOKENS` 220 → 400 and the total 2950 → 3150 (§10 latency). A tutor who forgets
+your name every week is not worth the tokens it saves.
+
+*Rejected:* one shared memory for the whole cast (a new tutor recalling a lesson they were not at
+is worse than one who asks); a facts *tool* the model calls mid-turn (ADR-031's whole point);
+unbounded facts (a diary that grows is a prompt that grows).
 
 ## ADR-032 — Context is rotated pre-emptively during the avatar's speech, never compacted mid-turn
 

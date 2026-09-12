@@ -7,9 +7,16 @@ Four tiers, each with exactly one read moment and one write moment, none on the 
     student notes       <state>/memory/student.md             session start      after summarising
     last-session brief  <state>/memory/last-session.md        session start      after summarising
     recent topics       <state>/memory/topics.jsonl           session start      after summarising
+    what you both know  <state>/memory/facts.md               session start      after summarising
 
 The fourth tier is the one that keeps lessons from repeating themselves: a few short noun phrases
 per session, read at start as "recently discussed — open on something else" (2026-09-10).
+
+The fifth is what makes two people who have met before sound like it (user, 2026-09-12): the
+student's name, where they live, their work and their cat — and, on the other side, everything the
+tutor has said about their own life, so they do not acquire a second pet next week (the tutor is a
+man or a woman depending on the chosen voice, so nothing here assumes). Deliberately small:
+a handful of durable lines, not a diary.
 
 Summarising happens at the NEXT launch, during start-up, for any session log that has not been
 summarised yet — not on exit. Exiting has to be instant (Ctrl+C that hangs for fifteen seconds
@@ -37,6 +44,17 @@ from backend import config
 RECENT_SESSIONS = 8
 #: Topics kept per session by the summariser. Short noun phrases, not sentences.
 TOPICS_PER_SESSION = 5
+#: Durable facts kept per side. Small on purpose (user, 2026-09-12: "not a really long one"): this
+#: is who you are to each other, not a transcript. Over the cap the OLDEST survive — a name and a
+#: country are learned in the first lesson and must not be pushed out by last Tuesday's cake — with
+#: the last few slots left for what is new.
+STUDENT_FACTS = 10
+TUTOR_FACTS = 6
+#: Newest facts guaranteed a slot even when the list is full.
+FACTS_FRESH = 3
+#: One line each. A fact that needs a paragraph is a note, not a fact.
+FACT_MAX_CHARS = 90
+
 #: The summariser reads a text-only excerpt of the log, capped so a long lesson cannot make the
 #: once-per-session summary expensive.
 EXCERPT_MAX_CHARS = 6000
@@ -50,29 +68,91 @@ def memory_dir(cfg) -> Path:
     return config.claude_cwd(cfg).parent / "memory"
 
 
+def persona_slug(persona: str) -> str:
+    """One directory per tutor. A persona may be given as a path (spec §6), so take its stem and
+    keep it to safe characters; anything unnamed falls back to a single shared drawer."""
+    stem = Path(str(persona or "")).stem.strip().lower()
+    return re.sub(r"[^a-z0-9_-]+", "-", stem).strip("-") or "tutor"
+
+
 def sessions_dir(cfg) -> Path:
     return cfg.path("LOG_DIR") / "sessions"
 
 
 @dataclass
 class Memory:
-    root: Path              # <state>/memory
+    root: Path              # <state>/memory/<tutor> — this tutor's own memory
     sessions: Path          # logs/sessions
     session_id: str = ""
     turn: int = 0
+    persona: str = ""
+    #: <state>/memory — what is true of the student, whoever is teaching. Defaults to `root`, so a
+    #: Memory built by hand (tests, tools) keeps everything in one directory as before.
+    shared: Path | None = None
 
     @classmethod
-    def from_config(cls, cfg, session_id: str = "") -> "Memory":
-        return cls(root=memory_dir(cfg), sessions=sessions_dir(cfg), session_id=session_id)
+    def from_config(cls, cfg, session_id: str = "", persona: str | None = None) -> "Memory":
+        who = persona_slug(getattr(cfg, "TUTOR_PERSONA", "") if persona is None else persona)
+        shared = memory_dir(cfg)
+        mem = cls(root=shared / who, sessions=sessions_dir(cfg), session_id=session_id,
+                  persona=who, shared=shared)
+        mem.migrate()
+        return mem
+
+    def for_persona(self, persona: str) -> "Memory":
+        """The same student, a different tutor — a second Memory over the same shared root."""
+        who = persona_slug(persona)
+        mem = Memory(root=self._shared / who, sessions=self.sessions, session_id=self.session_id,
+                     turn=self.turn, persona=who, shared=self._shared)
+        mem.migrate()
+        return mem
+
+    def switch_to(self, persona: str) -> None:
+        """Become that tutor's memory, in place: the student changed teacher mid-session and
+        everything already holding this object — the turn recorder, the handoff — must follow."""
+        who = persona_slug(persona)
+        if who == self.persona:
+            return
+        self.persona, self.root = who, self._shared / who
+        self.migrate()
+
+    def migrate(self) -> None:
+        """Move a pre-persona memory (everything loose in <state>/memory) into this tutor's
+        drawer. It was written by whoever was teaching then, and that is who is teaching now."""
+        if self.shared is None or self.root == self._shared or self.root.exists():
+            return
+        try:
+            loose = [q for q in (self._shared / "last-session.md", self._shared / "topics.jsonl",
+                                 self._shared / "facts.md") if q.exists()]
+            if not loose:
+                return
+            self.root.mkdir(parents=True, exist_ok=True)
+            for path in loose:
+                path.replace(self.root / path.name)
+        except OSError:
+            pass                # a memory that fails to move is recall lost, never a lost lesson
 
     # ------------------------------------------------------------------ paths
     @property
+    def _shared(self) -> Path:
+        return self.shared if self.shared is not None else self.root
+
+    @property
     def student_md(self) -> Path:
-        return self.root / "student.md"
+        return self._shared / "student.md"
+
+    @property
+    def about_md(self) -> Path:
+        """The student's own durable facts: the same person, whoever is teaching them."""
+        return self._shared / "about-me.md"
 
     @property
     def brief_md(self) -> Path:
         return self.root / "last-session.md"
+
+    @property
+    def facts_md(self) -> Path:
+        return self.root / "facts.md"
 
     @property
     def topics_jsonl(self) -> Path:
@@ -96,6 +176,7 @@ class Memory:
         record = {
             "ts": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
             "session": self.session_id,
+            "persona": self.persona,
             "turn": self.turn,
             "student": {"text": student, "audio_ms": None, "stt_ms": None, **(student_extra or {})},
             "tutor": {"text": "".join(s.get("text", "") for s in tutor_sentences),
@@ -136,6 +217,16 @@ class Memory:
                     out.append(key)
         return out
 
+    def facts(self) -> tuple[list[str], list[str]]:
+        """(what is true of the student, what this tutor has said about themselves).
+
+        Two files, because they have different lifetimes: the student is the same person for
+        every tutor, and a tutor's own life is theirs alone (user, 2026-09-12). Both are
+        hand-editable and read forgivingly — anything that is not a "- " bullet is ignored, so
+        the student can write themselves a comment.
+        """
+        return _bullets(self.about_md), _bullets(self.facts_md)
+
     def render(self) -> str:
         """The {{memory}} prompt section, or "" when there is nothing to remember yet.
 
@@ -143,6 +234,16 @@ class Memory:
         like it did before memory existed (ROADMAP subsystem 18).
         """
         parts: list[str] = []
+        student_facts, tutor_facts = self.facts()
+        if student_facts or tutor_facts:
+            known = ["WHAT YOU TWO ALREADY KNOW — this is a person you have taught before, so talk "
+                     "like it: use their name, ask after what is going on in their life, and never "
+                     "contradict anything here about yourself."]
+            if student_facts:
+                known.append("Them: " + "; ".join(_keep(student_facts, STUDENT_FACTS)))
+            if tutor_facts:
+                known.append("You, as they know you: " + "; ".join(_keep(tutor_facts, TUTOR_FACTS)))
+            parts.append("\n".join(known))
         brief = _read(self.brief_md).strip()
         if brief:
             parts.append("LAST SESSION\n" + brief)
@@ -157,13 +258,21 @@ class Memory:
 
     # ------------------------------------------------------------ summarising
     def pending_logs(self) -> list[Path]:
-        """Session logs with no topics row yet — i.e. never summarised."""
+        """This tutor's session logs with no topics row yet — i.e. never summarised.
+
+        A lesson belongs to whoever taught it (user, 2026-09-12): another tutor must not read it
+        back as their own. Logs written before personas were split carry no name, and are taken
+        by whoever is teaching now — there was only one memory then.
+        """
         done = {row.get("session") for row in _read_jsonl(self.topics_jsonl)}
         pending = []
         for log in sorted(self.sessions.glob("*.jsonl")):
             session = log.stem.split("-", 3)[-1]
-            if session and session not in done and session != self.session_id:
-                pending.append(log)
+            if not session or session in done or session == self.session_id:
+                continue
+            if (who := _log_persona(log)) and self.persona and who != self.persona:
+                continue
+            pending.append(log)
         return pending
 
     def apply_summary(self, session: str, date: str, summary: dict[str, Any]) -> bool:
@@ -177,6 +286,9 @@ class Memory:
             brief = ""      # a catch-up of an older lesson must not replace a newer brief
         topics = [str(t).strip() for t in (summary.get("topics") or []) if str(t).strip()]
         notes_add = [str(n).strip() for n in (summary.get("notes") or []) if str(n).strip()]
+        facts_add = {side: [str(f).strip()[:FACT_MAX_CHARS]
+                            for f in (summary.get(f"{side}_facts") or []) if str(f).strip()]
+                     for side in ("student", "tutor")}
         if not brief and not topics:
             return False
         try:
@@ -193,6 +305,8 @@ class Memory:
                 if fresh:
                     with self.student_md.open("w", encoding="utf-8") as f:
                         f.write(existing.rstrip() + "\n" + "".join(f"- {n}\n" for n in fresh))
+            if facts_add["student"] or facts_add["tutor"]:
+                self._merge_facts(facts_add["student"], facts_add["tutor"])
             with _LOCK, self.topics_jsonl.open("a", encoding="utf-8") as f:
                 f.write(json.dumps({"date": date, "session": session,
                                     "topics": topics[:TOPICS_PER_SESSION]},
@@ -200,6 +314,28 @@ class Memory:
             return True
         except OSError:
             return False
+
+    def _merge_facts(self, student_add: list[str], tutor_add: list[str]) -> None:
+        """Fold new facts into facts.md, in order, without repeating what is already there.
+
+        Dedup is on the words, not the punctuation: the summariser says "Lives in Belgium" one
+        week and "lives in Belgium." the next, and the tutor should not learn it twice.
+        """
+        student, tutor = self.facts()
+        for have, add in ((student, student_add), (tutor, tutor_add)):
+            seen = {_fact_key(f) for f in have}
+            for fact in add:
+                if (key := _fact_key(fact)) and key not in seen:
+                    seen.add(key)
+                    have.append(fact)
+        if student_add:
+            _write_facts(self.about_md, "# About the student",
+                         "<!-- What your tutors know about you. Edit or delete any line: a wrong",
+                         _keep(student, STUDENT_FACTS))
+        if tutor_add:
+            _write_facts(self.facts_md, f"# About {self.persona or 'the tutor'}, as the student knows them",
+                         "<!-- What this tutor has said about themselves. Edit or delete any line: a wrong",
+                         _keep(tutor, TUTOR_FACTS))
 
     def _brief_date(self) -> str:
         """The date of the brief on disk — it is written as "(YYYY-MM-DD) …"."""
@@ -213,7 +349,7 @@ class Memory:
 
         `ask` is injected rather than constructed here so tests can drive this with a fake, and so
         the caller decides which (cheap) model spends the tokens. `limit` takes the newest logs
-        first — the launch summarises the last lesson, which is the one she greets with, and the
+        first — the launch summarises the last lesson, which is the one the tutor greets with, and the
         older ones are caught up in the background while the student is already talking (2026-09-12:
         five pending sessions held the launch for 80 s). `on_log` reports progress.
         """
@@ -264,6 +400,50 @@ def parse_summary(reply: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return data if isinstance(data, dict) else None
+
+
+def _fact_key(fact: str) -> str:
+    """What makes two statements of the same fact the same: the letters, lowercased."""
+    return re.sub(r"[^0-9a-z぀-ヿ一-鿿]+", "", fact.lower())
+
+
+def _keep(facts: list[str], cap: int) -> list[str]:
+    """At most `cap`, oldest first — but always the newest `FACTS_FRESH`.
+
+    Dropping the oldest would lose the student's name to a week of small talk; keeping only the
+    oldest would freeze the memory the day the list fills up. So: the anchors, then what is new.
+    """
+    if len(facts) <= cap:
+        return facts
+    return facts[:max(0, cap - FACTS_FRESH)] + facts[-FACTS_FRESH:]
+
+
+def _log_persona(path: Path) -> str:
+    """Who taught the lesson in this log, from its first turn; "" for a log that predates the
+    per-tutor split or cannot be read."""
+    try:
+        with path.open(encoding="utf-8") as f:
+            return str(json.loads(f.readline() or "{}").get("persona") or "")
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return ""
+
+
+def _bullets(path: Path) -> list[str]:
+    """The "- " lines of a facts file, trimmed, comments and headings ignored."""
+    out = []
+    for line in _strip_comments(_read(path)).splitlines():
+        if line.strip().startswith("- ") and (fact := line.strip()[2:].strip()[:FACT_MAX_CHARS]):
+            out.append(fact)
+    return out
+
+
+def _write_facts(path: Path, heading: str, first_comment_line: str, facts: list[str]) -> None:
+    lines = [first_comment_line,
+             "     memory recalled confidently is worse than none. The oldest lines survive when",
+             "     the list is trimmed, so what was learned first stays. -->",
+             heading, *(f"- {f}" for f in facts)]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _read(path: Path) -> str:
