@@ -1,6 +1,7 @@
 # SearxNG configuration for atama-AI (ADR-028).
 # Committed on purpose — it holds no secret. The secret key comes from the SEARXNG_SECRET
-# environment variable, generated into .env (git-ignored).
+# environment variable, which backend/tools/up.py generates once into the user state directory
+# (next to the claude cwd, mode 0600 where the OS supports it) and passes to compose. No .env.
 
 use_default_settings: true
 

@@ -11,11 +11,11 @@
     "auto_expand_info": "Off",
     "auto_highlight_errors_in_answer": "On",
     "auto_play_review_audio": "Off",
-    "buncoin": 9166,
+    "buncoin": 0,
     "bunny_mode": "Off",
     "browser_theme_sync": "Off",
     "casual_formal_focus": "Casual",
-    "created_at": "2026-08-22T23:05:07.383Z",
+    "created_at": "2020-01-01T00:00:00Z",
     "daily_goal_configured": false,
     "display_review_srs": "Show",
     "enable_color_blind_assistance": "Off",
@@ -36,11 +36,7 @@
     "hide_streak": "No",
     "hide_tts_audio": false,
     "id": 0,
-    "inactive_warnings": [
-     "japanese-ime",
-     "quiz-undo",
-     "first-learn-quiz"
-    ],
+    "inactive_warnings": [],
     "include_sq_in_flashcard_reviews": true,
     "is_alpha": false,
     "is_sharing_learning_data": false,
@@ -48,161 +44,43 @@
     "is_teacher": false,
     "is_translator": false,
     "language": "english",
-    "deck_queue_ordering": [
-     8,
-     19
-    ],
+    "deck_queue_ordering": [],
     "default_review_type_grammar": "Cloze",
     "default_review_type_vocab": "Cloze",
-    "level": 15,
+    "level": 0,
     "light_mode": "Modern",
     "listening_mode": "Off",
     "mobile_nav_location": "Left",
     "name": null,
     "new_notifications": false,
-    "next_level_xp": 12000,
+    "next_level_xp": 0,
     "opted_into_beta_features": {},
     "preferred_audio_gender": "Random",
-    "prev_level_xp": 10500,
+    "prev_level_xp": 0,
     "profile_card_layout": "all-stats",
     "quiz_undo_action": "clear",
     "review_setting_limit": null,
     "review_setting_order": [],
     "review_setting_sort": null,
-    "show_nsfw_content": "Yes",
+    "show_nsfw_content": "No",
     "srs_interval_modifier_grammar": 1.0,
     "srs_interval_modifier_vocab": 1.0,
     "srs_strictness_grammar": "1",
     "srs_strictness_vocab": "1",
     "start_page": "Dashboard",
-    "updated_at": "2026-09-09T01:19:15.255Z",
+    "updated_at": "2020-01-01T00:00:00Z",
     "username": "student",
     "vacation_mode": false,
     "vocab_hint_order": "Translation First",
-    "xp": 11839,
+    "xp": 0,
     "time_zone_iana": "Etc/UTC",
-    "has_active_subscription": true,
+    "has_active_subscription": false,
     "is_lifetime": false
    }
   }
  },
  "active_cosmetics": {
-  "data": [
-   {
-    "id": "113",
-    "type": "cosmetic_item",
-    "attributes": {
-     "id": 113,
-     "cosmetic_type": "title",
-     "category": "niche",
-     "cost": 2500,
-     "asset_data": {},
-     "is_new": false,
-     "is_favorite": false,
-     "is_purchasable": true,
-     "author_attribute": "",
-     "title": "Initial B",
-     "title_alt": "",
-     "location": "profile"
-    }
-   },
-   {
-    "id": "68",
-    "type": "cosmetic_item",
-    "attributes": {
-     "id": 68,
-     "cosmetic_type": "accent",
-     "category": "food",
-     "cost": 0,
-     "asset_data": {
-      "light-primary-accent": "#C74A4A",
-      "light-secondary-accent": "#F4726D",
-      "light-srs-beginner": "#082630",
-      "light-srs-adept": "#153456",
-      "light-srs-seasoned": "#55386E",
-      "light-srs-expert": "#9C3A52",
-      "light-srs-master": "#C74A4A",
-      "dark-primary-accent": "#E8585D",
-      "dark-secondary-accent": "#A56665",
-      "dark-srs-beginner": "#DFBEBE",
-      "dark-srs-adept": "#B47272",
-      "dark-srs-seasoned": "#FF9996",
-      "dark-srs-expert": "#FF7C79",
-      "dark-srs-master": "#E8585D",
-      "slug": "Red",
-      "light-subheader": "#082630",
-      "dark-subheader": "#181C20"
-     },
-     "is_new": false,
-     "is_favorite": false,
-     "is_purchasable": true,
-     "author_attribute": "",
-     "title": "Red",
-     "title_alt": "",
-     "location": "general"
-    }
-   },
-   {
-    "id": "132",
-    "type": "cosmetic_item",
-    "attributes": {
-     "id": 132,
-     "cosmetic_type": "frame",
-     "category": "vintage",
-     "cost": 5000,
-     "asset_data": {
-      "asset_url": "https://d2o2t59m50yv2e.cloudfront.net/images/cosmetic_items/frames/vintage-famicom.png"
-     },
-     "is_new": false,
-     "is_favorite": true,
-     "is_purchasable": true,
-     "author_attribute": "",
-     "title": "Retro Controller",
-     "title_alt": "",
-     "location": "profile"
-    }
-   },
-   {
-    "id": "369",
-    "type": "cosmetic_item",
-    "attributes": {
-     "id": 369,
-     "cosmetic_type": "pin",
-     "category": "animals",
-     "cost": 3000,
-     "asset_data": {
-      "asset_url": "https://d2o2t59m50yv2e.cloudfront.net/images/cosmetic_items/pins/animal-orange-cat.png"
-     },
-     "is_new": false,
-     "is_favorite": false,
-     "is_purchasable": true,
-     "author_attribute": "",
-     "title": "Orange Cat",
-     "title_alt": "",
-     "location": "profile"
-    }
-   },
-   {
-    "id": "314",
-    "type": "cosmetic_item",
-    "attributes": {
-     "id": 314,
-     "cosmetic_type": "quiz_bar_cap",
-     "category": "meme",
-     "cost": 6000,
-     "asset_data": {
-      "asset_url": "https://d2o2t59m50yv2e.cloudfront.net/images/cosmetic_items/quiz_bar_cap/super-bun.png"
-     },
-     "is_new": false,
-     "is_favorite": false,
-     "is_purchasable": true,
-     "author_attribute": "",
-     "title": "Super-Bun",
-     "title_alt": "",
-     "location": "quiz"
-    }
-   }
-  ]
+  "data": []
  },
- "active_title": "title"
+ "active_title": ""
 }

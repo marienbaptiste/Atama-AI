@@ -82,4 +82,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    try:
+        raise SystemExit(main(sys.argv[1:]))
+    except config.ConfigError as exc:      # a malformed settings.json: one line, not a traceback
+        sys.exit(str(exc))

@@ -253,12 +253,82 @@ def test_preroll_reaches_back_across_the_whole_onset_window(tmp_path):
     spans far more wall clock — dips between syllables do not count toward it, and each may run
     `onset_tolerance_ms`. A flat 300 ms ring had already slid past the true start by then.
     """
-    v = vad_mod.VoiceActivityDetector(model_path=tmp_path / "m.onnx",
+    # A session is injected, so nothing is downloaded: with a model path that does not exist the
+    # real constructor would have fetched the model from GitHub inside a unit test (2026-09-12).
+    v = vad_mod.VoiceActivityDetector(model_path=tmp_path / "m.onnx", session=object(),
                                       min_speech_ms=300, onset_tolerance_ms=200)
     assert v.preroll_ms() >= v.required_speech_ms + v.onset_tolerance_ms
     assert v.preroll_ms() > vad_mod.PREROLL_MS          # the old flat constant was not enough
+    assert not (tmp_path / "m.onnx").exists()
 
     # It tracks the thresholds instead of drifting from them.
-    slow = vad_mod.VoiceActivityDetector(model_path=tmp_path / "m.onnx",
+    slow = vad_mod.VoiceActivityDetector(model_path=tmp_path / "m.onnx", session=object(),
                                          min_speech_ms=800, onset_tolerance_ms=500)
     assert slow.preroll_ms() > v.preroll_ms()
+
+
+# ------------------------------------------------------------- construction (hermetic)
+def test_an_injected_session_is_used_and_nothing_is_loaded(tmp_path):
+    class SpySession:
+        def run(self, _outputs, feeds):
+            return np.array([[0.7]], dtype=np.float32), np.zeros((2, 1, 128), dtype=np.float32)
+
+    v = VoiceActivityDetector(model_path=tmp_path / "absent.onnx", session=SpySession())
+    assert v.probability(np.zeros(FRAME, dtype=np.float32)) == pytest.approx(0.7)
+    assert not (tmp_path / "absent.onnx").exists()
+
+
+def test_from_config_resolves_every_threshold_through_config(tmp_path):
+    """spec §11: no magic numbers. The threshold and the onset tolerance used to be module
+    constants that from_config never read."""
+    from backend import config
+    cfg = config.load(tmp_path / "s.json", env={"CACHE_DIR": str(tmp_path), "VAD_SPEECH_THRESHOLD": "0.4",
+                                                "VAD_ONSET_TOLERANCE_MS": "250", "VAD_SILENCE_MS": "700"})
+    v = VoiceActivityDetector.from_config(cfg, session=object())
+    assert (v.threshold, v.onset_tolerance_ms, v.silence_ms) == (0.4, 250, 700)
+    assert v.model_path == (tmp_path / "models" / "silero_vad.onnx").resolve()
+
+
+def test_from_config_async_builds_the_same_detector_off_the_loop(tmp_path):
+    import asyncio
+    from backend import config, vad
+    cfg = config.load(tmp_path / "s.json", env={"CACHE_DIR": str(tmp_path)})
+    seen = []
+    real = vad.load_session
+
+    def fake_load(path):
+        seen.append(path)
+        return object()
+
+    vad.load_session = fake_load
+    try:
+        v = asyncio.run(VoiceActivityDetector.from_config_async(cfg))
+    finally:
+        vad.load_session = real
+    assert seen == [v.model_path] and v.silence_ms == cfg.VAD_SILENCE_MS
+
+
+def test_the_model_is_downloaded_with_one_request_that_is_closed(tmp_path, monkeypatch):
+    """ensure_model used to open the URL twice and drop the first response unclosed."""
+    import io
+    import urllib.request
+    opened = []
+
+    class Response(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.close()
+            return False
+
+    def fake_urlopen(url, timeout=None):
+        opened.append(url)
+        return Response(b"onnx-bytes")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    target = tmp_path / "models" / "silero_vad.onnx"
+    assert vad_mod.ensure_model(target) == target
+    assert opened == [vad_mod.MODEL_URL] and target.read_bytes() == b"onnx-bytes"
+    vad_mod.ensure_model(target)                       # already there: no second download
+    assert len(opened) == 1

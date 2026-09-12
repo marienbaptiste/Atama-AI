@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import concurrent.futures as cf
 import json
+import logging
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -14,8 +16,10 @@ from typing import Any
 from backend.srs import bunpro as bp
 from backend.srs import wanikani as wk
 from backend.srs.cache import cache_load, cache_store
-from backend.srs.http import SrsClient
+from backend.srs.http import HostViolation, ReadOnlyViolation, SrsClient
 from backend.status import StatusRegistry
+
+_log = logging.getLogger(__name__)
 
 MAX_TOKENS = 600
 
@@ -121,12 +125,21 @@ def snapshot_load(path: Path) -> tuple[dict | None, str]:
 
 
 def _one(service: str, token: str, cache_path: Path, min_age_s: float, registry: StatusRegistry,
-         deadline: float, client_kwargs: dict | None = None, force: bool = False):
+         deadline: float, client_kwargs: dict | None = None, force: bool = False,
+         cancel: threading.Event | None = None):
     """Fetch one service — ONLY at app launch or manual refresh (spec §5 fetch policy).
 
-    - force=False (launch): re-use the snapshot if it is younger than `min_age_s` (guards against
-      hammering the APIs on rapid restarts); otherwise fetch once and store the snapshot.
+    - force=False (launch): fetch once and store the snapshot. `min_age_s` (config
+      `SRS_CACHE_TTL_S`) re-uses a snapshot younger than that instead; its default is 0 — every
+      launch fetches the latest data (user directive 2026-09-12), the guard is opt-in. A
+      snapshot flagged `partial` (some endpoints failed last time) is never re-used: the next
+      launch fetches again, however young it is — that is the only "retry" there is (ADR-024).
     - force=True (manual refresh): always fetch once.
+    - A fetch that partly failed is served as `ok` with the failures in `last_error`; one the
+      service rate-limited (429) is served as `stale` — incomplete because the service said stop.
+    - A Golden Rule violation (spec §0) is never swallowed: CRITICAL log, chip `error`.
+    - `cancel` is set by build() when the budget ran out: the client then refuses further
+      requests and this worker stores and reports nothing (build() already reported).
     Reports status only if still before `deadline` (a late thread must not flip a chip that
     build() already marked as timed out)."""
     import datetime as _dt
@@ -141,27 +154,49 @@ def _one(service: str, token: str, cache_path: Path, min_age_s: float, registry:
         return None, "disabled", {}
     report("syncing")
     cached, fresh = cache_load(cache_path, min_age_s)
+    partial_snapshot = isinstance(cached, dict) and bool(cached.get("partial"))
     cached_raw, fetched_at = snapshot_load(cache_path)
     parse = wk.parse if service == "wanikani" else bp.parse
-    if cached_raw is not None and fresh and not force:
+    if cached_raw is not None and fresh and not force and not partial_snapshot:
         prof = parse(cached_raw)
         report("ok", _detail(service, prof) + f" (synced {_hhmm(fetched_at)})")
         return prof, "ok", {}
-    client = SrsClient(service, token, **(client_kwargs or {}))  # type: ignore[arg-type]
-    raw = (wk.fetch_raw if service == "wanikani" else bp.fetch_raw)(client)
+    client = SrsClient(service, token, cancel=cancel, **(client_kwargs or {}))  # type: ignore[arg-type]
+    try:
+        raw = (wk.fetch_raw if service == "wanikani" else bp.fetch_raw)(client)
+    except (ReadOnlyViolation, HostViolation) as e:
+        msg = f"{type(e).__name__}: {e}"
+        _log.critical("GOLDEN RULE (spec 0) violated during the %s fetch - aborted: %s", service, msg)
+        # Not guarded by the deadline: a violation must always reach the chip.
+        registry.report(service, "error", "read-only violation - fetch aborted", last_error=msg)
+        return None, "error", {"violation": msg}
+    if cancel is not None and cancel.is_set():
+        return None, "error", {"timeout": "cancelled by build()"}  # build() reported; store nothing
     errors = dict(raw.pop("_errors", {}) or {})
+    warnings = dict(raw.pop("_warnings", {}) or {})
+    rate_limited = client.rate_limited
+    problems = "; ".join(dict.fromkeys([*errors.values(), *warnings.values()]))
     got_core = ("user" in raw) and (("assignments" in raw) if service == "wanikani" else ("jlpt_progress" in raw))
     if got_core:
         now = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds")
-        cache_store(cache_path, {"fetched_at": now, "service": service, "raw": raw})
+        partial = bool(errors)
+        cache_store(cache_path, {"fetched_at": now, "service": service, "raw": raw, "partial": partial})
         prof = parse(raw)
-        report("ok", _detail(service, prof) + f" (synced {_hhmm(now)})", last_error="; ".join(errors.values()))
+        if rate_limited:
+            report("stale", _detail(service, prof) + f" (synced {_hhmm(now)}, incomplete: rate limited)", last_error=problems)
+            return prof, "stale", errors
+        if partial:
+            report("ok", _detail(service, prof) + f" (synced {_hhmm(now)}, partial: {len(errors)} endpoint(s) failed,"
+                   " fetched again at next launch)", last_error=problems)
+            return prof, "ok", errors
+        report("ok", _detail(service, prof) + f" (synced {_hhmm(now)})", last_error=problems)
         return prof, "ok", errors
+    why = "rate limited" if rate_limited else "fetch failed"
     if cached_raw is not None:
         prof = parse(cached_raw)
-        report("stale", _detail(service, prof) + f" (snapshot {_hhmm(fetched_at)})", last_error="; ".join(errors.values()))
+        report("stale", _detail(service, prof) + f" (snapshot {_hhmm(fetched_at)}, {why})", last_error=problems)
         return prof, "stale", errors
-    report("error", "fetch failed, no snapshot", last_error="; ".join(errors.values()))
+    report("error", f"{why}, no snapshot", last_error=problems)
     return None, "error", errors
 
 
@@ -228,16 +263,22 @@ def build(wanikani_token: str, bunpro_token: str, cache_dir: Path, min_age_s: fl
     # went on to write bunpro.json). The late-report guard has to cover the worst case, which
     # is every service spending its full budget.
     deadline = _t.monotonic() + budget_s * len(jobs)
+    # Cooperative cancellation: a worker that outlives its budget is told to stop, and the
+    # client refuses its next request. `shutdown(wait=False)` alone left it fetching in the
+    # background while a manual Refresh started a second client against the same service.
+    cancels = {svc: threading.Event() for svc in jobs}
     ex = cf.ThreadPoolExecutor(max_workers=2)
     try:
-        futs = {svc: ex.submit(_one, svc, tok, path, min_age_s, registry, deadline, client_overrides.get(svc), force)
+        futs = {svc: ex.submit(_one, svc, tok, path, min_age_s, registry, deadline, client_overrides.get(svc), force,
+                               cancels[svc])
                 for svc, (tok, path) in jobs.items()}
         for svc, fut in futs.items():
             try:
                 prof, state, errors = fut.result(timeout=budget_s)   # per service (see above)
             except cf.TimeoutError:
-                # The worker is still running and may even succeed a moment later (observed
-                # 2026-09-09: bunpro.json was written by the very run that reported a timeout).
+                # The worker stops at its next request boundary and stores nothing; whatever it
+                # already has is not worth a snapshot that races the next fetch.
+                cancels[svc].set()
                 prof, state, errors = _stale_or_error(svc, jobs[svc][1], registry, budget_s)
             except Exception as e:  # pragma: no cover - defensive
                 registry.report(svc, "error", "unexpected", last_error=f"{type(e).__name__}: {e}")

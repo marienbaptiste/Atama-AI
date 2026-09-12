@@ -22,14 +22,11 @@ SERVER_SAMPLES = {
     "stt_partial": {"text": "こん"},
     "stt_final": {"text": "雨です", "accepted": False, "reason": "blocklist",
                   "readings": [{"start": 0, "end": 1, "reading": "あめ", "known": True}]},
-    "assistant_text": {"text": "はい。"},
     "speak": {"audio_b64": "UklGRg==", "visemes": ["aa", "sil"], "vtimes": [100.0, 180.0],
               "vdurations": [80.0, 50.0], "text": "あ。", "emotion": "happy", "turn": 2,
               "grammar": [{"start": 0, "end": 1, "point": "〜たら"}], "target": "〜たら", "used": "雨",
               "readings": [{"start": 0, "end": 1, "reading": "あ", "known": False}]},
-    "emotion": {"emotion": "thinking"},
     "bargein": {"turn": 2},
-    "srs_profile": {"text": "WaniKani level 4"},
     "service_status": {"service": "brain", "state": "ready", "detail": "claude-cli", "last_error": ""},
     "settings": {"values": {"TURN_MODE": "ptt"}, "fields": [{"key": "TURN_MODE"}], "pinned": {},
                  "saved": ["TURN_MODE"], "errors": {}},
@@ -41,10 +38,8 @@ SERVER_SAMPLES = {
 }
 
 CLIENT_SAMPLES = {
-    "audio_chunk": {"pcm16_b64": "AAAA", "seq": 1},
     "control": {"action": "new_topic"},
     "settings": {"values": {"SUBTITLES": "off"}},
-    "settings_test": {"service": "voicevox"},
     "explain": {"kind": "grammar", "text": "〜たら", "context": "雨が降ったら。", "lang": "ja"},
 }
 
@@ -103,13 +98,22 @@ def test_an_unknown_client_message_is_answered_with_an_error_and_the_socket_live
     monkeypatch.setattr(app.settings_view, "snapshot",
                         lambda *a, **k: {"values": {}, "fields": [], "pinned": {}})
     hub = app.Hub()
-    with TestClient(app.build(hub)) as client, client.websocket_connect("/ws") as ws:
+    with TestClient(app.build(hub), client=("127.0.0.1", 50000)) as client, client.websocket_connect("/ws") as ws:
         assert ws.receive_json()["type"] == "settings"
         ws.send_json({"type": "shout", "text": "!"})
         error = ws.receive_json()
         assert error["type"] == "error" and "unrecognised" in error["message"]
         ws.send_json({"type": "nonsense"})
         assert ws.receive_json()["type"] == "error"          # still connected, still answering
+
+
+def test_the_dead_types_stayed_dead():
+    """Pruned 2026-09-12: a type nobody sent or nobody handled is not a contract. If one of these
+    is needed again it is added with its sender AND its handler, not resurrected on one side."""
+    gone = {"audio_chunk", "settings_test", "assistant_text", "emotion", "srs_profile"}
+    assert not gone & (models.CLIENT_TYPES | models.SERVER_TYPES)
+    with pytest.raises(ValidationError):
+        models.ClientMessageAdapter.validate_python({"type": "control", "action": "bargein_ack"})
 
 
 def test_the_reserved_partial_is_never_emitted():

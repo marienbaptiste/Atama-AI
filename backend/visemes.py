@@ -12,6 +12,10 @@ Shapes verified live against VOICEVOX 0.25.2 on 2026-09-09 (ROADMAP V0.3):
 
 `vowel` is one of a/i/u/e/o (voiced), A/I/U/E/O (devoiced — VOICEVOX marks them uppercase),
 `N` for ん, `cl` for っ, `pau` for a pause mora. Lengths are seconds at speedScale 1.
+
+A pause mora's length is what the query holds, replaced by `pauseLength` when that is set, then
+multiplied by `pauseLengthScale` — and only then, like every other length, divided by
+`speedScale` (constants.VOICEVOX_PAUSE_SCALE_SEMANTICS; see the pin's verification status).
 """
 from __future__ import annotations
 
@@ -114,9 +118,13 @@ def build(audio_query: dict[str, Any]) -> VisemeTimeline:
 
     `speedScale` divides every duration, because VOICEVOX applies it when synthesising — the
     query holds lengths at speed 1. `prePhonemeLength` is the leading silence and is scaled the
-    same way (verified against real WAV lengths, ROADMAP V0.3).
+    same way (verified against real WAV lengths, ROADMAP V0.3). Pause morae additionally take
+    `pauseLength` / `pauseLengthScale` before the speed division.
     """
     speed = float(audio_query.get("speedScale") or 1.0) or 1.0
+    pause_scale = audio_query.get("pauseLengthScale")
+    pause_scale = 1.0 if pause_scale is None else float(pause_scale)
+    pause_fixed = audio_query.get("pauseLength")        # None = keep each pause mora's own length
     visemes: list[str] = []
     vtimes: list[float] = []
     vdurations: list[float] = []
@@ -150,7 +158,8 @@ def build(audio_query: dict[str, Any]) -> VisemeTimeline:
             t += vowel_len
         pause = phrase.get("pause_mora")
         if isinstance(pause, dict):
-            pause_len = float(pause.get("vowel_length") or 0.0) / speed
+            base = float(pause.get("vowel_length") or 0.0) if pause_fixed is None else float(pause_fixed)
+            pause_len = base * pause_scale / speed
             emit(SILENCE, t, pause_len, FULL_WEIGHT)
             t += pause_len
 

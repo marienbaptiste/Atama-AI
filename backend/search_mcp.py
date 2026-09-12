@@ -51,6 +51,10 @@ MAX_TITLE = 120
 MAX_SNIPPET = 240
 TIMEOUT_S = 10.0
 CATEGORIES = ("news", "general", "science", "it")
+#: What `language` may be. The value goes straight into the SearxNG query, and the tutor is the
+#: one choosing it - an allowlist, like `category`, rather than trusting the model's argument.
+LANGUAGES = ("ja", "en", "all")
+DEFAULT_LANGUAGE = "ja"
 
 #: Headline feeds merged into `news` results (spec §5c). Data, not code: see the file's header.
 FEEDS_FILE = Path(__file__).parent / "data" / "news_feeds.txt"
@@ -285,6 +289,8 @@ def search(query: str, category: str = "news", language: str = "ja") -> dict[str
         return {"error": "empty query"}
     if category not in CATEGORIES:
         category = "general"
+    if language not in LANGUAGES:
+        language = DEFAULT_LANGUAGE
     params = {"q": query, "format": "json", "categories": category, "language": language}
 
     # SearxNG first. A failure here is recorded, not returned: for `news` the headline feeds can

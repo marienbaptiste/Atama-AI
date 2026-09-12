@@ -4,17 +4,18 @@
 # videos it was trained on. Verified live 2026-09-09: the startup warm-up on one second of pure
 # zeros returned 「ご視聴ありがとうございました」.
 #
-# A transcript is DISCARDED when it matches a line here AND the audio was quiet (or the model's
-# own confidence was poor). The same string spoken loudly and clearly is kept — a student really
-# can say ありがとうございました.
+# A transcript that IS one of these lines is DISCARDED when the audio was quiet or the model's
+# own confidence was poor. The same string spoken loudly and clearly is kept — a student really
+# can say ありがとうございました. A transcript made of two or more of these lines and nothing
+# else (the same one repeated, or a pair like ご視聴… + チャンネル登録…) is discarded whatever
+# the level: that is the model looping on noise, not a sentence.
 #
 # One phrase per line. Blank lines and lines starting with # are ignored. Matching ignores
-# surrounding whitespace and trailing 。！？.
+# whitespace and punctuation anywhere (。！？、… and friends), so list the words only.
 # This is a DATA file on purpose: adding a phrase must never require a code change.
 
 ご視聴ありがとうございました
 ご視聴ありがとうございます
-ご視聴ありがとうございました。
 最後までご視聴いただきありがとうございました
 ありがとうございました
 チャンネル登録お願いします
@@ -27,7 +28,6 @@
 また明日
 次回もお楽しみに
 どうもありがとうございました
-эн
 Thank you for watching
 Thanks for watching
 Please subscribe

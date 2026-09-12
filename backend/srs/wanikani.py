@@ -26,10 +26,11 @@ filtered on `passed_at` here. Subject pages hold 1,000, assignment pages 500; 60
 """
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from backend.srs.http import SrsClient
+from backend.srs.http import HostViolation, ReadOnlyViolation, SrsClient
 
 STAGE_BUCKETS = {1: "apprentice", 2: "apprentice", 3: "apprentice", 4: "apprentice",
                  5: "guru", 6: "guru", 7: "master", 8: "enlightened", 9: "burned"}
@@ -147,35 +148,62 @@ def parse(raw: dict[str, Any]) -> WaniKaniProfile:
 
 
 # ------------------------------------------------------------------ fetch
-def _page_all(client: SrsClient, path: str, params: dict | None, max_pages: int = 5) -> dict[str, Any]:
-    """Follow `pages.next_url` (same origin) up to max_pages; returns a merged payload."""
+#: Pages followed per collection. Assignment pages hold 500 and a level-60 student has ~9,300
+#: items in all (vocabulary ~6,500, kanji ~2,000), so 20 pages covers every collection this
+#: fetcher reads; subject pages hold 1,000. The cap is a safety net against a runaway cursor,
+#: and hitting it is reported (`_warnings`) rather than silently dropping the student's items.
+#: At WANIKANI_MIN_INTERVAL_S per request this stays inside the 60 req/min limit.
+MAX_PAGES = 20
+#: WaniKani's cursor: `pages.next_url` is the same query plus `page_after_id=<id>` (API docs,
+#: revision 20170710). Only the cursor is taken from it - the other parameters are the ones this
+#: fetcher sent, re-sent as-is. Re-parsing the URL by hand once double-encoded every comma
+#: (`levels=1%2C2` became `1%252C2`), which WaniKani read as one unknown level.
+_PAGE_AFTER_ID = re.compile(r"[?&]page_after_id=(\d+)")
+
+
+def _page_all(client: SrsClient, path: str, params: dict | None, max_pages: int | None = None) -> dict[str, Any]:
+    """Follow `pages.next_url` (same origin) up to max_pages (default MAX_PAGES); returns a merged
+    payload. One that stopped at the cap carries `truncated_after_pages` so fetch_raw can surface
+    the truncation in the status chip's `last_error`."""
+    max_pages = MAX_PAGES if max_pages is None else max_pages
     merged: dict[str, Any] = {"data": []}
-    next_path: str | None = path
-    next_params = params
-    for _ in range(max_pages):
-        if not next_path:
-            break
-        payload = client.get(next_path, next_params)
+    next_params = dict(params or {})
+    for page in range(1, max_pages + 1):
+        payload = client.get(path, next_params or None)
         merged["data"].extend(payload.get("data") or [])
         merged.setdefault("total_count", payload.get("total_count"))
         nxt = (payload.get("pages") or {}).get("next_url")
         if not nxt:
             break
-        # next_url is absolute on the pinned origin; keep only path+query (client re-pins the origin).
-        _, _, rest = nxt.partition("api.wanikani.com")
-        next_path, _, query = rest.partition("?")
-        next_params = dict(kv.split("=", 1) for kv in query.split("&") if "=" in kv) if query else None
+        m = _PAGE_AFTER_ID.search(str(nxt))
+        if not m:
+            break
+        if page == max_pages:
+            merged["truncated_after_pages"] = max_pages
+            break
+        next_params = {**(params or {}), "page_after_id": m.group(1)}
     return merged
 
 
 def fetch_raw(client: SrsClient) -> dict[str, Any]:
-    raw: dict[str, Any] = {"_errors": {}}
+    """GET every endpoint the profile needs. Individual failures are recorded in `_errors`, not
+    raised - except a Golden Rule violation, which is never swallowed (spec §0). A collection
+    that hit the page cap is noted in `_warnings` (the data is still used)."""
+    raw: dict[str, Any] = {"_errors": {}, "_warnings": {}}
 
     def step(name, fn):
         try:
             raw[name] = fn()
+        except (ReadOnlyViolation, HostViolation):
+            raise  # Golden Rule (spec §0): logged CRITICAL by the transport; the chip goes to `error`
         except Exception as e:
             raw["_errors"][name] = f"{type(e).__name__}: {e}"
+            return
+        cap = raw[name].get("truncated_after_pages") if isinstance(raw[name], dict) else None
+        if cap:
+            total = raw[name].get("total_count")
+            raw["_warnings"][name] = (f"{name} truncated at {cap} pages ({len(raw[name]['data'])}"
+                                      + (f" of {total}" if total else "") + " items)")
 
     step("user", lambda: client.get("/v2/user"))
     step("summary", lambda: client.get("/v2/summary"))

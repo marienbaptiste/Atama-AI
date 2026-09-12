@@ -216,7 +216,7 @@ async def main_async(args) -> int:
                              mcp_ready_markers=mcp_config.markers(cfg) if mcp_json else None,
                              system_prompt=rendered.text, allowed_tools=tools)
 
-    tts = VoicevoxClient.from_config(cfg)
+    tts = await VoicevoxClient.from_config_async(cfg)
     if not tts.is_up():
         raise SystemExit(f"VOICEVOX is not answering at {cfg.VOICEVOX_URL} - start it first")
     stt = SpeechToText.from_config(cfg)
@@ -271,4 +271,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except config.ConfigError as exc:      # a malformed settings.json: one line, not a traceback
+        sys.exit(str(exc))

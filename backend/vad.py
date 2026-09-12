@@ -21,6 +21,7 @@ synthesised Japanese sentence: 512-wide gives max probability 0.003 and detects 
 """
 from __future__ import annotations
 
+import asyncio
 import urllib.request
 from dataclasses import dataclass, field
 from enum import Enum
@@ -34,7 +35,10 @@ FRAME_MS = FRAME_SAMPLES * 1000 // SAMPLE_RATE      # 32
 #: Silero v5 prepends the tail of the previous frame. 64 at 16 kHz (32 at 8 kHz). Non-negotiable:
 #: without it the model returns ~0 for everything and never errors.
 CONTEXT_SAMPLES = 64
+#: Default listening threshold; the live value is VAD_SPEECH_THRESHOLD in config.py (spec §11).
 SPEECH_THRESHOLD = 0.5
+#: Default for `onset_tolerance_ms` (VAD_ONSET_TOLERANCE_MS in config.py).
+ONSET_TOLERANCE_MS = 200
 #: Keep this much audio from before speech was detected, so the first phoneme is not clipped.
 #: A floor, not the whole story — see `preroll_ms()`, which sizes the ring against the onset
 #: window it actually has to reach back across.
@@ -70,10 +74,21 @@ def ensure_model(path: Path, url: str = MODEL_URL) -> Path:
     if path.exists() and path.stat().st_size > 0:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
-    urllib.request.urlopen(url, timeout=30)  # noqa: S310 - pinned https URL, constant
-    with urllib.request.urlopen(url, timeout=30) as response, open(path, "wb") as f:  # noqa: S310
+    # One request, closed by the context manager (a second, unclosed one used to precede it).
+    with urllib.request.urlopen(url, timeout=30) as response, open(path, "wb") as f:  # noqa: S310 - pinned https URL, constant
         f.write(response.read())
     return path
+
+
+def load_session(model_path: Path):
+    """The ONNX session for the Silero model, downloading the file on first use. Blocking."""
+    import onnxruntime as ort
+
+    ensure_model(model_path)
+    options = ort.SessionOptions()
+    options.inter_op_num_threads = 1
+    options.intra_op_num_threads = 1          # a VAD must never fight Whisper for cores
+    return ort.InferenceSession(str(model_path), options, providers=["CPUExecutionProvider"])
 
 
 @dataclass
@@ -89,8 +104,12 @@ class VoiceActivityDetector:
     bargein_min_speech_ms: int = 250
     playback_onset_ignore_ms: int = 150
     #: How long a dip may last before a forming utterance is abandoned. Speech is not continuous.
-    onset_tolerance_ms: int = 200
+    onset_tolerance_ms: int = ONSET_TOLERANCE_MS
     mode: Mode = Mode.LISTENING
+    #: An already-built inference session (anything with `.run(None, feeds)`). Given, nothing is
+    #: downloaded or loaded — that is how tests drive the state machine hermetically, and how the
+    #: same model file could be shared between detectors.
+    session: object | None = field(default=None, repr=False)
 
     _session: object | None = field(default=None, init=False, repr=False)
     _state: np.ndarray = field(default=None, init=False, repr=False)  # type: ignore[assignment]
@@ -105,26 +124,31 @@ class VoiceActivityDetector:
     last_probability: float = field(default=0.0, init=False)
 
     def __post_init__(self) -> None:
-        import onnxruntime as ort
-
-        ensure_model(self.model_path)
-        options = ort.SessionOptions()
-        options.inter_op_num_threads = 1
-        options.intra_op_num_threads = 1          # a VAD must never fight Whisper for cores
-        self._session = ort.InferenceSession(str(self.model_path), options,
-                                             providers=["CPUExecutionProvider"])
+        self._session = self.session if self.session is not None else load_session(self.model_path)
         self.reset()
 
     @classmethod
-    def from_config(cls, cfg, model_path: Path | None = None) -> "VoiceActivityDetector":
+    def from_config(cls, cfg, model_path: Path | None = None, *,
+                    session: object | None = None) -> "VoiceActivityDetector":
+        """Blocking: downloads the model on first use and loads ONNX (~100 ms). From an event
+        loop use `from_config_async`."""
         return cls(
             model_path=model_path or (cfg.path("CACHE_DIR") / "models" / "silero_vad.onnx"),
             silence_ms=int(cfg.VAD_SILENCE_MS),
             min_speech_ms=int(cfg.VAD_MIN_SPEECH_MS),
+            threshold=float(cfg.VAD_SPEECH_THRESHOLD),
             bargein_threshold_factor=float(cfg.BARGEIN_THRESHOLD_FACTOR),
             bargein_min_speech_ms=int(cfg.BARGEIN_MIN_SPEECH_MS),
             playback_onset_ignore_ms=int(cfg.PLAYBACK_ONSET_IGNORE_MS),
+            onset_tolerance_ms=int(cfg.VAD_ONSET_TOLERANCE_MS),
+            session=session,
         )
+
+    @classmethod
+    async def from_config_async(cls, cfg, model_path: Path | None = None) -> "VoiceActivityDetector":
+        """`from_config` off the event loop: the download and the ONNX load run on a thread, so
+        a launch that is also waiting on the brain and the page is not frozen meanwhile."""
+        return await asyncio.to_thread(cls.from_config, cfg, model_path)
 
     # ------------------------------------------------------------------ public
     def reset(self) -> None:

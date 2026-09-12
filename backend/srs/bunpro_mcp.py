@@ -79,7 +79,9 @@ def _load() -> tuple[dict[str, Any], dict[str, Any]]:
     if fetched_at:
         try:
             age = round((dt.datetime.now(dt.timezone.utc) - dt.datetime.fromisoformat(fetched_at)).total_seconds() / 60)
-        except ValueError:
+        except (ValueError, TypeError):
+            # ValueError: not ISO. TypeError: a naive timestamp (legacy or hand-edited snapshot) -
+            # aware minus naive raises. The age is unknown; the data is still there.
             age = None
     return raw, {"synced_at": fetched_at or "unknown", "age_minutes": age}
 

@@ -5,6 +5,8 @@ Endpoints (all GET through SrsClient, all under /api/frontend):
   /user/due                               -> {total_due_grammar, total_due_vocab}
   /user_stats/jlpt_progress_mixed         -> {grammar: {"5".."1": {beginner, adept, seasoned, expert, master, total_count}}, vocab: {...}}
   /user_stats/srs_level_overview          -> {grammar: {beginner, adept, seasoned, expert, master, ghost, self_study}, vocab: {...}}
+                                             (verified and captured for the fixtures; NOT fetched at launch -
+                                             nothing in the profile reads it, and every call costs a second)
   /user_stats/srs_ghost_level_details?reviewable_type=Grammar
                                           -> {type: "ghost", reviews: {data: [ghost_review], included: [reviewable]}}
   /user_stats/srs_level_details?reviewable_type=Grammar&level=<beginner|adept|seasoned|expert|master>
@@ -19,7 +21,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from backend import constants
-from backend.srs.http import SrsClient
+from backend.srs.http import HostViolation, ReadOnlyViolation, SrsClient
 
 P = constants.BUNPRO_API_PREFIX
 E = constants.BUNPRO_READ_ENDPOINTS
@@ -50,7 +52,6 @@ class BunproProfile:
     due_grammar: int = 0
     due_vocab: int = 0
     jlpt_grammar: dict[str, dict[str, int]] = field(default_factory=dict)   # "N4" -> {learned, total}
-    srs_grammar: dict[str, int] = field(default_factory=dict)              # level -> count
     ghosts: list[GrammarPoint] = field(default_factory=list)
     weak_grammar: list[GrammarPoint] = field(default_factory=list)         # beginner-stage points
     #: Everything still in the SRS rather than settled, weakest first: ghosts, beginner, adept,
@@ -133,8 +134,6 @@ def parse(raw: dict[str, Any]) -> BunproProfile:
         if isinstance(row, dict):
             learned = sum(_i(row.get(lvl)) for lvl in SRS_LEVELS)
             p.jlpt_grammar[f"N{k}"] = {"learned": learned, "total": _i(row.get("total_count"))}
-    ov = _d(_d(raw.get("srs_overview")).get("grammar"))
-    p.srs_grammar = {k: _i(ov.get(k)) for k in (*SRS_LEVELS, "ghost")}
     p.ghosts = _points(_d(raw.get("ghost_grammar")), "ghost", 15)
     p.weak_grammar = _points(_d(raw.get("srs_level_beginner_grammar")), "beginner", 15)
     seen = set()
@@ -152,7 +151,8 @@ def parse(raw: dict[str, Any]) -> BunproProfile:
 
 # ------------------------------------------------------------------ fetch
 def fetch_raw(client: SrsClient) -> dict[str, Any]:
-    """GET every endpoint the profile needs. Individual failures are recorded, not raised."""
+    """GET every endpoint the profile needs. Individual failures are recorded, not raised -
+    except a Golden Rule violation, which is never swallowed (spec §0)."""
     raw: dict[str, Any] = {"_errors": {}}
     # Eight calls, ONLY at app launch / manual refresh (spec §5 fetch policy). With
     # BUNPRO_MIN_INTERVAL_S spacing this fits the 10 s budget. The MCP tools never call Bunpro;
@@ -171,6 +171,8 @@ def fetch_raw(client: SrsClient) -> dict[str, Any]:
     for name, path, params in calls:
         try:
             raw[name] = client.get(P + path, params)
+        except (ReadOnlyViolation, HostViolation):
+            raise  # Golden Rule (spec §0): logged CRITICAL by the transport; the chip goes to `error`
         except Exception as e:  # SrsError or unexpected; never let one endpoint kill the profile
             raw["_errors"][name] = f"{type(e).__name__}: {e}"
     return raw

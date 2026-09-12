@@ -79,6 +79,28 @@ def test_there_is_nothing_to_explain_about_nothing(tmp_path):
     assert asyncio.run(explainer(tmp_path, ask).explain("grammar", "   ")) == ("", "nothing to explain")
 
 
+def test_a_worker_turn_that_errors_is_a_message_not_a_cached_blank(tmp_path):
+    """Through the real worker path (brain.reply_text): an error result raises, so the page gets a
+    message and nothing is cached."""
+    from backend.brain import BrainError, TurnComplete
+
+    class Worker:
+        name = "fake"
+
+        async def turn(self, text):
+            yield BrainError("API Error: 529 overloaded")
+            yield TurnComplete()
+
+        async def aclose(self):
+            pass
+
+    e = explain.Explainer(cfg(tmp_path))
+    e._worker, e._turns = Worker(), 0                    # the worker the lock would have built
+    answer, error = asyncio.run(e.explain("grammar", "〜たら"))
+    assert answer == "" and "529" in error and e.asked == 0
+    assert not list(e.dir.glob("*.json"))
+
+
 def test_the_cache_survives_a_restart(tmp_path):
     async def ask(_prompt):
         return "cached answer"

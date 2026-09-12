@@ -39,7 +39,8 @@ CLAUDE_INIT_APIKEYSOURCE_SUBSCRIPTION = "none"
 # MUST wait on it before writing the first user turn.
 CLAUDE_MCP_TOOL_PREFIX = "mcp__bunpro__"
 CLAUDE_MCP_READY_TIMEOUT_S = 20.0
-CLAUDE_INIT_TIMEOUT_S = 30.0
+# (CLAUDE_INIT_TIMEOUT_S removed 2026-09-12: `init` arrives with the first turn, so the per-turn
+# timeout already covers it and nothing read the constant.)
 # System prompt: ALWAYS use the file variants. `--system-prompt-file` / `--append-system-prompt-file`
 # do exist (they are listed only inside the `--bare` help text, not in the main option list).
 # Verified 2026-09-09: passing a MULTI-LINE prompt to the string variants truncates it at the
@@ -121,6 +122,27 @@ CLAUDE_SUBTYPE_COMPACT_BOUNDARY = "compact_boundary"
 CLAUDE_EVENT_INIT = ("system", "init")
 CLAUDE_EVENT_RATE_LIMIT = "rate_limit_event"
 CLAUDE_EVENT_RESULT = "result"
+#
+# Stopping a turn in flight, verified live 2026-09-12 (CLI 2.1.159, `-p` stream-json, Windows 11,
+# haiku; scratch spike, not a tool). NOT in `claude --help`: this is the Agent SDK's wire protocol
+# over the same stdin, so re-verify on every CLI upgrade.
+#   stdin:  {"type":"control_request","request_id":"<id>","request":{"subtype":"interrupt"}}
+#   stdout: {"type":"control_response","response":{"subtype":"success","request_id":"<id>"}}
+#           then `assistant`, `user`, and the turn's result
+#           {"subtype":"error_during_execution","is_error":true,"result":null}
+#           — all within the same millisecond of the request. The process STAYS UP, the next user
+#           turn is answered normally on the same session_id (preceded by a fresh `init`).
+# Signals are not the tool. On Windows shutil.which("claude") is claude.CMD, a cmd.exe shim that
+# runs bin\claude.exe as a child: proc.terminate() kills the shim only and claude.exe survives it,
+# orphaned (measured). The one whole-tree stop is `taskkill /PID <launcher pid> /T /F` — verified
+# to take cmd.exe, claude.exe and their children together, while the launcher is alive.
+# The clean exit is stdin EOF: launcher and claude.exe were both gone 0.55 s after close (measured).
+# `--resume <id>`: init.session_id AND result.session_id equal <id> on the resumed process too
+# (verified), so spec §4's "assert init.session_id matches" holds after a restart.
+CLAUDE_CONTROL_REQUEST = "control_request"
+CLAUDE_CONTROL_INTERRUPT = "interrupt"
+CLAUDE_CONTROL_RESPONSE = "control_response"
+CLAUDE_RESULT_SUBTYPE_INTERRUPTED = "error_during_execution"
 # Env vars the child is allowed to see (spec §4 allowlist). Everything else is dropped.
 CLAUDE_CHILD_ENV_ALLOWLIST = (
     "PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "TMPDIR", "TEMP", "TMP",
@@ -218,3 +240,16 @@ TALKINGHEAD_GESTURES = ("handup", "index", "ok", "thumbup", "thumbdown", "side",
 # is the engine's, not the mapper's. Do not "fix" visemes.py to chase it.
 VOICEVOX_INIT_SPEAKER = "/initialize_speaker"
 VOICEVOX_IS_INITIALIZED = "/is_initialized_speaker"
+# pauseLength / pauseLengthScale (AudioQuery fields; present in the 0.25.2 /openapi.json capture
+# of 2026-09-09 — backend/tests/fixtures/voicevox/*.json carry `pauseLength: null,
+# pauseLengthScale: 1.0`). Semantics, from the engine source (voicevox_engine
+# tts_pipeline/tts_engine.py, 0.25.x: `apply_pause_length` then `apply_pause_length_scale`
+# then `apply_speed_scale`): for every mora whose vowel is "pau",
+#   length = (pauseLength if pauseLength is not None else mora.vowel_length) * pauseLengthScale
+#            / speedScale
+# and non-pause morae are untouched by either. Applied in visemes.build() on 2026-09-12.
+# UNVERIFIED against a live synthesis — the engine was not running when this was pinned. Check:
+# synthesise one sentence with a 、 at pauseLengthScale 1.0 and 2.0, same speedScale; the WAV
+# must grow by exactly the pause mora's vowel_length / speedScale (± the ~10 ms rounding above).
+VOICEVOX_PAUSE_SCALE_SEMANTICS = "pause_mora: (pauseLength or vowel_length) * pauseLengthScale / speedScale"
+VOICEVOX_PAUSE_SCALE_VERIFIED = False

@@ -1,4 +1,5 @@
-"""Minimal settings CLI until the settings page exists (M5).
+"""Settings from the terminal. The settings page is the interface (spec §11, ADR-022); this is
+the same store for a headless box, a script, or a first token before the page has ever opened.
 
   python -m backend.tools.settings_cli set BUNPRO_API_TOKEN     # prompts, hidden input
   python -m backend.tools.settings_cli set CLAUDE_MODEL sonnet  # non-secret, inline
@@ -50,4 +51,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except config.ConfigError as exc:      # a malformed settings.json: one line, not a traceback
+        sys.exit(str(exc))

@@ -64,6 +64,11 @@ def effective_threshold(configured: float, learned: float | None) -> float:
 
 
 class Rotator:
+    """`spawn(handoff)` builds AND starts the replacement, and it owns the process until it
+    returns: if it is cancelled (discard() during a persona switch or a resync) or fails after
+    the process exists, it must close that process before the exception leaves it — the rotator
+    only ever holds brains that finished starting."""
+
     def __init__(self, threshold: float, spawn: Callable[[str], Awaitable[Any]],
                  handoff: Callable[[], str], log: Callable[[str], None] = lambda s: None) -> None:
         self.threshold = float(threshold or 0.0)
@@ -121,6 +126,9 @@ class Rotator:
         try:
             brain = await self.spawn(self.handoff())
         except asyncio.CancelledError:
+            # discard() cancelled us mid-spawn. The half-built brain is `spawn`'s to close — the
+            # rotator never saw it — which is why the contract on `spawn` (class doc) says a
+            # cancelled start closes what it launched. Nothing to keep; nothing to retry.
             raise
         except Exception as exc:  # noqa: BLE001 - the old session carries on; say why and retry
             self.failures += 1

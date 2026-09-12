@@ -1,12 +1,12 @@
 {
  "object": "user",
  "url": "https://api.wanikani.com/v2/user",
- "data_updated_at": "2026-09-09T01:38:29.814692Z",
+ "data_updated_at": "2020-01-01T00:00:00Z",
  "data": {
-  "id": "student",
+  "id": "00000000-0000-0000-0000-000000000000",
   "username": "student",
   "level": 4,
-  "started_at": "student",
+  "started_at": "2020-01-01T00:00:00Z",
   "subscription": {
    "active": true,
    "type": "lifetime",

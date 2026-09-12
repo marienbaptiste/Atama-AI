@@ -8,6 +8,9 @@ a VOICEVOX upgrade renumbering ids. A style that does not exist for the configur
 back to that speaker's base style with the scalar overrides still applied — the tutor keeps
 speaking, just less expressively (spec §7).
 
+`resolve` is pure: the catalogue and the base style id are handed in. Which id the persona
+declares is read from its file by the caller (`VoicevoxClient.from_config`), never here.
+
 Verified against VOICEVOX 0.25.2, 2026-09-09: speaker "No.7" has ノーマル=29, アナウンス=30,
 読み聞かせ=31 — a base, a crisp formal one and a warm read-aloud one, which is a good spread for
 a teacher.
@@ -120,16 +123,34 @@ SINGLE_STYLE_PITCH_SPREAD = 1.8
 SINGLE_STYLE_INTONATION_SPREAD = 1.0
 
 
-def resolve(cfg, speakers: Iterable[dict[str, Any]] | None = None) -> tuple[dict[str, VoiceParams], list[str]]:
-    """Build the emotion -> VoiceParams table. Returns (table, warnings)."""
-    base_id = int(cfg.VOICEVOX_SPEAKER)
+def resolve(cfg, speakers: Iterable[dict[str, Any]] | None = None, *,
+            base_id: int | None = None) -> tuple[dict[str, VoiceParams], list[str]]:
+    """Build the emotion -> VoiceParams table. Returns (table, warnings). Pure.
+
+    `base_id` is the style the persona was written for, resolved by the caller; when omitted,
+    `cfg.VOICEVOX_SPEAKER` must be a real id (-1, "ask the persona", cannot be answered here —
+    that would mean reading the persona file inside a pure function).
+
+    `speakers` is the live catalogue. Empty or None means the engine could not be asked, and the
+    table is then built without any style knowledge: every emotion on the base id with its
+    tuned scalars, and NO single-style widening — a multi-style voice tuned as if it had one
+    style would carry a 1.8x pitch spread for the whole session (found 2026-09-12). The client
+    re-resolves the moment the engine answers (`VoicevoxClient.ensure_table`).
+    """
+    base_id = int(cfg.VOICEVOX_SPEAKER) if base_id is None else int(base_id)
     if base_id < 0:
-        from backend import prompt as prompt_mod
-        base_id = prompt_mod.declared_voice(getattr(cfg, "TUTOR_PERSONA", None)) or 29
-    available = styles_for_speaker(speakers or (), base_id)
+        raise ValueError("emotions.resolve needs a real base style id: pass base_id= "
+                         "(VOICEVOX_SPEAKER=-1 is resolved from the persona by the caller)")
+    catalogue = list(speakers or ())
+    available = styles_for_speaker(catalogue, base_id)
     by_id = {v: k for k, v in available.items()}
     warnings: list[str] = []
     table: dict[str, VoiceParams] = {}
+    if not catalogue:
+        warnings.append("VOICEVOX catalogue unavailable: emotion styles unresolved, base style only "
+                        "(re-resolved when the engine answers)")
+    elif not available:
+        warnings.append(f"speaker {base_id} is not in the VOICEVOX catalogue: base style only")
 
     for emotion in (NEUTRAL, *EMOTIONS):
         names, speed, pitch, intonation = DEFAULT_TABLE.get(emotion, ((), 1.0, 0.0, 1.0))
@@ -156,8 +177,9 @@ def resolve(cfg, speakers: Iterable[dict[str, Any]] | None = None) -> tuple[dict
 
     # A speaker with one style (麒ヶ島宗麟, 春日部つむぎ, ...) cannot express emotion by switching
     # voice, so give the scalars more room. An explicit EMOTION_* override is left exactly as the
-    # user wrote it.
-    if len({p.style_id for p in table.values()}) == 1:
+    # user wrote it. Only when the catalogue SAYS it has one style: an unknown catalogue is not
+    # a single-style speaker, it is a question not yet answered.
+    if available and len({p.style_id for p in table.values()}) == 1:
         for emotion, params in table.items():
             if emotion == NEUTRAL or _parse_override(getattr(cfg, f"EMOTION_{emotion.upper()}", "")):
                 continue

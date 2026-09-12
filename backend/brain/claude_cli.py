@@ -2,18 +2,27 @@
 
 One persistent `claude -p` subprocess per session, stream-json in and out. Everything the spec
 calls for lives here and nowhere else: the allowlisted environment, the out-of-repo cwd, the
-`apiKeySource` assertion, the MCP readiness wait, the per-turn timeout, and `--resume` on crash.
+`init` assertions (session id, `apiKeySource`), the MCP readiness wait, the per-turn timeout, the
+mid-turn interrupt, and `--resume` on crash.
 
-All flag behaviour is pinned in `backend/constants.py` against Claude Code 2.1.159 (ADR-015).
+All flag and wire-protocol behaviour is pinned in `backend/constants.py` against Claude Code
+2.1.159 (ADR-015).
+
+Turn accounting. A turn the caller stops listening to — a barge-in cancels the consuming task, or
+the per-turn timeout fires — is still a turn the CLI owes a `result` for. Every turn written to
+stdin counts as pending until its `result` is consumed; the next turn settles that debt first
+(`_settle`), dropping everything the old turn still streams, so stale text can never replay into a
+new answer. A process that does not answer the interrupt inside the grace is killed as a tree and
+the session resumed — silently, because the student asked for the interruption.
 """
 from __future__ import annotations
 
 import asyncio
 import collections
+import contextlib
 import json
 import os
 import shutil
-import signal
 import subprocess
 import threading
 import time
@@ -35,11 +44,22 @@ from backend.brain import (
 
 _EOF = object()
 
+#: How long an interrupted or timed-out turn is given to close with its `result` before the process
+#: is treated as wedged, killed as a tree and resumed. Measured 2026-09-12: the result followed the
+#: interrupt within the same millisecond, so this is a ceiling for a stuck CLI, never a wait.
+INTERRUPT_GRACE_S = 3.0
+#: After stdin is closed the CLI exits on its own (0.55 s measured 2026-09-12, constants.py); past
+#: this it is killed, tree and all.
+CLOSE_GRACE_S = 5.0
+
 
 class ClaudeCliBrain:
     """The `claude` CLI as a Brain. See ADR-027 for why this is behind an interface."""
 
     name = "claude-cli"
+    #: Instance-overridable so a test can shorten the wedged-process path.
+    interrupt_grace_s = INTERRUPT_GRACE_S
+    close_grace_s = CLOSE_GRACE_S
 
     def __init__(
         self,
@@ -77,10 +97,17 @@ class ClaudeCliBrain:
         self._stderr_tail: collections.deque[str] = collections.deque(maxlen=50)
         self._started = False
         self._prompt_file: Path | None = None
+        #: Turns written to the CLI whose `result` has not been consumed yet (see module doc).
+        self._pending = 0
+        #: A failure that ends the session for good (an API key reached the child, spec §4).
+        #: Sticky: every later turn repeats it and nothing is respawned.
+        self._fatal: str | None = None
         self.last_init: dict[str, Any] = {}
         #: The status bar's numbers, as of the last `result` / `rate_limit_event` (see _meters).
         self.meters: dict[str, Any] = {}
         self.rate_limit: dict[str, Any] = {}
+        #: What the last turn cost and called, for the turn log (spec §6b schema: tools[], usage).
+        self.last_turn: dict[str, Any] = {"tools": [], "usage": {}}
         #: Inside a compaction the CLI announced (see _compaction).
         self._compacting = False
 
@@ -92,15 +119,41 @@ class ClaudeCliBrain:
     async def start(self) -> None:
         if self._started:
             return
+        if self._fatal:
+            raise RuntimeError(self._fatal)
         self._report("starting", f"{self.name} · {self._model}")
-        await self._spawn(resume=False)
+        try:
+            await self._spawn(resume=False)
+        except BaseException:
+            # A start that is cancelled (a rotation discarded mid-spawn) or fails after Popen
+            # must not leave the process it launched running.
+            await self.aclose()
+            raise
         self._started = True
 
     async def turn(self, text: str) -> AsyncIterator:
         """Take one user turn and yield events until it completes."""
+        if self._fatal:
+            yield BrainError(self._fatal, fatal=True)
+            yield TurnComplete()
+            return
         if not self._started:
             await self.start()
         assert self._proc is not None and self._queue is not None
+
+        try:
+            await self._settle()
+        except Exception as exc:  # noqa: BLE001 - the wedged process could not be replaced
+            self._started = False
+            self._report("error", "restart failed", f"{type(exc).__name__}: {exc}")
+            yield BrainError(f"restart failed: {exc}", fatal=True)
+            yield TurnComplete()
+            return
+        if self._fatal:  # the drained stream carried a bad `init`
+            await self.aclose()
+            yield BrainError(self._fatal, fatal=True)
+            yield TurnComplete()
+            return
 
         if not self._write_turn(text):
             async for ev in self._restart_and_fail("brain process was not accepting input"):
@@ -112,73 +165,88 @@ class ClaudeCliBrain:
         spoken: list[str] = []
         tool_started: float | None = None
         tool_ms = 0.0
+        calls: list[str] = []                      # tool names awaiting their outcome, in order
+        self.last_turn = {"tools": [], "usage": {}}
 
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                self._interrupt()
-                yield BrainError(f"turn exceeded {self._cfg.CLAUDE_TURN_TIMEOUT_S}s", fatal=False)
-                yield TurnComplete(text="".join(spoken))
-                self._report("ready")
-                return
-            try:
-                item = await asyncio.wait_for(self._queue.get(), timeout=remaining)
-            except asyncio.TimeoutError:
-                continue
-            if item is _EOF:
-                async for ev in self._restart_and_fail("brain process exited mid-turn"):
-                    yield ev
-                return
-
-            try:
-                parsed = json.loads(item)
-            except ValueError:
-                continue
-            if parsed.get("type") == "system" and parsed.get("subtype") == "init":
-                if problem := self._check_auth(parsed):
-                    yield BrainError(problem, fatal=True)
-                    await self.aclose()
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    # Spec §4: a wedged turn is interrupted, apologised for, and the app goes on.
+                    # The CLI answers the interrupt with the turn's `result`; the next turn
+                    # drains it (_settle), or replaces the process if it never comes.
+                    self._interrupt()
+                    yield BrainError(f"turn exceeded {self._cfg.CLAUDE_TURN_TIMEOUT_S}s", fatal=False)
                     yield TurnComplete(text="".join(spoken))
-                    return
-                continue
-
-            for event in self._translate_event(parsed):
-                if isinstance(event, Compacting):
-                    # A compaction is the CLI working, not hanging: the timeout restarts when it
-                    # starts and when it ends, or a long one would be cut off as a stuck turn.
-                    deadline = time.monotonic() + float(self._cfg.CLAUDE_TURN_TIMEOUT_S)
-                elif isinstance(event, TextDelta):
-                    spoken.append(event.text)
-                elif isinstance(event, ToolCall):
-                    tool_started = time.monotonic()
-                elif isinstance(event, ToolOutcome) and tool_started is not None:
-                    tool_ms += (time.monotonic() - tool_started) * 1000.0
-                    tool_started = None
-                elif isinstance(event, TurnComplete):
                     self._report("ready")
-                    yield TurnComplete(
-                        text="".join(spoken) or event.text,
-                        ttft_ms=event.ttft_ms,
-                        duration_ms=event.duration_ms,
-                        tool_ms=tool_ms or None,
-                        usage=event.usage,
-                    )
                     return
-                yield event
+                try:
+                    item = await asyncio.wait_for(self._queue.get(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    continue
+                if item is _EOF:
+                    async for ev in self._restart_and_fail("brain process exited mid-turn"):
+                        yield ev
+                    return
+
+                try:
+                    parsed = json.loads(item)
+                except ValueError:
+                    continue
+                if parsed.get("type") == "system" and parsed.get("subtype") == "init":
+                    if problem := self._check_init(parsed):
+                        self._fatal = problem
+                        self._report("error", "refusing to continue", problem)
+                        yield BrainError(problem, fatal=True)
+                        await self.aclose()
+                        yield TurnComplete(text="".join(spoken))
+                        return
+                    continue
+                if parsed.get("type") == constants.CLAUDE_EVENT_RESULT:
+                    self._pending -= 1
+
+                for event in self._translate_event(parsed):
+                    if isinstance(event, Compacting):
+                        # A compaction is the CLI working, not hanging: the timeout restarts when it
+                        # starts and when it ends, or a long one would be cut off as a stuck turn.
+                        deadline = time.monotonic() + float(self._cfg.CLAUDE_TURN_TIMEOUT_S)
+                    elif isinstance(event, TextDelta):
+                        spoken.append(event.text)
+                    elif isinstance(event, ToolCall):
+                        tool_started = time.monotonic()
+                        calls.append(event.name)
+                    elif isinstance(event, ToolOutcome):
+                        ms = (time.monotonic() - tool_started) * 1000.0 if tool_started is not None else 0.0
+                        tool_ms += ms
+                        tool_started = None
+                        name = calls.pop(0) if calls else event.name
+                        event = ToolOutcome(name, event.ok, event.summary)
+                        self.last_turn["tools"].append({"name": name, "ok": event.ok, "ms": round(ms)})
+                    elif isinstance(event, TurnComplete):
+                        self.last_turn["usage"] = dict(event.usage)
+                        self._report("ready")
+                        yield TurnComplete(
+                            text="".join(spoken) or event.text,
+                            ttft_ms=event.ttft_ms,
+                            duration_ms=event.duration_ms,
+                            tool_ms=tool_ms or None,
+                            usage=event.usage,
+                        )
+                        return
+                    yield event
+        except asyncio.CancelledError:
+            # Barge-in: the caller stopped listening. Tell the CLI to stop generating — it closes
+            # the turn with a `result` that the next turn drains — and get out of the way at once:
+            # nothing is awaited here, because the student is already talking.
+            self._interrupt()
+            self._report("ready", "interrupted")
+            raise
 
     async def aclose(self) -> None:
         self._started = False
         proc, self._proc = self._proc, None
-        if proc and proc.poll() is None:
-            try:
-                proc.stdin and proc.stdin.close()
-            except OSError:
-                pass
-            try:
-                proc.terminate()
-                await asyncio.get_running_loop().run_in_executor(None, proc.wait, 5)
-            except Exception:
-                proc.kill()
+        self._pending = 0
+        await self._close_process(proc)
         if self._prompt_file and self._prompt_file.exists():
             self._prompt_file.unlink(missing_ok=True)
 
@@ -219,17 +287,19 @@ class ClaudeCliBrain:
         return [exe, *argv[1:]]
 
     def _write_prompt_file(self, text: str) -> Path:
-        """Keep a copy of the rendered prompt for debugging (spec §11: under .cache/)."""
-        path = self._cfg.path("CACHE_DIR") / "tutor_prompt_rendered.txt"
+        """The rendered prompt the CLI reads, under .cache/ (spec §11) and named for THIS
+        session: the tutor, the summariser, the explanation worker, a rotation replacement and a
+        persona switch all run at once, and one shared file was unlinked by whichever closed first."""
+        path = self._cfg.path("CACHE_DIR") / "prompts" / f"{self._session_id}.txt"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
         return path
 
     async def _spawn(self, resume: bool) -> None:
         cwd = config.claude_cwd(self._cfg)
-        cwd.mkdir(parents=True, exist_ok=True)
         if cwd == config.REPO_ROOT or config.REPO_ROOT in cwd.parents:
             raise RuntimeError(f"claude cwd {cwd} is inside the repo; it would inherit CLAUDE.md (spec §4)")
+        cwd.mkdir(parents=True, exist_ok=True)
 
         env = child_env()
         for marker in self._mcp_ready.values():
@@ -249,6 +319,7 @@ class ClaudeCliBrain:
             cwd=str(cwd),
             env=env,
         )
+        self._pending = 0
         self._loop = asyncio.get_running_loop()
         self._queue = asyncio.Queue()
         self._reader = threading.Thread(target=self._pump, args=(self._proc, self._loop, self._queue), daemon=True)
@@ -295,15 +366,20 @@ class ClaudeCliBrain:
         except (ValueError, OSError):
             pass
 
-    def _check_auth(self, ev: dict) -> str | None:
-        """Assert subscription auth from the `init` event (spec §4). None = fine.
+    def _check_init(self, ev: dict) -> str | None:
+        """Assert the `init` event is ours and on subscription auth (spec §4). None = fine.
 
         VERIFIED 2026-09-09: `claude -p --input-format stream-json` emits `init` only AFTER it
         reads the first user turn — waiting for it before sending one deadlocks. So the assertion
         happens on the first turn, and `make doctor` is the pre-flight that catches a bad key
-        before the app ever runs.
+        before the app ever runs. VERIFIED 2026-09-12: the id matches on `--resume` as well.
         """
         self.last_init = ev
+        reported = ev.get("session_id")
+        if reported and reported != self._session_id:
+            return (f"refusing to continue: the brain reports session {reported!r} but this conversation "
+                    f"is {self._session_id!r} (spec §4). Memory would go to the wrong session; the process "
+                    "was not started the way this app starts it.")
         source = ev.get("apiKeySource")
         if source == constants.CLAUDE_INIT_APIKEYSOURCE_SUBSCRIPTION:
             return None
@@ -338,6 +414,12 @@ class ClaudeCliBrain:
     # ------------------------------------------------------------------- turns
     def _write_turn(self, text: str) -> bool:
         msg = {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": text}]}}
+        if self._write(msg):
+            self._pending += 1
+            return True
+        return False
+
+    def _write(self, msg: dict) -> bool:
         try:
             assert self._proc is not None and self._proc.stdin is not None
             self._proc.stdin.write(json.dumps(msg, ensure_ascii=False) + "\n")
@@ -345,6 +427,45 @@ class ClaudeCliBrain:
             return True
         except (OSError, ValueError, AssertionError):
             return False
+
+    async def _settle(self) -> None:
+        """Consume what an interrupted or timed-out turn still owes before a new turn is written.
+
+        Everything the old turn still streams — late deltas, its `control_response`, its `result`
+        — is dropped, not spoken. A process that does not close the turn inside the grace is
+        wedged: it is killed as a tree and the session resumed, with no error surfaced, because
+        the interruption was the student's own. Raises only if the replacement cannot start.
+        """
+        if self._pending <= 0:
+            return
+        assert self._queue is not None
+        deadline = time.monotonic() + float(self.interrupt_grace_s)
+        while self._pending > 0:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                item = await asyncio.wait_for(self._queue.get(), timeout=remaining)
+            except asyncio.TimeoutError:
+                break
+            if item is _EOF:
+                break
+            try:
+                parsed = json.loads(item)
+            except ValueError:
+                continue
+            if parsed.get("type") == "system" and parsed.get("subtype") == "init":
+                if problem := self._check_init(parsed):
+                    self._fatal = problem     # turn() closes and reports it
+                    return
+            elif parsed.get("type") == constants.CLAUDE_EVENT_RESULT:
+                self._pending -= 1
+        if self._pending > 0:
+            self._report("restarting", "a stopped turn did not close; resuming the session")
+            proc, self._proc = self._proc, None
+            await self._close_process(proc, grace=1.0)
+            await self._spawn(resume=True)
+            self._report("ready", "resumed after a stuck turn")
 
     def _translate(self, raw: str) -> list:
         """One stdout line -> zero or more provider-neutral events. Never raises."""
@@ -395,7 +516,7 @@ class ClaudeCliBrain:
         if etype == constants.CLAUDE_EVENT_SYSTEM:
             return self._compaction(ev)
 
-        if etype == "result":
+        if etype == constants.CLAUDE_EVENT_RESULT:
             if ev.get("is_error"):
                 return [
                     BrainError(str(ev.get("result") or ev.get("api_error_status") or "turn failed")),
@@ -411,7 +532,7 @@ class ClaudeCliBrain:
                 )
             ]
 
-        return []  # unknown event types are skipped, never fatal (spec §4)
+        return []  # unknown event types (control_response among them) are skipped, never fatal (spec §4)
 
     def _compaction(self, ev: dict) -> list:
         """The CLI's own compaction announcements (shapes verified 2026-09-11, constants.py)."""
@@ -456,7 +577,8 @@ class ClaudeCliBrain:
         self._report("restarting", reason)
         yield BrainError(reason, fatal=True)
         try:
-            self._proc = None
+            proc, self._proc = self._proc, None
+            await self._close_process(proc, grace=1.0)      # reap it; it is dead or deaf
             await self._spawn(resume=True)
             self._report("ready", "resumed after restart")
         except Exception as exc:  # noqa: BLE001 - a failed restart must not kill the app
@@ -466,17 +588,34 @@ class ClaudeCliBrain:
         yield TurnComplete()
 
     def _interrupt(self) -> None:
-        """Stop a wedged turn without losing the session (spec §4)."""
+        """Stop the turn in flight without losing the session (spec §4).
+
+        A `control_request` of subtype `interrupt` on stdin — the Agent SDK's wire protocol,
+        verified 2026-09-12 (constants.py): the CLI acknowledges at once, closes the turn with an
+        `error_during_execution` result, and answers the next turn normally. Signals are not
+        used: on Windows they reach only the launcher shim, and the session would be lost.
+        """
         proc = self._proc
         if proc is None or proc.poll() is not None:
             return
-        try:
-            if os.name == "nt":
-                proc.terminate()  # no deliverable SIGINT without a console process group
-            else:
-                proc.send_signal(signal.SIGINT)
-        except (OSError, ValueError):
-            pass
+        self._write({"type": constants.CLAUDE_CONTROL_REQUEST, "request_id": uuid.uuid4().hex[:12],
+                     "request": {"subtype": constants.CLAUDE_CONTROL_INTERRUPT}})
+
+    async def _close_process(self, proc: subprocess.Popen[str] | None, grace: float | None = None) -> None:
+        """Close stdin (the CLI exits on EOF, 0.55 s measured), wait, then kill the whole tree —
+        and always reap, so no Popen is dropped without a wait()."""
+        if proc is None:
+            return
+        loop = asyncio.get_running_loop()
+        with contextlib.suppress(OSError, ValueError):
+            proc.stdin and proc.stdin.close()
+        if proc.poll() is None:
+            try:
+                await loop.run_in_executor(None, proc.wait, self.close_grace_s if grace is None else grace)
+            except subprocess.TimeoutExpired:
+                await loop.run_in_executor(None, kill_tree, proc)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            await loop.run_in_executor(None, proc.wait, 5)
 
     def _drain_stderr(self) -> str:
         """The tail the stderr pump collected. Never reads the pipe here: that would block."""
@@ -492,6 +631,28 @@ class ClaudeCliBrain:
                 self._registry.report(service, state, detail, last_error)
             except ValueError:
                 pass
+
+
+def kill_tree(proc: subprocess.Popen) -> None:
+    """Stop the child and everything it spawned (the CLI's MCP servers included).
+
+    Windows: `shutil.which("claude")` is claude.CMD, a cmd.exe shim with claude.exe as its child,
+    and TerminateProcess on the shim leaves claude.exe running (measured 2026-09-12); `taskkill /T`
+    is the one call that takes the tree. POSIX: the launcher exec()s the binary, so SIGTERM reaches
+    it directly.
+    """
+    if proc.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, check=False)
+    else:
+        with contextlib.suppress(OSError):
+            proc.terminate()
+    try:
+        proc.wait(3)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(OSError):
+            proc.kill()
 
 
 def child_env() -> dict[str, str]:

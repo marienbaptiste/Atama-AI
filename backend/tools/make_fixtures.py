@@ -18,6 +18,12 @@ FIXTURES = config.REPO_ROOT / "backend" / "tests" / "fixtures"
 DROP_KEYS = {"meaning_mnemonic", "reading_mnemonic", "context_sentences", "pronunciation_audios",
              "document_url", "cover_image_url", "description", "avatar_url", "profile_url"}
 NAME_KEYS = {"username", "name"}
+#: Account state that is personal but not an identifier: neutralised by value so the committed
+#: user fixtures carry the key structure and nothing about the student (spec §11 hygiene).
+PLACEHOLDER_TS = "2020-01-01T00:00:00Z"
+PLACEHOLDER_UUID = "00000000-0000-0000-0000-000000000000"   # the nil UUID: UUID-shaped, not v4, so check_secrets ignores it
+BUNPRO_ZERO_KEYS = {"buncoin", "level", "next_level_xp", "prev_level_xp", "xp"}
+BUNPRO_TS_KEYS = {"created_at", "updated_at"}
 
 
 def _scrub(obj):
@@ -36,6 +42,33 @@ def _scrub(obj):
     if isinstance(obj, list):
         return [_scrub(x) for x in obj]
     return obj
+
+
+def _neutralise_user(service: str, data: dict) -> dict:
+    """The `user` payloads: keep the shape, drop the account state (XP, cosmetics, dates, ids)."""
+    if service == "wanikani":
+        d = data.get("data") or {}
+        d["id"], d["started_at"] = PLACEHOLDER_UUID, PLACEHOLDER_TS
+        data["data_updated_at"] = PLACEHOLDER_TS
+        return data
+    u = (data.get("user") or {}).get("data") or {}
+    u["id"] = "0"
+    a = u.get("attributes") or {}
+    for k in BUNPRO_ZERO_KEYS | {"id"}:
+        if k in a:
+            a[k] = 0
+    for k in BUNPRO_TS_KEYS:
+        if k in a:
+            a[k] = PLACEHOLDER_TS
+    for k, v in (("show_nsfw_content", "No"), ("deck_queue_ordering", []), ("inactive_warnings", []),
+                 ("has_active_subscription", False), ("is_lifetime", False)):
+        if k in a:
+            a[k] = v
+    if "active_cosmetics" in data:
+        data["active_cosmetics"] = {"data": []}
+    if "active_title" in data:
+        data["active_title"] = ""
+    return data
 
 
 def _truncate_lists(obj, limit: int):
@@ -75,6 +108,7 @@ PLAN = {
         "ghost_grammar": ("ghost_grammar", 5), "forecast_daily": ("forecast_daily", 5),
         "srs_level_beginner_grammar": ("srs_level_beginner_grammar", 6),
         "srs_level_adept_grammar": ("srs_level_adept_grammar", 6),
+        "srs_level_seasoned_grammar": ("srs_level_seasoned_grammar", 6),
     },
     "wanikani": {
         "user": ("user", 5), "summary": ("summary", 5),
@@ -100,6 +134,8 @@ def main() -> int:
                 print(f"  skip {service}/{cap_name} (not captured)")
                 continue
             data = _scrub(json.loads(src.read_text(encoding="utf-8")))
+            if cap_name == "user":
+                data = _neutralise_user(service, data)
             if service == "wanikani" and cap_name == "assignments_started_vocab":
                 # keep the MOST RECENT unlocks so they line up with the subjects fixture
                 data["data"] = sorted(data["data"], key=lambda d: (d.get("data") or {}).get("unlocked_at") or "", reverse=True)
@@ -124,4 +160,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except config.ConfigError as exc:      # a malformed settings.json: one line, not a traceback
+        sys.exit(str(exc))

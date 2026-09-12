@@ -145,3 +145,50 @@ def test_missing_and_malformed_input_degrades_quietly():
     assert len(v.build({})) == 0
     assert len(v.build({"accent_phrases": [None, {"moras": [None, {}]}]})) == 0
     assert v.build({"speedScale": 0}).duration_ms == 0   # never divide by zero
+
+
+# ------------------------------------------------- pauseLength / pauseLengthScale
+def pause_ms(query: dict) -> float:
+    """The pause mora's predicted length: the `sil` viseme that is not っ."""
+    tl = v.build(query)
+    sil = [d for s, d in zip(tl.visemes, tl.vdurations) if s == v.SILENCE]
+    assert len(sil) == 1, "greeting has exactly one 、 pause"
+    return sil[0]
+
+
+@pytest.mark.parametrize("scale", [0.5, 1.5, 2.0])
+def test_pause_length_scale_multiplies_only_the_pause_morae(scale):
+    """`pauseLengthScale` is sent to the engine (VOICEVOX_PAUSE_SCALE, emotions.apply) and the
+    timeline must follow it, or the mouth runs ahead of the voice after every 、
+    (constants.VOICEVOX_PAUSE_SCALE_SEMANTICS)."""
+    base = v.build(fx("greeting"))
+    scaled = v.build({**fx("greeting"), "pauseLengthScale": scale})
+    assert pause_ms({**fx("greeting"), "pauseLengthScale": scale}) == pytest.approx(pause_ms(fx("greeting")) * scale)
+    assert scaled.duration_ms - base.duration_ms == pytest.approx(pause_ms(fx("greeting")) * (scale - 1.0), abs=1e-6)
+    assert scaled.visemes == base.visemes
+    # every non-pause viseme keeps its length
+    others = [(s, d) for s, d in zip(scaled.visemes, scaled.vdurations) if s != v.SILENCE]
+    assert others == [(s, d) for s, d in zip(base.visemes, base.vdurations) if s != v.SILENCE]
+
+
+def test_pause_length_scale_is_applied_before_the_speed_division():
+    q = {**fx("greeting"), "pauseLengthScale": 2.0, "speedScale": 0.8}
+    assert pause_ms(q) == pytest.approx(pause_ms(fx("greeting")) * 2.0 / 0.8)
+
+
+def test_pause_length_replaces_the_pause_moras_own_length_when_set():
+    q = {**fx("greeting"), "pauseLength": 0.5, "pauseLengthScale": 1.5}
+    assert pause_ms(q) == pytest.approx(750.0)
+
+
+def test_scale_one_and_null_length_leave_the_goldens_untouched():
+    """The fixtures were captured with pauseLength null and pauseLengthScale 1.0."""
+    assert fx("greeting")["pauseLengthScale"] == 1.0 and fx("greeting")["pauseLength"] is None
+    plain = {k: val for k, val in fx("greeting").items() if k not in ("pauseLength", "pauseLengthScale")}
+    assert v.build(plain).duration_ms == pytest.approx(v.build(fx("greeting")).duration_ms)
+
+
+def test_the_pause_semantics_are_pinned_and_flagged_until_verified_live():
+    from backend import constants
+    assert "pauseLengthScale" in constants.VOICEVOX_PAUSE_SCALE_SEMANTICS
+    assert isinstance(constants.VOICEVOX_PAUSE_SCALE_VERIFIED, bool)

@@ -33,7 +33,10 @@ def vad_frame_samples() -> int:
 
 
 #: Audio this many times above the room's own level is not "quiet" (see VoiceLoop.quiet_rms).
+#: Default; the live value is QUIET_OVER_FLOOR in config.py (spec §11).
 QUIET_OVER_FLOOR = 4.0
+#: Default for `handover_timeout_s` (PTT_HANDOVER_TIMEOUT_S in config.py).
+PTT_HANDOVER_TIMEOUT_S = 1.0
 
 
 @dataclass
@@ -43,7 +46,13 @@ class TurnTiming:
     speech_end_at: float
     stt_ms: float = 0.0
     first_chunk_ms: float = 0.0
+    #: The first sentence's audio EXISTS (synthesis done, queued). Not yet heard.
     first_audio_ms: float = 0.0
+    #: The first sentence STARTS PLAYING — handed to the local stream, or sent to the page (the
+    #: page does not report back, so the WebSocket hop is not in it). This is the honest
+    #: voice-to-voice number; `first_audio_ms` was stamped as if it were (2026-09-12). 0.0 when
+    #: nothing played (an interrupted or failed turn, or a voice that reports no playback).
+    first_play_ms: float = 0.0
     total_ms: float = 0.0
     transcript: str = ""
     chunks: int = 0
@@ -66,7 +75,9 @@ class TurnTiming:
     compaction_ms: float | None = None
 
     def voice_to_voice_ms(self) -> float:
-        return self.first_audio_ms
+        """Speech end -> her voice starts (spec §10): playback start when it was observed, else
+        the moment the audio existed (a voice that cannot report playback, or none at all)."""
+        return self.first_play_ms or self.first_audio_ms
 
 
 @dataclass
@@ -96,6 +107,15 @@ class VoiceLoop:
     before_turn: Callable[[], None] | None = None
     #: The brain is condensing the conversation (start and end) — the caller explains the silence.
     on_compacting: Callable[[Compacting], None] | None = None
+    #: One line for the student when the loop could not do what was asked (a dropped utterance
+    #: and why). The page and the terminal show it; nothing else reaches them.
+    on_notice: Callable[[str], None] | None = None
+    #: What counts as quiet, for THIS microphone: this many times the room's own level
+    #: (QUIET_OVER_FLOOR in config.py).
+    quiet_over_floor: float = QUIET_OVER_FLOOR
+    #: Releasing the talk key while the previous turn is still unwinding: how long to wait for
+    #: it before dropping the new utterance and saying so (PTT_HANDOVER_TIMEOUT_S in config.py).
+    handover_timeout_s: float = PTT_HANDOVER_TIMEOUT_S
 
     _frames: asyncio.Queue | None = field(default=None, init=False)
     _stop: threading.Event = field(default_factory=threading.Event, init=False)
@@ -223,9 +243,31 @@ class VoiceLoop:
         audio = np.concatenate(frames)
         if len(audio) < self.vad.min_speech_ms * SAMPLE_RATE // 1000:
             return                      # a stray tap, not an utterance
-        if self._turn_task is not None and not self._turn_task.done():
-            return                      # one turn at a time, same rule as vad mode
+        previous = self._turn_task
+        if previous is not None and not previous.done():
+            # The barge-in in ptt_begin cancelled the last turn, but a cancelled task is not
+            # done until it has unwound (a synthesis thread to join, a drain to abandon). This
+            # used to drop the utterance silently on that race — the student spoke, the tutor
+            # stayed listening, nothing said why (2026-09-12). Now: wait briefly, then proceed,
+            # or say what happened.
+            self._turn_task = asyncio.get_running_loop().create_task(self._turn_after(previous, audio))
+            return
         self._turn_task = asyncio.get_running_loop().create_task(self._turn(audio))
+
+    async def _turn_after(self, previous: asyncio.Task, audio: np.ndarray) -> None:
+        """Run `_turn` once the previous turn's task has finished unwinding — bounded."""
+        self._state("thinking")
+        try:
+            await asyncio.wait({previous}, timeout=self.handover_timeout_s)
+        except asyncio.CancelledError:
+            previous.cancel()           # whoever interrupted us meant the old turn too
+            raise
+        if not previous.done():
+            self._notice(f"the previous answer was still stopping after {self.handover_timeout_s:g} s "
+                         "— what you just said was not heard, please press and say it again")
+            self._state("listening")
+            return
+        await self._turn(audio)
 
     def quiet_rms(self) -> float:
         """What counts as near-silence for THIS microphone, for the STT's hallucination filter.
@@ -234,9 +276,10 @@ class VoiceLoop:
         the fixed QUIET_RMS it replaces — which assumed a loud microphone and, on a quiet headset
         (speech at rms 0.003), rejected real sentences as silence (2026-09-10).
         """
+        ceiling = float(getattr(self.stt, "quiet_rms", QUIET_RMS))
         if self._floor is None:
-            return QUIET_RMS
-        return min(QUIET_RMS, max(audio_mod.SILENT_RMS * 2, self._floor * QUIET_OVER_FLOOR))
+            return ceiling
+        return min(ceiling, max(audio_mod.SILENT_RMS * 2, self._floor * self.quiet_over_floor))
 
     def ask(self, text: str) -> None:
         """Start a turn from text, not speech (the page's New topic button). If she is talking
@@ -423,6 +466,11 @@ class VoiceLoop:
             raise
         finally:
             timing.total_ms = (time.monotonic() - heard_at) * 1000.0
+            # Playback start, as the voice observed it: only the queue knows when the first
+            # sentence actually left for the speakers or the page (SpeechQueue.first_play_at).
+            first_play_at = getattr(self.voice, "first_play_at", None)
+            if first_play_at is not None:
+                timing.first_play_ms = max(0.0, (first_play_at - heard_at) * 1000.0)
             self.timings.append(timing)
             if self.on_turn is not None:
                 self.on_turn(timing)
@@ -433,3 +481,7 @@ class VoiceLoop:
     def _state(self, name: str) -> None:
         if self.on_state is not None:
             self.on_state(name)
+
+    def _notice(self, text: str) -> None:
+        if self.on_notice is not None:
+            self.on_notice(text)

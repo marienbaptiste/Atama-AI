@@ -13,6 +13,7 @@ The engine stays on CPU (ADR-005): the GPU belongs to Whisper.
 """
 from __future__ import annotations
 
+import asyncio
 import io
 import time
 import wave
@@ -77,13 +78,20 @@ class VoicevoxClient:
     table: dict[str, emotions_mod.VoiceParams] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     version: str = ""
+    #: False until the emotion table has been built from a catalogue the engine actually
+    #: returned. Until then `ensure_table()` retries at every chance (see `resolve_table`).
+    table_resolved: bool = False
     _client: httpx.Client | None = None
+    _cfg: Any = field(default=None, repr=False)
 
     # ------------------------------------------------------------------ setup
     @classmethod
     def from_config(cls, cfg, *, transport: httpx.BaseTransport | None = None) -> "VoicevoxClient":
+        """Blocking: one GET /speakers and one GET /version, each bounded by VOICEVOX_TIMEOUT_S.
+        From an event loop use `from_config_async`."""
         # -1 means "whatever the persona was written for": character and voice are one choice,
-        # and a male persona in a female voice is jarring (ADR-026).
+        # and a male persona in a female voice is jarring (ADR-026). Read HERE, at the edge, so
+        # `emotions.resolve` stays pure.
         speaker = int(cfg.VOICEVOX_SPEAKER)
         if speaker < 0:
             from backend import prompt as prompt_mod
@@ -92,11 +100,38 @@ class VoicevoxClient:
                    speed=float(cfg.VOICEVOX_SPEED_SCALE), intonation=float(cfg.VOICEVOX_INTONATION_SCALE),
                    pitch=float(cfg.VOICEVOX_PITCH_SCALE),
                    pre_phoneme=float(cfg.VOICEVOX_PRE_PHONEME), post_phoneme=float(cfg.VOICEVOX_POST_PHONEME),
-                   pause_scale=float(cfg.VOICEVOX_PAUSE_SCALE))
+                   pause_scale=float(cfg.VOICEVOX_PAUSE_SCALE),
+                   timeout_s=float(cfg.VOICEVOX_TIMEOUT_S))
+        self._cfg = cfg
         self._client = httpx.Client(base_url=self.base_url, timeout=self.timeout_s,
                                     follow_redirects=False, transport=transport)
-        self.table, self.warnings = emotions_mod.resolve(cfg, self.speakers())
+        self.resolve_table()
         return self
+
+    @classmethod
+    async def from_config_async(cls, cfg, *, transport: httpx.BaseTransport | None = None) -> "VoicevoxClient":
+        """`from_config` off the event loop. The two startup GETs block for up to
+        VOICEVOX_TIMEOUT_S each when the engine is still booting; on a thread they cost the
+        launch nothing it was not already waiting for."""
+        return await asyncio.to_thread(cls.from_config, cfg, transport=transport)
+
+    def resolve_table(self) -> bool:
+        """(Re)build the emotion table from the live catalogue. True once it came from the engine.
+
+        With the engine down at startup the table is built blind — base style, tuned scalars, no
+        single-style widening (`emotions.resolve`) — and this is retried by `ensure_table()` from
+        `say()` and `warm_up()`, so a VOICEVOX that boots late is picked up without a restart.
+        """
+        catalogue = self.speakers()
+        self.table, self.warnings = emotions_mod.resolve(self._cfg, catalogue, base_id=self.speaker)
+        self.table_resolved = bool(catalogue)
+        return self.table_resolved
+
+    def ensure_table(self) -> bool:
+        """`resolve_table()` only if the last attempt never reached the engine."""
+        if self.table_resolved or self._cfg is None:
+            return self.table_resolved
+        return self.resolve_table()
 
     @property
     def http(self) -> httpx.Client:
@@ -139,6 +174,7 @@ class VoicevoxClient:
 
         Returns (styles loaded, elapsed ms). Raises VoicevoxError if the engine refuses.
         """
+        self.ensure_table()
         styles = sorted({p.style_id for p in self.table.values()}) or [self.speaker]
         started = time.monotonic()
         for style_id in styles:
@@ -159,6 +195,7 @@ class VoicevoxClient:
         """Synthesise one sentence with the voice that matches its emotion."""
         if not text.strip():
             raise VoicevoxError("refusing to synthesise empty text")
+        self.ensure_table()              # a late-booting engine: the real styles from now on
         params = self.params_for(emotion)
         started = time.monotonic()
         try:

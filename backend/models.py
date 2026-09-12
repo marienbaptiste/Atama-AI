@@ -9,6 +9,9 @@ has no handler (gate M3a).
 
 Frozen at M2 on purpose (ROADMAP subsystem 7): M3 is then pure frontend against a fixed contract.
 One addition at M3 (2026-09-11): `state.turn`, the barge-in epoch (see `Speak.turn`).
+Pruned on 2026-09-12: types that nothing sent or nothing handled (`audio_chunk` — the orchestrator
+captures the microphone itself, spec §9; `settings_test`; `assistant_text`; `emotion`;
+`srs_profile`; `control: bargein_ack`) are gone rather than kept as a contract nobody honours.
 
 Two conventions worth knowing before adding a message:
 
@@ -32,15 +35,6 @@ class _Msg(BaseModel):
 
 
 # --------------------------------------------------------------- client -> server
-class AudioChunk(_Msg):
-    """Raw mic audio. PCM16 mono at 16 kHz (spec §9) — never encoded audio."""
-
-    type: Literal["audio_chunk"] = "audio_chunk"
-    pcm16_b64: str
-    #: Sequence number so a gap in the stream is detectable rather than silently smoothed over.
-    seq: int = 0
-
-
 class Control(_Msg):
     """Turn-taking and session control.
 
@@ -58,9 +52,11 @@ class Control(_Msg):
     #: fresh one, exactly as if the student had said 「話題を変えて」.
     #: `cancel`: ALT GR during a recording — what was captured is dropped and the talk key can
     #: be released without sending anything (spec §8). It is not `stop`, which sends the turn.
+    #: The server sends the same `cancel` on the student's behalf when the page holding the key
+    #: drops off the socket (backend/app.py `Hub.leave`), so a lost tab never wedges the mic.
     #: `ready`: the page has been touched, so the browser will let it play sound (autoplay
     #: policy). The server holds her voice until a page says so.
-    action: Literal["start", "stop", "cancel", "bargein_ack", "resync", "quit", "new_topic", "ready"]
+    action: Literal["start", "stop", "cancel", "resync", "quit", "new_topic", "ready"]
 
 
 class SettingsUpdate(_Msg):
@@ -87,12 +83,6 @@ class Explain(_Msg):
     #: Explanation language (EXPLAIN_LANGUAGE); a translation is always English.
     lang: Literal["en", "ja"] = "en"
 
-
-class SettingsTest(_Msg):
-    """Run one service's real check and report the result through `service_status` (§5b)."""
-
-    type: Literal["settings_test"] = "settings_test"
-    service: Literal["wanikani", "bunpro", "bunpro_mcp", "brain", "search", "voicevox", "stt"]
 
 
 # --------------------------------------------------------------- server -> client
@@ -158,14 +148,6 @@ class SttFinal(_Msg):
     vocab: list[VocabSpan] = []
 
 
-class AssistantText(_Msg):
-    """One sentence of the tutor's reply, for the subtitle strip. Emotion tags are already
-    stripped by the chunker — a tag must never reach the display or the TTS (ADR-020)."""
-
-    type: Literal["assistant_text"] = "assistant_text"
-    text: str
-
-
 class GrammarSpan(_Msg):
     """Where she used a grammar point in a `speak` sentence (ADR-036): characters [start, end) of
     `text`, counted in Unicode code points — the page counts the same way (Array.from)."""
@@ -214,26 +196,12 @@ class Speak(_Msg):
     vocab: list[VocabSpan] = []
 
 
-class Emotion(_Msg):
-    """A mood change not tied to a spoken sentence — the idle face between turns."""
-
-    type: Literal["emotion"] = "emotion"
-    emotion: str
-
-
 class BargeIn(_Msg):
     """The server has accepted an interruption: stop playback and drop queued audio of `turn` and
     every epoch before it."""
 
     type: Literal["bargein"] = "bargein"
     turn: int = 0
-
-
-class SrsProfile(_Msg):
-    """The rendered student profile, for the collapsible debug panel (§5)."""
-
-    type: Literal["srs_profile"] = "srs_profile"
-    text: str
 
 
 class ServiceStatus(_Msg):
@@ -299,6 +267,9 @@ class Timing(_Msg):
     stt_ms: float = 0.0
     first_chunk_ms: float = 0.0
     first_audio_ms: float = 0.0
+    #: Her first sentence STARTS PLAYING (first_audio_ms is synthesis done): the honest
+    #: voice-to-voice number, 0.0 when nothing played (2026-09-12).
+    first_play_ms: float = 0.0
     total_ms: float = 0.0
     barged_in: bool = False
     #: The Claude stage taken apart: time to first token and thinking before speaking.
@@ -333,13 +304,13 @@ class Error(_Msg):
 
 # ------------------------------------------------------------------------ unions
 ClientMessage = Annotated[
-    Union[AudioChunk, Control, SettingsUpdate, SettingsTest, Explain],
+    Union[Control, SettingsUpdate, Explain],
     Field(discriminator="type"),
 ]
 
 ServerMessage = Annotated[
-    Union[State, SttPartial, SttFinal, AssistantText, Speak, Emotion, BargeIn,
-          SrsProfile, ServiceStatus, Settings, MicLevel, Meters, Timing, Explanation, Error],
+    Union[State, SttPartial, SttFinal, Speak, BargeIn, ServiceStatus, Settings, MicLevel, Meters,
+          Timing, Explanation, Error],
     Field(discriminator="type"),
 ]
 

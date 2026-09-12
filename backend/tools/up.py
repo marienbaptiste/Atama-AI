@@ -11,6 +11,11 @@ Waiting is the point of this file. `docker compose up -d` returns as soon as the
 created, not when the engine inside it is listening, so starting the app immediately means the
 first thing you see is "VOICEVOX is not running" (observed 2026-09-10: 14 s from restart to
 first 200).
+
+Failing early is the other point: a docker that is missing or not running used to read as
+success (rc 127) and send the launch into a 90 s wait for a VOICEVOX nothing had started; a
+port already taken by a previous tutor used to surface as uvicorn's traceback. Both are now one
+line each, before anything starts.
 """
 from __future__ import annotations
 
@@ -19,6 +24,7 @@ import asyncio
 import os
 import secrets
 import shutil
+import socket
 import stat
 import subprocess
 import sys
@@ -59,6 +65,24 @@ def searxng_secret() -> str:
     return secret
 
 
+def docker_problem(*, which=shutil.which, run=subprocess.run) -> str | None:
+    """Why the containers cannot be started, or None. Checked BEFORE `compose up`, because a
+    missing or stopped docker otherwise turns into a 90 s wait for a VOICEVOX nobody started."""
+    docker = which("docker")
+    if not docker:
+        return ("docker is not on PATH. Install Docker Desktop, or start VOICEVOX and SearXNG yourself and "
+                f"launch with `{RUN_HINT} --no-docker`.")
+    try:
+        done = run([docker, "info", "--format", "{{.ServerVersion}}"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        return f"docker is installed but `docker info` could not run ({type(e).__name__}). Start Docker Desktop."
+    if done.returncode != 0:
+        tail = (done.stderr or "").strip().splitlines()
+        return ("docker is installed but its engine is not running (`docker info` failed"
+                + (f": {tail[-1][:120]}" if tail else "") + "). Start Docker Desktop, then try again.")
+    return None
+
+
 def compose(*args: str) -> int:
     """Run docker compose, or explain why we cannot."""
     docker = shutil.which("docker")
@@ -68,6 +92,17 @@ def compose(*args: str) -> int:
         return 127
     env = {**os.environ, "SEARXNG_SECRET": os.environ.get("SEARXNG_SECRET") or searxng_secret()}
     return subprocess.call([docker, "compose", *args], cwd=str(config.REPO_ROOT), env=env)
+
+
+def port_free(host: str, port: int) -> bool:
+    """Can the app bind its port right now? A bind probe, released at once: uvicorn's own failure
+    is a traceback deep in the launch, and the usual cause is a tutor still running."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind((host, int(port)))
+            return True
+    except OSError:
+        return False
 
 
 def wait_for_voicevox(url: str, seconds: float = 90.0) -> bool:
@@ -130,8 +165,18 @@ def main(argv: list[str]) -> int:
     args, rest = ap.parse_known_args(argv[1:])
     cfg = config.load()
 
-    if not args.no_docker and compose("up", "-d") not in (0, 127):
-        print("docker compose up failed", file=sys.stderr)
+    if not args.no_docker:
+        if (problem := docker_problem()):
+            print(problem, file=sys.stderr)
+            return 1
+        if compose("up", "-d") != 0:
+            print("docker compose up failed", file=sys.stderr)
+            return 1
+
+    if not args.text and not port_free(str(cfg.HOST), int(cfg.PORT)):
+        print(f"port {cfg.PORT} on {cfg.HOST} is already in use — a tutor still running in another window? "
+              "Stop it (Ctrl+C there, or the page's stop button), or change PORT in settings → Advanced.",
+              file=sys.stderr)
         return 1
 
     if not args.text and not wait_for_voicevox(str(cfg.VOICEVOX_URL)):
@@ -154,4 +199,7 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    try:
+        raise SystemExit(main(sys.argv))
+    except config.ConfigError as exc:      # a malformed settings.json: one line, not a traceback
+        sys.exit(str(exc))

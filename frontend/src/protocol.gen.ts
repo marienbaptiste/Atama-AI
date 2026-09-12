@@ -2,8 +2,8 @@
 // backend/tests/test_models.py fails while this file is out of date. After changing a message:
 //   .venv/Scripts/python -m backend.tools.gen_protocol
 
-export const CLIENT_TYPES = ["audio_chunk", "control", "settings", "settings_test", "explain"] as const;
-export const SERVER_TYPES = ["state", "stt_partial", "stt_final", "assistant_text", "speak", "emotion", "bargein", "srs_profile", "service_status", "settings", "mic_level", "meters", "timing", "explanation", "error"] as const;
+export const CLIENT_TYPES = ["control", "settings", "explain"] as const;
+export const SERVER_TYPES = ["state", "stt_partial", "stt_final", "speak", "bargein", "service_status", "settings", "mic_level", "meters", "timing", "explanation", "error"] as const;
 export const RESERVED_TYPES = ["stt_partial"] as const;
 export type ClientType = (typeof CLIENT_TYPES)[number];
 export type ServerType = (typeof SERVER_TYPES)[number];
@@ -35,29 +35,16 @@ export interface GrammarSpan {
 }
 
 // ------------------------------------------------------------------ client -> server
-/** Raw mic audio. PCM16 mono at 16 kHz (spec §9) — never encoded audio. */
-export interface AudioChunkMsg {
-  type: "audio_chunk";
-  pcm16_b64: string;
-  seq?: number;
-}
-
 /** Turn-taking and session control. */
 export interface ControlMsg {
   type: "control";
-  action: "start" | "stop" | "cancel" | "bargein_ack" | "resync" | "quit" | "new_topic" | "ready";
+  action: "start" | "stop" | "cancel" | "resync" | "quit" | "new_topic" | "ready";
 }
 
 /** Partial update of any key in the `config.py` schema, secrets included (§11). */
 export interface SettingsUpdateMsg {
   type: "settings";
   values: Record<string, unknown>;
-}
-
-/** Run one service's real check and report the result through `service_status` (§5b). */
-export interface SettingsTestMsg {
-  type: "settings_test";
-  service: "wanikani" | "bunpro" | "bunpro_mcp" | "brain" | "search" | "voicevox" | "stt";
 }
 
 /** The student clicked something and wants it explained (spec §8b, ADR-036): a red grammar point, or a sentence's translate icon. Nothing is generated until this arrives. */
@@ -91,12 +78,6 @@ export interface SttFinalMsg {
   vocab: VocabSpan[];
 }
 
-/** One sentence of the tutor's reply, for the subtitle strip. Emotion tags are already stripped by the chunker — a tag must never reach the display or the TTS (ADR-020). */
-export interface AssistantTextMsg {
-  type: "assistant_text";
-  text: string;
-}
-
 /** One sentence of synthesised audio with its lip-sync timeline. */
 export interface SpeakMsg {
   type: "speak";
@@ -115,22 +96,10 @@ export interface SpeakMsg {
   vocab: VocabSpan[];
 }
 
-/** A mood change not tied to a spoken sentence — the idle face between turns. */
-export interface EmotionMsg {
-  type: "emotion";
-  emotion: string;
-}
-
 /** The server has accepted an interruption: stop playback and drop queued audio of `turn` and every epoch before it. */
 export interface BargeInMsg {
   type: "bargein";
   turn: number;
-}
-
-/** The rendered student profile, for the collapsible debug panel (§5). */
-export interface SrsProfileMsg {
-  type: "srs_profile";
-  text: string;
 }
 
 /** One chip in the status bar (§5b). `last_error` is already sanitised by the registry — never a token, never a URL containing one. */
@@ -178,6 +147,7 @@ export interface TimingMsg {
   stt_ms: number;
   first_chunk_ms: number;
   first_audio_ms: number;
+  first_play_ms: number;
   total_ms: number;
   barged_in: boolean;
   ttft_ms: number | null;
@@ -203,5 +173,5 @@ export interface ErrorMsg {
   fatal: boolean;
 }
 
-export type ClientMessage = AudioChunkMsg | ControlMsg | SettingsUpdateMsg | SettingsTestMsg | ExplainMsg;
-export type ServerMessage = StateMsg | SttPartialMsg | SttFinalMsg | AssistantTextMsg | SpeakMsg | EmotionMsg | BargeInMsg | SrsProfileMsg | ServiceStatusMsg | SettingsMsg | MicLevelMsg | MetersMsg | TimingMsg | ExplanationMsg | ErrorMsg;
+export type ClientMessage = ControlMsg | SettingsUpdateMsg | ExplainMsg;
+export type ServerMessage = StateMsg | SttPartialMsg | SttFinalMsg | SpeakMsg | BargeInMsg | ServiceStatusMsg | SettingsMsg | MicLevelMsg | MetersMsg | TimingMsg | ExplanationMsg | ErrorMsg;

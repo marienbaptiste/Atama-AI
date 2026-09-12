@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import types
+import uuid
 from pathlib import Path
 
 import pytest
@@ -41,8 +43,15 @@ class FakeCli(ClaudeCliBrain):
     def _launch_argv(self, resume: bool, env: dict[str, str]) -> list[str]:
         argv = self._argv(resume)  # still built, so flag assertions stay meaningful
         self.last_argv = argv
-        sid = argv[argv.index("--session-id") + 1] if "--session-id" in argv else self._session_id
-        return [sys.executable, str(Path(__file__).parent / "fake_claude.py"), self.scenario, "--session-id", sid]
+        flag = "--resume" if resume else "--session-id"
+        return [sys.executable, str(Path(__file__).parent / "fake_claude.py"), self.scenario, flag, self._session_id]
+
+    async def _spawn(self, resume: bool) -> None:
+        try:
+            await super()._spawn(resume)
+        finally:                                     # every process ever launched, even by a cancelled start
+            if self._proc is not None and self._proc not in getattr(self, "procs", []):
+                self.procs = [*getattr(self, "procs", []), self._proc]
 
 
 async def collect(brain, text="こんにちは"):
@@ -56,8 +65,9 @@ def test_claude_provider_satisfies_the_brain_protocol(tmp_path):
 
 def test_factory_builds_the_configured_provider_and_rejects_unknown(tmp_path):
     assert create_brain(cfg(tmp_path)).name == "claude-cli"
+    # The factory's own guard, independent of whatever validation config.load applies first.
     with pytest.raises(ValueError, match="unknown BRAIN_PROVIDER"):
-        create_brain(cfg(tmp_path, BRAIN_PROVIDER="gpt-9"))
+        create_brain(types.SimpleNamespace(BRAIN_PROVIDER="gpt-9"))
 
 
 # ----------------------------------------------------------------- spawn args
@@ -110,10 +120,12 @@ def test_child_env_is_an_allowlist(monkeypatch):
 
 
 def test_spawn_refuses_a_cwd_inside_the_repo(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "claude_cwd", lambda c: config.REPO_ROOT / ".cache" / "claude-cwd")
+    inside = config.REPO_ROOT / ".cache" / f"claude-cwd-refused-{uuid.uuid4().hex[:8]}"
+    monkeypatch.setattr(config, "claude_cwd", lambda c: inside)
     b = ClaudeCliBrain(cfg(tmp_path))
     with pytest.raises(RuntimeError, match="inside the repo"):
         asyncio.run(b._spawn(resume=False))
+    assert not inside.exists()                           # refused BEFORE anything was created
 
 
 # ------------------------------------------------------------ event translation
@@ -300,3 +312,191 @@ def test_a_failed_compaction_is_reported_once(tmp_path):
 def test_other_status_events_are_not_compactions(tmp_path):
     b = ClaudeCliBrain(cfg(tmp_path))
     assert b._translate(json.dumps({"type": "system", "subtype": "status", "status": "requesting"})) == []
+
+
+# ------------------------------------------------- stopping a turn: barge-in, timeout, errors
+# The wire protocol (control_request/interrupt, error_during_execution) was verified live on
+# 2026-09-12 and is pinned in constants.py; fake_claude.py replays it.
+def _spoken(events) -> str:
+    return "".join(e.text for e in events if isinstance(e, TextDelta))
+
+
+def test_a_barge_in_stops_the_turn_and_the_next_turn_hears_only_its_own_text(tmp_path):
+    """The bug (2026-09-12): cancelling the consumer left the CLI generating, and the old turn's
+    deltas and result replayed into the next answer."""
+    async def go():
+        b = FakeCli(cfg(tmp_path))
+        b.scenario = "slow"
+        await b.start()
+        heard = []
+
+        async def listen():
+            async for ev in b.turn("長い話をして"):
+                if isinstance(ev, TextDelta):
+                    heard.append(ev.text)
+
+        task = asyncio.create_task(listen())
+        while len(heard) < 3:
+            await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        events = await collect(b, "次の質問")
+        await b.aclose()
+        return heard, events, b
+
+    heard, events, b = asyncio.run(go())
+    assert heard and _spoken(events) == "はい。"                 # nothing of the old turn
+    assert isinstance(events[-1], TurnComplete) and events[-1].text == "はい。"
+    assert not any(isinstance(e, BrainError) for e in events)   # a deliberate stop is not an error
+    assert len(b.procs) == 1 and "--resume" not in b.last_argv  # the same process, the same session
+
+
+def test_a_timed_out_turn_does_not_leak_its_late_result_into_the_next(tmp_path):
+    async def go():
+        b = FakeCli(cfg(tmp_path, CLAUDE_TURN_TIMEOUT_S="1"))
+        b.scenario = "late_result"                          # ignores the interrupt, answers at 2 s
+        await b.start()
+        first = await collect(b)
+        second = await collect(b, "次")
+        await b.aclose()
+        return first, second, b
+
+    first, second, b = asyncio.run(go())
+    assert any(isinstance(e, BrainError) and "exceeded" in e.message for e in first)
+    assert _spoken(second) == "はい。" and "遅い答え" not in _spoken(second)
+    assert not any(isinstance(e, BrainError) for e in second)
+    assert len(b.procs) == 1                                    # the late result was drained, not respawned
+
+
+def test_a_turn_that_never_closes_is_killed_and_the_session_resumed_silently(tmp_path):
+    async def go():
+        b = FakeCli(cfg(tmp_path, CLAUDE_TURN_TIMEOUT_S="1"))
+        b.scenario = "late_result"
+        b.interrupt_grace_s = 0.3                           # shorter than the 2 s the fake stalls
+        await b.start()
+        await collect(b)
+        second = await collect(b, "次")
+        await b.aclose()
+        return second, b
+
+    second, b = asyncio.run(go())
+    assert _spoken(second) == "はい。" and not any(isinstance(e, BrainError) for e in second)
+    assert len(b.procs) == 2 and ("--resume", b.session_id) in list(zip(b.last_argv, b.last_argv[1:]))
+    assert b.procs[0].poll() is not None                        # the wedged process is gone, and reaped
+
+
+def test_an_error_result_closes_the_turn_and_the_next_one_is_clean(tmp_path):
+    async def go():
+        b = FakeCli(cfg(tmp_path))
+        b.scenario = "error_result"
+        await b.start()
+        first = await collect(b)
+        second = await collect(b, "次")
+        await b.aclose()
+        return first, second
+
+    first, second = asyncio.run(go())
+    assert [type(e) for e in first] == [BrainError, TurnComplete] and "529" in first[0].message
+    assert not first[0].fatal
+    assert _spoken(second) == "はい。" and not any(isinstance(e, BrainError) for e in second)
+
+
+# ------------------------------------------------------------- init assertions (spec §4)
+def test_a_fatal_auth_failure_is_sticky_and_never_respawns(tmp_path):
+    async def go():
+        b = FakeCli(cfg(tmp_path, CLAUDE_TURN_TIMEOUT_S="10"))
+        b.scenario = "bad_auth"
+        await b.start()
+        first = await collect(b)
+        second = await collect(b)
+        return first, second, b
+
+    first, second, b = asyncio.run(go())
+    assert any(isinstance(e, BrainError) and e.fatal and "apiKeySource" in e.message for e in first)
+    assert [type(e) for e in second] == [BrainError, TurnComplete] and second[0].fatal
+    assert "apiKeySource" in second[0].message
+    assert len(b.procs) == 1 and b._proc is None                # refused, and it stayed refused
+
+
+def test_init_must_report_the_session_id_we_assigned(tmp_path):
+    async def go():
+        b = FakeCli(cfg(tmp_path, CLAUDE_TURN_TIMEOUT_S="10"))
+        b.scenario = "wrong_session"
+        await b.start()
+        events = await collect(b)
+        await b.aclose()
+        return events, b.session_id
+
+    events, sid = asyncio.run(go())
+    fatal = [e for e in events if isinstance(e, BrainError) and e.fatal]
+    assert fatal and "session" in fatal[0].message and sid in fatal[0].message
+    assert isinstance(events[-1], TurnComplete)
+
+
+# ------------------------------------------------------------------- process hygiene
+def test_a_cancelled_start_closes_the_process_it_launched(tmp_path):
+    """A rotation discarded mid-spawn (session.discard) lands a CancelledError inside start()
+    after Popen has run; the process must not outlive the brain that never finished starting."""
+    async def go():
+        b = FakeCli(cfg(tmp_path), mcp_ready_markers={"bunpro_mcp": tmp_path / "never-written"})
+        task = asyncio.create_task(b.start())
+        await asyncio.sleep(0.3)                            # inside _await_mcp_ready, Popen done
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return b
+
+    b = asyncio.run(go())
+    assert b._proc is None and len(b.procs) == 1
+    assert b.procs[0].poll() is not None                        # closed and reaped
+
+
+def test_close_reaps_a_process_that_will_not_exit_on_its_own(tmp_path):
+    async def go():
+        b = FakeCli(cfg(tmp_path))
+        b.scenario = "hang"
+        await b.start()
+        b.close_grace_s = 0.2
+        proc = b._proc
+        proc.stdin = None                                   # no EOF for it: only the kill remains
+        await b.aclose()
+        return proc
+
+    proc = asyncio.run(go())
+    assert proc.poll() is not None
+
+
+def test_each_brain_writes_its_own_prompt_file(tmp_path):
+    """One shared .cache/tutor_prompt_rendered.txt was written by the tutor, the summariser, the
+    explanation worker and every rotation replacement, and unlinked by whichever closed first."""
+    async def go():
+        a, b = FakeCli(cfg(tmp_path), system_prompt="A"), FakeCli(cfg(tmp_path), system_prompt="B")
+        await a.start()
+        await b.start()
+        fa, fb = a._prompt_file, b._prompt_file
+        await a.aclose()
+        alive = fb.exists() and fb.read_text(encoding="utf-8") == "B"
+        await b.aclose()
+        return fa, fb, alive, fb.exists()
+
+    fa, fb, alive_after_a_closed, left_behind = asyncio.run(go())
+    assert fa != fb and tmp_path in fa.parents and tmp_path in fb.parents
+    assert alive_after_a_closed and not left_behind
+
+
+def test_the_last_turn_carries_its_tools_and_usage_for_the_turn_log(tmp_path):
+    async def go():
+        b = FakeCli(cfg(tmp_path))
+        b.scenario = "tool_call"
+        await b.start()
+        events = await collect(b)
+        await b.aclose()
+        return events, b.last_turn
+
+    events, last = asyncio.run(go())
+    [outcome] = [e for e in events if isinstance(e, ToolOutcome)]
+    assert outcome.name == "mcp__bunpro__get_ghost_reviews"     # paired with its call
+    assert [t["name"] for t in last["tools"]] == ["mcp__bunpro__get_ghost_reviews"]
+    assert last["tools"][0]["ok"] is True and isinstance(last["tools"][0]["ms"], int)
+    assert last["usage"].get("input_tokens") == 10

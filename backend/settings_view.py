@@ -28,14 +28,8 @@ LOCKED: dict[str, str] = {
 }
 
 #: String keys with a closed set of values: the page shows a picker, the server rejects the rest.
-CHOICES: dict[str, tuple[str, ...]] = {
-    "TURN_MODE": ("ptt", "vad"),
-    "SUBTITLES": ("jp", "off"),
-    "FURIGANA": ("all", "unknown", "off"),
-    "EXPLAIN_LANGUAGE": ("en", "ja"),
-    "CLAUDE_EFFORT": ("low", "medium", "high", "xhigh", "max"),
-    "BRAIN_PROVIDER": ("claude-cli",),
-}
+#: Declared on each Setting in config.py (`choices=`), so `config.load()` refuses them too.
+CHOICES: dict[str, tuple[str, ...]] = config.CHOICES
 
 #: Plain names for the sign-in fields. They come from here because the page's own source may not
 #: name the SRS token keys at all — spec §0's build-time grep fails on them in frontend/src — so

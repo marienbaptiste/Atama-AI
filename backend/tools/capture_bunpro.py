@@ -10,6 +10,7 @@ import json
 import sys
 
 from backend import config, constants
+from backend.srs import bunpro as bp
 from backend.srs.http import SrsClient, SrsError
 
 VARIANTS: list[tuple[str, str, dict | None]] = [
@@ -19,8 +20,10 @@ VARIANTS: list[tuple[str, str, dict | None]] = [
     ("jlpt_progress", constants.BUNPRO_READ_ENDPOINTS["jlpt_progress"], None),
     ("srs_overview", constants.BUNPRO_READ_ENDPOINTS["srs_overview"], None),
     ("ghost_grammar", constants.BUNPRO_READ_ENDPOINTS["ghost_level_details"], {"reviewable_type": "Grammar"}),
-    ("srs_level_1_grammar", constants.BUNPRO_READ_ENDPOINTS["srs_level_details"], {"reviewable_type": "Grammar", "level": 1}),
-    ("srs_level_2_grammar", constants.BUNPRO_READ_ENDPOINTS["srs_level_details"], {"reviewable_type": "Grammar", "level": 2}),
+    # `level` is NAMED (beginner|adept|seasoned|expert|master): a numeric level returns HTTP 500
+    # (verified live 2026-09-09, see srs/bunpro.py). These are the levels the launch fetch reads.
+    *[(f"srs_level_{level}_grammar", constants.BUNPRO_READ_ENDPOINTS["srs_level_details"],
+       {"reviewable_type": "Grammar", "level": level}) for level in bp.IN_PLAY_LEVELS],
     ("forecast_daily", constants.BUNPRO_READ_ENDPOINTS["forecast_daily"], None),
 ]
 
@@ -62,4 +65,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except config.ConfigError as exc:      # a malformed settings.json: one line, not a traceback
+        sys.exit(str(exc))

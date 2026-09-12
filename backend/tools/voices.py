@@ -6,7 +6,7 @@ only honest way to pick a voice is to hear it saying something the tutor would a
     python -m backend.tools.voices                      # list every speaker and style
     python -m backend.tools.voices --audition 11,21,52  # render those into one labelled WAV
     python -m backend.tools.voices --audition all       # every speaker's base style (long!)
-    python -m backend.tools.voices --emotions 29        # one speaker across all five emotions
+    python -m backend.tools.voices --emotions 29        # one speaker across every emotion
 
 The rendered file lands in .cache/ and each sample is preceded by its spoken index, so a list
 printed to the terminal is enough to identify what you just heard.
@@ -91,7 +91,12 @@ def emotions_demo(client: VoicevoxClient, out: Path, intro: str = "みなみ先�
         "thinking": "うーん、そうですね。もう一度言ってみてください。",
         "surprised": "えっ、本当ですか！それはすごい。",
         "serious": "ここは違います。「そういう」を使いましょう。",
+        "encouraging": "大丈夫、もう一度やってみましょう。できますよ。",
+        "proud": "完璧です。本当によく頑張りましたね。",
+        "confused": "あれ、それはどういう意味ですか。もう少し説明してください。",
     }
+    missing = [e for e in (NEUTRAL, *EMOTIONS) if e not in lines]
+    assert not missing, f"no demo line for {missing}"      # keep in step with chunker.EMOTIONS
     chunks: list[np.ndarray] = []
     rate = 24000
     for emotion in (NEUTRAL, *EMOTIONS):
@@ -150,4 +155,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except config.ConfigError as exc:      # a malformed settings.json: one line, not a traceback
+        sys.exit(str(exc))

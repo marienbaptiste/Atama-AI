@@ -1,14 +1,20 @@
 """The ONLY HTTP client for SRS services. GET-only, host-allowlisted. Spec §0.
 
 - Exactly one public method: `get`. There is no post/put/patch/delete to call.
-- `_GuardTransport` refuses, at the transport layer, any non-GET request and any host outside
+- `ReadOnlyTransport` refuses, at the transport layer, any non-GET request and any host outside
   the two pinned origins, and never follows redirects. Tokens cannot go anywhere else even if
-  some caller bypasses `get` and hands the transport a request directly.
+  some caller bypasses `get` and hands the transport a request directly. A refusal is logged
+  at CRITICAL here, the moment it happens; the fetch that hit it reports the chip as `error`.
 - Origins are constants (backend/constants.py). No parameter, setting or env var changes them.
 - Exceptions raised from here never contain the token.
+- A 429 ends the fetch for that service: the response is not retried (ADR-024) and every later
+  `get` on the same client refuses without touching the network. `rate_limited` says why.
+- `cancel` (a threading.Event) is checked before every request, so a fetch that outlived its
+  budget stops at the next request boundary instead of racing a manual refresh.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Any, Literal
@@ -16,6 +22,8 @@ from typing import Any, Literal
 import httpx
 
 from backend import constants
+
+_log = logging.getLogger(__name__)
 
 Service = Literal["wanikani", "bunpro"]
 
@@ -47,7 +55,7 @@ class SrsError(RuntimeError):
         self.status_code = status_code
 
 
-class _GuardTransport(httpx.BaseTransport):
+class ReadOnlyTransport(httpx.BaseTransport):
     """Wraps any transport; enforces GET-only + host allowlist before anything is sent."""
 
     def __init__(self, inner: httpx.BaseTransport):
@@ -55,13 +63,22 @@ class _GuardTransport(httpx.BaseTransport):
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         if request.method.upper() != "GET":
+            _log.critical("GOLDEN RULE (spec 0): refused %s %s%s - the request never left the process",
+                          request.method, request.url.host, request.url.path)
             raise ReadOnlyViolation(f"refused {request.method} {request.url.host}{request.url.path}")
         if request.url.host not in ALLOWED_HOSTS:
+            _log.critical("GOLDEN RULE (spec 0): refused request to host %r - not a pinned origin", request.url.host)
             raise HostViolation(f"refused request to host {request.url.host!r}")
         return self._inner.handle_request(request)
 
     def close(self) -> None:
         self._inner.close()
+
+
+class _GuardTransport(ReadOnlyTransport):
+    """The name `readonly_gate.py` (rule 4) asserts is defined here. The gate cannot be edited
+    (ADR-021), so the guard keeps this name alongside `ReadOnlyTransport`, the one the spec,
+    README and ADR use. Same class; nothing is added."""
 
 
 class SrsClient:
@@ -75,6 +92,7 @@ class SrsClient:
         transport: httpx.BaseTransport | None = None,
         clock=time.monotonic,
         sleep=time.sleep,
+        cancel: threading.Event | None = None,
     ):
         if service not in ALLOWED_ORIGINS:
             raise ValueError(f"unknown service {service!r}")
@@ -84,8 +102,11 @@ class SrsClient:
         self._min_interval = _MIN_INTERVAL[service]
         self._clock = clock
         self._sleep = sleep
+        self._cancel = cancel
         self._last_request_at: float | None = None
         self._lock = threading.Lock()
+        #: Set by the first 429 (the sanitised reason); every later `get` refuses with it.
+        self.rate_limited: str | None = None
         headers = {"Accept": "application/json", "User-Agent": "atama-ai/0.0 (read-only)"}
         if service == "wanikani":
             headers["Authorization"] = f"Bearer {token}"
@@ -102,7 +123,7 @@ class SrsClient:
             headers=headers,
             timeout=_TIMEOUT_S,
             follow_redirects=False,
-            transport=_GuardTransport(transport or httpx.HTTPTransport()),
+            transport=ReadOnlyTransport(transport or httpx.HTTPTransport()),
         )
 
     # ------------------------------------------------------------------ public
@@ -110,6 +131,10 @@ class SrsClient:
         """GET `path` (relative to the pinned origin) and return parsed JSON."""
         if not path.startswith("/"):
             raise ValueError("path must be origin-relative and start with '/'")
+        if self._cancel is not None and self._cancel.is_set():
+            raise SrsError(f"{self._service}: fetch cancelled (budget exceeded) before {path}")
+        if self.rate_limited:
+            raise SrsError(self.rate_limited, 429)
         self._throttle()
         merged = {**self._base_params, **(params or {})}
         try:
@@ -120,6 +145,14 @@ class SrsClient:
             raise SrsError(self._sanitize(f"{self._service}: {type(e).__name__}: {e}")) from None
         if resp.status_code in (301, 302, 303, 307, 308):
             raise SrsError(f"{self._service}: redirect not followed ({resp.status_code})", resp.status_code)
+        if resp.status_code == 429:
+            retry_after = resp.headers.get("Retry-After", "").strip()[:40]
+            self.rate_limited = self._sanitize(
+                f"{self._service}: rate limited (HTTP 429"
+                + (f", Retry-After {retry_after}" if retry_after else "")
+                + f") at {path}; remaining requests of this fetch skipped, no retry (ADR-024)"
+            )
+            raise SrsError(self.rate_limited, 429)
         if resp.status_code >= 400:
             raise SrsError(
                 self._sanitize(f"{self._service}: HTTP {resp.status_code} for {path}: {resp.text[:200]}"),

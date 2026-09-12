@@ -1,12 +1,15 @@
 """SrsClient: GET-only, host-allowlisted, redirect-free, token never leaks (spec §0, ADR-021/023)."""
 from __future__ import annotations
 
+import logging
+import threading
+
 import httpx
 import pytest
 
 from backend import constants
 from backend.srs import http as srs_http
-from backend.srs.http import HostViolation, ReadOnlyViolation, SrsClient, SrsError
+from backend.srs.http import HostViolation, ReadOnlyTransport, ReadOnlyViolation, SrsClient, SrsError
 
 TOKEN = "supersecrettoken1234"
 
@@ -150,3 +153,55 @@ def test_relative_path_required():
     c = SrsClient("bunpro", TOKEN, transport=mock(lambda r: httpx.Response(200, json={})), sleep=lambda s: None)
     with pytest.raises(ValueError):
         c.get("api/frontend/user")
+
+
+def test_the_guard_is_the_read_only_transport_the_spec_names():
+    c = SrsClient("bunpro", TOKEN, transport=mock(lambda r: httpx.Response(200, json={})), sleep=lambda s: None)
+    assert isinstance(c._http._transport, ReadOnlyTransport)
+    # The gate (rule 4) asserts the older name; it is the same guard, not a second one.
+    assert issubclass(srs_http._GuardTransport, ReadOnlyTransport)
+    assert srs_http._GuardTransport.handle_request is ReadOnlyTransport.handle_request
+
+
+def test_a_refusal_is_logged_critical(caplog):
+    """spec 0: the request never leaves the process and the refusal is logged as CRITICAL."""
+    c = SrsClient("wanikani", TOKEN, transport=mock(lambda r: httpx.Response(200)), sleep=lambda s: None)
+    with caplog.at_level(logging.CRITICAL, logger="backend.srs.http"):
+        with pytest.raises(ReadOnlyViolation):
+            c._http._transport.handle_request(httpx.Request("PUT", constants.WANIKANI_ORIGIN + "/v2/user"))
+        with pytest.raises(HostViolation):
+            c._http._transport.handle_request(httpx.Request("GET", "https://example.com/x"))
+    msgs = [r.getMessage() for r in caplog.records if r.levelno == logging.CRITICAL]
+    assert len(msgs) == 2 and "refused PUT api.wanikani.com/v2/user" in msgs[0] and "example.com" in msgs[1]
+    assert all(TOKEN not in m for m in msgs)
+
+
+def test_429_ends_the_fetch_for_this_client_without_retry():
+    sent = []
+
+    def handler(req):
+        sent.append(req.url.path)
+        return httpx.Response(429, headers={"Retry-After": "120"}, text=f"slow down {TOKEN}")
+
+    c = SrsClient("wanikani", TOKEN, transport=mock(handler), sleep=lambda s: None)
+    assert c.rate_limited is None
+    with pytest.raises(SrsError) as ei:
+        c.get("/v2/assignments")
+    assert ei.value.status_code == 429 and "Retry-After 120" in str(ei.value) and TOKEN not in str(ei.value)
+    with pytest.raises(SrsError) as ei2:      # the next call is refused before it is sent
+        c.get("/v2/summary")
+    assert ei2.value.status_code == 429 and "no retry" in str(ei2.value)
+    assert sent == ["/v2/assignments"]
+    assert c.rate_limited == str(ei.value)
+
+
+def test_cancel_flag_refuses_the_next_request_before_it_is_sent():
+    sent = []
+    cancel = threading.Event()
+    c = SrsClient("bunpro", TOKEN, transport=mock(lambda r: sent.append(r.url.path) or httpx.Response(200, json={})),
+                  sleep=lambda s: None, cancel=cancel)
+    c.get("/api/frontend/user")
+    cancel.set()
+    with pytest.raises(SrsError) as ei:
+        c.get("/api/frontend/user/due")
+    assert "cancelled" in str(ei.value) and sent == ["/api/frontend/user"]

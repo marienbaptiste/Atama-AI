@@ -113,3 +113,71 @@ def test_type_coercion_error_is_clear(tmp_path):
         assert "PORT" in str(e)
     else:
         raise AssertionError("expected ValueError")
+
+
+# ------------------------------------------------------------ validation (2026-09-12)
+def test_a_value_outside_its_choices_is_refused_by_name(tmp_path):
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"turn_mode": "telepathy"}), encoding="utf-8")
+    with __import__("pytest").raises(config.ConfigError) as exc:
+        config.load(settings, env={})
+    msg = str(exc.value)
+    assert "TURN_MODE" in msg and "ptt, vad" in msg and str(settings) in msg
+    assert "\n" not in msg                                   # one line, not a traceback's worth
+
+
+def test_a_number_outside_its_range_is_refused_by_name(tmp_path):
+    import pytest
+    with pytest.raises(config.ConfigError, match="PORT.*at most 65535"):
+        config.load(tmp_path / "s.json", env={"PORT": "70000"})
+    with pytest.raises(config.ConfigError, match="VAD_SILENCE_MS.*at least 0"):
+        config.load(tmp_path / "s.json", env={"VAD_SILENCE_MS": "-5"})
+    with pytest.raises(config.ConfigError, match="CONTEXT_ROTATE_AT.*at most 1"):
+        config.load(tmp_path / "s.json", env={"CONTEXT_ROTATE_AT": "1.5"})
+    assert config.load(tmp_path / "s.json", env={"PORT": "65535", "VAD_SILENCE_MS": "0"}).PORT == 65535
+
+
+def test_malformed_settings_json_is_one_clear_line(tmp_path):
+    import pytest
+    settings = tmp_path / "settings.json"
+    settings.write_text("{not json", encoding="utf-8")
+    with pytest.raises(config.ConfigError) as exc:
+        config.load(settings, env={})
+    assert str(settings) in str(exc.value) and "\n" not in str(exc.value)
+    settings.write_text("[1, 2]", encoding="utf-8")
+    with pytest.raises(config.ConfigError, match="JSON object"):
+        config.load(settings, env={})
+    assert issubclass(config.ConfigError, ValueError)        # callers catching ValueError still do
+
+
+def test_choices_are_declared_on_the_schema_and_shared_with_the_panel():
+    from backend import settings_view
+    assert settings_view.CHOICES is config.CHOICES
+    assert config.CHOICES["TURN_MODE"] == ("ptt", "vad")
+    assert config.CHOICES["CLAUDE_EFFORT"] == ("low", "medium", "high", "xhigh", "max")
+    for s in config.SCHEMA:
+        if s.choices:
+            assert s.type is str and s.default in s.choices, s.key
+        if s.low is not None or s.high is not None:
+            assert s.type in (int, float), s.key
+            assert (s.low is None or s.default >= s.low) and (s.high is None or s.default <= s.high), s.key
+
+
+def test_the_filler_knob_is_gone_until_fillers_exist():
+    """spec §10 / ADR-008 describe a filler pool that is not built; a knob for it did nothing."""
+    assert "FILLER_AFTER_MS" not in config.KEYS
+
+
+def test_the_tunables_that_left_the_modules_keep_their_values():
+    """spec §11: the defaults moved into the schema; the rationale stays on the module constants."""
+    from backend import stt, vad, voice_loop
+    defaults = {s.key: s.default for s in config.SCHEMA}
+    assert defaults["STT_QUIET_RMS"] == stt.QUIET_RMS
+    assert defaults["STT_MIN_AVG_LOGPROB"] == stt.MIN_AVG_LOGPROB
+    assert defaults["STT_MAX_NO_SPEECH_PROB"] == stt.MAX_NO_SPEECH_PROB
+    assert defaults["STT_CORROBORATING_AVG_LOGPROB"] == stt.CORROBORATING_AVG_LOGPROB
+    assert defaults["VAD_SPEECH_THRESHOLD"] == vad.SPEECH_THRESHOLD
+    assert defaults["VAD_ONSET_TOLERANCE_MS"] == vad.ONSET_TOLERANCE_MS
+    assert defaults["QUIET_OVER_FLOOR"] == voice_loop.QUIET_OVER_FLOOR
+    assert defaults["PTT_HANDOVER_TIMEOUT_S"] == voice_loop.PTT_HANDOVER_TIMEOUT_S
+    assert defaults["VOICEVOX_TIMEOUT_S"] == 30.0

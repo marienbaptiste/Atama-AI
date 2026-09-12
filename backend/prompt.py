@@ -69,8 +69,9 @@ TOTAL_MAX_TOKENS = 3400
 #: sessions carry it, so it has its own budget on top of TOTAL_MAX_TOKENS rather than squeezing
 #: the sections every session needs. Spent only when a long lesson has earned a fresh window.
 HANDOFF_MAX_TOKENS = 600
-HANDOFF_HEADING = ("EARLIER IN THIS LESSON — you and the student were already talking; this is the "
-                   "latest of it. Carry on naturally from here: do not greet again or restart.")
+#: The words over the handoff — what a rotated session is told about the lesson so far. A file,
+#: like every other instruction the model reads (ADR-012).
+HANDOFF_FILE = PROMPTS_DIR / "handoff.md"
 
 NEUTRAL_SOUL = "あなたは経験のある、あたたかい日本語の先生です。"
 
@@ -110,18 +111,36 @@ def _strip_comments(text: str) -> str:
     return "".join(out)
 
 
-def _fit(text: str, budget: int, label: str, truncated: list[str]) -> str:
-    """Truncate at a line boundary if over budget, and say so."""
+def _fit(text: str, budget: int, label: str, truncated: list[str], keep: str = "head") -> str:
+    """Truncate at a line boundary if over budget, and say so.
+
+    `keep` says which end survives. The soul, the profile and the memory lead with what matters
+    most, so their head is kept; a handoff is a transcript whose NEWEST lines are the ones the
+    rotated session must carry on from, so its tail is kept — keeping the head handed her the
+    start of a lesson she was supposed to be forty minutes into (2026-09-12).
+    """
     if estimate_tokens(text) <= budget:
         return text
     lines = text.splitlines()
+    if keep == "tail":
+        lines = lines[::-1]
     kept: list[str] = []
     for line in lines:
         if estimate_tokens("\n".join([*kept, line])) > budget:
             break
         kept.append(line)
+    if keep == "tail":
+        kept.reverse()
     truncated.append(label)
-    return "\n".join(kept).rstrip()
+    return "\n".join(kept).strip()
+
+
+def handoff_heading() -> str:
+    """What a rotated session is told over the lesson so far (prompts/handoff.md)."""
+    text = _strip_comments(_read(HANDOFF_FILE)).strip()
+    if not text:
+        raise RuntimeError(f"missing or empty handoff heading at {HANDOFF_FILE} (ADR-012: it lives in a file)")
+    return text
 
 
 def persona_path(name: str | None = None) -> Path:
@@ -202,8 +221,9 @@ def build(student_profile: str, *, soul: str | None = None, template: str | None
     soul_text = _fit((soul if soul is not None else load_soul(name=persona)).strip(), SOUL_MAX_TOKENS, "soul", truncated)
     profile_text = _fit(student_profile.strip(), PROFILE_MAX_TOKENS, "student_profile", truncated)
     memory_text = _fit(memory.strip(), MEMORY_MAX_TOKENS, "memory", truncated) if memory.strip() else ""
-    handoff_text = _fit(handoff.strip(), HANDOFF_MAX_TOKENS, "handoff", truncated) if handoff.strip() else ""
-    memory_slot = "\n\n".join(s for s in (memory_text, f"{HANDOFF_HEADING}\n{handoff_text}" if handoff_text else "") if s)
+    handoff_text = (_fit(handoff.strip(), HANDOFF_MAX_TOKENS, "handoff", truncated, keep="tail")
+                    if handoff.strip() else "")
+    memory_slot = "\n\n".join(s for s in (memory_text, f"{handoff_heading()}\n{handoff_text}" if handoff_text else "") if s)
 
     text = (tpl.replace("{{soul}}", soul_text)
                .replace("{{student_profile}}", profile_text)

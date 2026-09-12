@@ -6,9 +6,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 
 from backend import memory as memory_api
 from backend import prompt
+from backend.brain import BrainError, TextDelta, TurnComplete, reply_text
 from backend.memory import Memory, excerpt_of, parse_summary
 
 
@@ -99,9 +101,13 @@ def test_memory_can_never_be_committed(tmp_path):
     cfg = config.load(tmp_path / "settings.json", env={})
     root = memory_api.memory_dir(cfg)
     assert config.REPO_ROOT not in root.parents and root != config.REPO_ROOT
-    for name in ("student.md", "about-me.md", "facts.md", "topics.jsonl", "last-session.md"):
-        strays = [p for p in config.REPO_ROOT.rglob(name) if ".venv" not in p.parts]
-        assert strays == [], f"{name} inside the repo: {strays}"
+    names = {"student.md", "about-me.md", "facts.md", "topics.jsonl", "last-session.md"}
+    skip = {".git", ".venv", "venv", "node_modules", "__pycache__"}     # not ours, and huge
+    strays = []
+    for here, dirs, files in os.walk(config.REPO_ROOT):
+        dirs[:] = [d for d in dirs if d not in skip]
+        strays += [os.path.join(here, f) for f in files if f in names]
+    assert strays == [], f"memory files inside the repo: {strays}"
 
 
 # ------------------------------------------------------ what the two of them know (user request)
@@ -271,7 +277,7 @@ def test_pending_logs_skip_summarised_sessions_and_the_live_one(tmp_path):
     past.record_turn(student="昨日", tutor_sentences=[{"text": "はい。"}])
     done = mem(tmp_path, session="done")
     done.record_turn(student="前", tutor_sentences=[{"text": "はい。"}])
-    done.apply_summary("done", "2026-09-01", {"brief": "x", "topics": ["a"]})
+    done.apply_summary("done", done.date, {"brief": "x", "topics": ["a"]})   # the log's own date, as summarise_pending writes it
     live = mem(tmp_path, session="live")
     live.record_turn(student="今", tutor_sentences=[{"text": "はい。"}])
     assert [p.stem.split("-", 3)[-1] for p in live.pending_logs()] == ["past"]
@@ -330,6 +336,92 @@ def test_a_summariser_that_fails_costs_recall_not_the_lesson(tmp_path):
 
     assert asyncio.run(now.summarise_pending(ask, "I")) == 0
     assert now.render() == "" and len(now.pending_logs()) == 1   # retried next launch
+
+
+class _FakeBrain:
+    """A Brain whose one turn replays the given events — the shape the summariser's `ask` sees."""
+
+    name = "fake"
+
+    def __init__(self, events):
+        self.events = events
+
+    async def turn(self, text):
+        for ev in self.events:
+            yield ev
+
+
+def test_a_summariser_turn_that_errors_leaves_the_lesson_pending(tmp_path):
+    """Through the real `ask` shape (repl._summarise uses brain.reply_text). The bug: `ask`
+    collected only the text, so an API error came back as "" and the lesson was marked done."""
+    past = mem(tmp_path, session="past")
+    past.record_turn(student="何か", tutor_sentences=[{"text": "はい。"}])
+    now = mem(tmp_path, session="now")
+    failing = _FakeBrain([BrainError("API Error: 529 overloaded"), TurnComplete()])
+
+    assert asyncio.run(now.summarise_pending(lambda t: reply_text(failing, t), "I")) == 0
+    assert len(now.pending_logs()) == 1                      # still pending: retried next launch
+
+    fine = _FakeBrain([TextDelta('{"brief": "b", "topics": ["t"]}'), TurnComplete()])
+    assert asyncio.run(now.summarise_pending(lambda t: reply_text(fine, t), "I")) == 1
+    assert now.pending_logs() == []
+
+
+def test_a_lesson_is_one_file_whatever_the_clock_says(tmp_path):
+    """Crossing midnight used to start a second file with the same session id."""
+    m = mem(tmp_path)
+    m.date = "2026-09-12"
+    m.record_turn(student="一", tutor_sentences=[])
+    m.record_turn(student="二", tutor_sentences=[])           # "the next day" changes nothing
+    assert m.log_path().name == "2026-09-12-s1.jsonl" and len(rows(m.log_path())) == 2
+
+
+def test_a_split_lesson_from_an_older_writer_is_summarised_on_both_days(tmp_path):
+    """Two files, one session id, the first already summarised: the second must not read as done
+    because the first is. The done-marker is keyed by (date, session) — the two things every
+    topics row has always carried, so existing markers still count."""
+    first = mem(tmp_path, session="night")
+    first.date = "2026-09-11"
+    first.record_turn(student="夜", tutor_sentences=[{"text": "はい。"}])
+    second = mem(tmp_path, session="night")
+    second.date = "2026-09-12"
+    second.record_turn(student="朝", tutor_sentences=[{"text": "はい。"}])
+    now = mem(tmp_path, session="now")
+    now.apply_summary("night", "2026-09-11", {"brief": "x", "topics": ["夜"]})   # the old marker
+    assert [p.name for p in now.pending_logs()] == ["2026-09-12-night.jsonl"]
+
+
+def test_the_handoff_carries_only_this_launch(tmp_path):
+    """A log holding an earlier lesson's turns and none from this launch yields NO handoff — the
+    replacement must greet, not be told "do not greet again" over a lesson that ended hours ago.
+    Turns from this launch yield exactly those (the repl passes launch_stamp() as `since`)."""
+    m = mem(tmp_path)
+    m.log_path().parent.mkdir(parents=True)
+    old = {"ts": "2026-09-12T08:00:00+00:00", "session": "s1", "turn": 1,
+           "student": {"text": "朝の話"}, "tutor": {"text": "はい。"}}
+    m.log_path().write_text(json.dumps(old, ensure_ascii=False) + "\n", encoding="utf-8")
+    since = "2026-09-12T18:30:00+00:00"
+    assert excerpt_of(m.log_path(), since=since) == ""            # nothing since this launch
+    assert "朝の話" in excerpt_of(m.log_path())                    # the summariser still sees it
+    later = {**old, "ts": "2026-09-12T18:30:00+00:00", "turn": 2, "student": {"text": "夜の話"}}
+    with m.log_path().open("a", encoding="utf-8") as f:
+        f.write(json.dumps(later, ensure_ascii=False) + "\n")
+    assert excerpt_of(m.log_path(), since=since) == "STUDENT: 夜の話\nTUTOR: はい。"
+    assert prompt.build("x", handoff=excerpt_of(m.log_path(), since=since)).text.count("EARLIER IN THIS LESSON") == 1
+    assert "EARLIER IN THIS LESSON" not in prompt.build("x", handoff="").text
+    stamp = memory_api.launch_stamp()                               # same shape as a record's ts,
+    assert len(stamp) == len(since) and stamp.endswith("+00:00")    # so `<` compares moments
+
+
+def test_the_memory_headings_come_from_a_file_not_from_python(tmp_path):
+    """ADR-012: what the model reads lives under prompts/."""
+    say = memory_api.memory_headings()
+    assert say["brief"] == "LAST SESSION" and say["topics"].startswith("RECENTLY DISCUSSED")
+    assert say["known"].startswith("WHAT YOU TWO ALREADY KNOW")
+    assert say["no_such_key"] == "NO_SUCH_KEY"               # a missing block is visible, not blank
+    custom = tmp_path / "memory.md"
+    custom.write_text("<!-- comment -->\n## brief\n前回\n## notes\n学生について\n", encoding="utf-8")
+    assert memory_api.memory_headings(custom)["brief"] == "前回"
 
 
 def test_parse_summary_digs_json_out_of_prose():

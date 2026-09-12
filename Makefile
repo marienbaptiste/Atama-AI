@@ -1,5 +1,5 @@
 # atama-AI — task entry points.
-# No `make` on Windows? Use .un and .\stop for the two common ones. Every other target is a
+# No `make` on Windows? Use .\run and .\stop for the two common ones. Every other target is a
 # plain python -m command; run those directly:
 #   .venv/Scripts/python -m backend.tools.readonly_gate
 #   .venv/Scripts/python -m pytest

@@ -114,6 +114,33 @@ class Brain(Protocol):
         ...
 
 
+class BrainFailed(RuntimeError):
+    """A turn that did not produce an answer: the provider's error result, a timeout, a fatal."""
+
+
+async def reply_text(brain: Brain, text: str) -> str:
+    """One turn's spoken text, for callers that want an answer rather than a stream — the
+    summariser, the explanation worker.
+
+    A turn that fails RAISES `BrainFailed` instead of returning "": to a caller that retries at
+    the next launch, "the model said nothing" and "the call did not happen" are different
+    answers, and collecting only the text made them the same one (the summariser marked a
+    lesson done after an API error, 2026-09-12).
+    """
+    out: list[str] = []
+    errors: list[str] = []
+    async for ev in brain.turn(text):
+        if isinstance(ev, TextDelta):
+            out.append(ev.text)
+        elif isinstance(ev, BrainError):
+            errors.append(ev.message)
+        elif isinstance(ev, TurnComplete):
+            if errors:
+                raise BrainFailed(errors[-1])
+            return "".join(out) or ev.text
+    raise BrainFailed("the turn ended without completing")
+
+
 def create(cfg, registry=None, **kwargs) -> Brain:
     """Build the configured provider. The only place a provider module is imported."""
     provider = str(getattr(cfg, "BRAIN_PROVIDER", "claude-cli") or "claude-cli")

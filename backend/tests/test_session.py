@@ -146,6 +146,51 @@ def test_a_long_handoff_is_cut_and_reported():
     assert "handoff" in p.truncated and p.sections["handoff"] <= prompt.HANDOFF_MAX_TOKENS
 
 
+def test_a_cut_handoff_keeps_the_newest_lines_not_the_oldest():
+    """The rotated session carries on from where the lesson IS. Keeping the head handed her the
+    opening of a lesson she was forty minutes into (2026-09-12)."""
+    nl = chr(10)
+    lines = [f"STUDENT: {i}番目 " + "話" * 40 for i in range(60)]
+    p = prompt.build("x", handoff=nl.join(lines))
+    assert "handoff" in p.truncated
+    assert "STUDENT: 59番目" in p.text and "STUDENT: 0番目" not in p.text
+    section = p.text[p.text.index("EARLIER IN THIS LESSON"):]
+    kept = [line for line in section.splitlines() if line.startswith("STUDENT: ")]
+    assert kept and kept == lines[-len(kept):]                   # a contiguous tail, ending on the last turn
+
+
+def test_the_handoff_heading_lives_in_a_file():
+    assert prompt.handoff_heading().startswith("EARLIER IN THIS LESSON") and prompt.HANDOFF_FILE.exists()
+
+
+def test_a_spawn_cancelled_mid_start_closes_what_it_launched():
+    """The Rotator's contract on `spawn` (repl.spawn_rotation honours it): discard() during a
+    persona switch cancels a replacement whose process already exists, and that process must
+    not outlive the brain nobody will ever take."""
+    async def run():
+        launched = []
+        release = asyncio.Event()
+
+        async def spawn(brief):
+            new = FakeBrain("half-built")
+            launched.append(new)
+            try:
+                await release.wait()                            # "start()" in progress
+            except BaseException:
+                await new.aclose()
+                raise
+            return new
+
+        r, _, _ = rotator(spawn=spawn)
+        r.observe(FakeBrain("old", used=190_000))
+        r.prepare()
+        await asyncio.sleep(0.01)
+        await r.discard()
+        assert launched and launched[0].closed
+        assert r.take(FakeBrain("old")) is None and r._task is None
+    asyncio.run(run())
+
+
 def test_a_requested_rotation_happens_even_with_automatic_rotation_off():
     """The resync button (spec §5b): new study data reaches her through a fresh session."""
     async def run():

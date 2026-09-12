@@ -19,15 +19,17 @@ function buttons(host: HTMLElement, names: readonly string[], fn: (name: string)
 }
 
 export function mountRigPanel(avatar: Avatar): void {
-  buttons($("rig-moods"), MOODS, m => { avatar.head.setMood(m); log(`mood <b>${m}</b>`); });
+  const head = avatar.head;
+  if (!head) return;                               // a voice only: nothing to pose
+  buttons($("rig-moods"), MOODS, m => { head.setMood(m); log(`mood <b>${m}</b>`); });
   buttons($("rig-gestures"), [...GESTURES, "stop"], g => {
-    if (g === "stop") { avatar.head.stopGesture?.(500); log("gesture cleared"); return; }
-    avatar.head.playGesture(g, avatar.holdS, avatar.varyHands, 800);
+    if (g === "stop") { head.stopGesture?.(500); log("gesture cleared"); return; }
+    head.playGesture(g, avatar.holdS, avatar.varyHands, 800);
     log(`gesture <b>${g}</b> · ${avatar.holdS}s`);
   });
   buttons($("rig-poses"), POSES, p => { if (avatar.setPose(p, 1200)) log(`posture <b>${p}</b>`); });
   buttons($("rig-reactions"), ["yes", "no"], e => {
-    avatar.head.playGesture(e, 2, false, 400);
+    head.playGesture(e, 2, false, 400);
     log(`reaction <b>${e}</b> — ${e === "yes" ? "nod (あいづち)" : "shake"}`);
   });
 

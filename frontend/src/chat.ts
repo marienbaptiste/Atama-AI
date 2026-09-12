@@ -146,7 +146,7 @@ export class Chat {
     this.list.querySelector<HTMLElement>(".msg.loading")?.remove();
   }
 
-  /** Her sentence, as its audio starts — one bubble each (user, 2026-09-13), with the icon that
+  /** Her sentence, as its audio starts — one bubble each (user, 2026-09-12), with the icon that
    *  asks for its English. Nothing is translated until it is clicked (ADR-036). */
   her(msg: SpeakMsg): void {
     this.ready();
@@ -170,7 +170,7 @@ export class Chat {
   /** The plain sentence an element sits in — not what is on screen, which carries furigana. */
   sentenceOf(el: HTMLElement): string {
     // From inside the sentence (a grammar mark) or from beside it (the translate button, which is
-    // the bubble's child, not the body's — it returned nothing at first try, 2026-09-13).
+    // the bubble's child, not the body's — it returned nothing at first try, 2026-09-12).
     const body = el.closest<HTMLElement>(".body")
       ?? el.closest<HTMLElement>(".msg")?.querySelector<HTMLElement>(".body")
       ?? null;

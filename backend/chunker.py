@@ -11,7 +11,10 @@ Rules:
   chunk that has nothing speakable in it (a lone 「…」, a bare newline).
 - Strip exactly one emotion tag `[happy]|[thinking]|[surprised]|[serious]` at the start of the
   turn or of any sentence; it applies to that sentence and the following ones until the next tag
-  (ADR-020). A tag split across two deltas (`[hap` + `py]`) is still recognised.
+  (ADR-020). A tag split across two deltas (`[hap` + `py]`) is still recognised. Case does not
+  matter (`[Happy]` is happy), and a TalkingHead mood the tutor was never offered (`[sad]`,
+  `[angry]`) is still a tag — stripped so it never reaches the voice, recorded in `stray_tags`,
+  and ignored for the emotion (`[neutral]` alone resets it). `[こんにちは]` is words.
 - A tag the model puts MID-sentence violates the prompt ("Nothing else in brackets, ever"). It is
   removed from the spoken text — a bracket must never reach TTS — applied from the NEXT sentence,
   and recorded in `stray_tags` so a prompt bug is visible rather than silent.
@@ -25,6 +28,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from backend.constants import TALKINGHEAD_MOODS
+
 #: The tags the tutor may emit. Deliberately NOT TalkingHead's full mood set: `angry`,
 #: `disgust`, `fear` and `sleep` exist in the library and are not offered here, because a tag the
 #: model can reach for is a tag it will eventually use, and none of those belong on a teacher.
@@ -32,14 +37,29 @@ from dataclasses import dataclass, field
 #: does constantly that the original four could not express (2026-09-10).
 EMOTIONS = ("happy", "thinking", "surprised", "serious", "encouraging", "proud", "confused")
 NEUTRAL = ""
+#: Bracketed words that are a tag even though they are not an emotion we offer: TalkingHead's
+#: own mood names (constants.TALKINGHEAD_MOODS). A model that has seen the library will reach
+#: for `[sad]` one day, and a bracket must never be spoken (ADR-020).
+_TAG_WORDS = tuple(dict.fromkeys((*EMOTIONS, *TALKINGHEAD_MOODS)))
 TERMINATORS = "。！？!?…‥\n"
 #: A chunk must contain at least one of these to be worth synthesising.
 _SPEAKABLE = re.compile(r"[^\s。、！？!?…‥・「」『』（）()\[\]【】〜~—\-—.,]")
-_TAG_AT_START = re.compile(r"^\s*\[(" + "|".join(EMOTIONS) + r")\]\s*")
-_ANY_TAG = re.compile(r"\[(" + "|".join(EMOTIONS) + r")\]\s*")
+_TAG_AT_START = re.compile(r"^\s*\[(" + "|".join(_TAG_WORDS) + r")\]\s*", re.IGNORECASE)
+_ANY_TAG = re.compile(r"\[(" + "|".join(_TAG_WORDS) + r")\]\s*", re.IGNORECASE)
 #: Longest prefix that could still become a tag once more deltas arrive, e.g. "[hap" or
 #: "[target:〜た" — bounded, so an unclosed target never swallows the rest of the reply.
-_PARTIAL_TAG = re.compile(r"^\s*\[(?:[a-z]*|(?:target|used):[^\]\n。！？!?]{0,40})$")
+_PARTIAL_TAG = re.compile(r"^\s*\[(?:[A-Za-z]*|(?:target|used):[^\]\n。！？!?]{0,40})$")
+
+
+def emotion_of(tag: str) -> str | None:
+    """The emotion a bracketed word means: one of EMOTIONS, NEUTRAL for `neutral`, or None for a
+    mood we do not offer (stripped, recorded, and the emotion in force is left alone)."""
+    word = tag.lower()
+    if word in EMOTIONS:
+        return word
+    if word == "neutral":
+        return NEUTRAL
+    return None
 _GRAMMAR = re.compile(r"\{\{([^{}|\n]+)\|([^{}\n]+)\}\}")
 _TARGET = re.compile(r"\[target:([^\]\n]*)\]\s*")
 _TARGET_AT_START = re.compile(r"^\s*\[target:([^\]\n]*)\]\s*")
@@ -151,12 +171,14 @@ class SentenceChunker:
                     setattr(self, field_name, m.group(1).strip())
             text = pattern.sub("", text).strip()
         emotion: str | None = None
-        if strays := _ANY_TAG.findall(text):
+        if strays := [t.lower() for t in _ANY_TAG.findall(text)]:
             self.stray_tags.extend(strays)
             text = _ANY_TAG.sub("", text).strip()
             # A mid-sentence tag is malformed: honour the intent from the NEXT sentence.
             emotion = self._apply_pending()
-            self._pending = strays[-1]
+            meant = [emotion_of(t) for t in strays if emotion_of(t) is not None]
+            if meant:
+                self._pending = meant[-1]
         text, grammar = self._marks(text)
         if not _SPEAKABLE.search(text):
             return Chunk("", emotion if emotion is not None else self._emotion)
@@ -194,7 +216,11 @@ class SentenceChunker:
         than one if the model repeats."""
         while True:
             if (m := _TAG_AT_START.match(self._buf)) is not None:
-                self._pending = m.group(1)
+                meant = emotion_of(m.group(1))
+                if meant is None:
+                    self.stray_tags.append(m.group(1).lower())   # a mood we never offered
+                else:
+                    self._pending = meant
             elif (m := _TARGET_AT_START.match(self._buf)) is not None:
                 self._target = m.group(1).strip() or self._target
             elif (m := _USED_AT_START.match(self._buf)) is not None:
@@ -214,4 +240,7 @@ class SentenceChunker:
 def strip_tag(text: str) -> tuple[str, str]:
     """Convenience for non-streaming callers: (text without a leading tag, emotion)."""
     m = _TAG_AT_START.match(text)
-    return (text[m.end() :], m.group(1)) if m else (text, NEUTRAL)
+    if not m:
+        return text, NEUTRAL
+    meant = emotion_of(m.group(1))
+    return text[m.end():], (NEUTRAL if meant is None else meant)

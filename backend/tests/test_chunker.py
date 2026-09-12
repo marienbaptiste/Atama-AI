@@ -165,9 +165,35 @@ def test_mid_sentence_tag_never_reaches_tts_and_applies_to_the_next_sentence():
 
 
 def test_unknown_bracket_text_is_left_alone():
-    """Only the four known tags are special; anything else is the model's words."""
+    """Only the known tags are special; anything else is the model's words."""
     out, c = run(["[こんにちは]と言います。"])
     assert texts(out) == ["[こんにちは]と言います。"] and c.stray_tags == []
+    out, c = run(["[note]と言います。"])
+    assert texts(out) == ["[note]と言います。"] and c.stray_tags == []
+
+
+def test_a_capitalised_tag_is_the_same_tag():
+    out, c = run(["[Happy]よくできました。[SERIOUS]でも違います。"])
+    assert out == [Chunk("よくできました。", "happy"), Chunk("でも違います。", "serious")]
+    assert c.stray_tags == []
+    out, _ = run(["[Hap", "py]", "どうぞ。"])
+    assert out == [Chunk("どうぞ。", "happy")]
+
+
+def test_a_talkinghead_mood_we_never_offered_is_stripped_and_recorded():
+    """`[sad]`, `[angry]`: the model has seen the library. A bracket must never be spoken
+    (ADR-020), and the emotion in force is left alone — there is no voice for it."""
+    out, c = run(["[happy]いいね。[sad]だめ。[Angry]もう。"])
+    assert texts(out) == ["いいね。", "だめ。", "もう。"]
+    assert [x.emotion for x in out] == ["happy", "happy", "happy"]
+    assert c.stray_tags == ["sad", "angry"]
+    out, c = run(["だめ[sad]。"])
+    assert texts(out) == ["だめ。"] and c.stray_tags == ["sad"]
+
+
+def test_neutral_resets_the_emotion():
+    out, _ = run(["[happy]いいね。[neutral]そうです。"])
+    assert [x.emotion for x in out] == ["happy", NEUTRAL]
 
 
 def test_repeated_leading_tags_keep_the_last():
@@ -199,4 +225,6 @@ def test_no_chunk_ever_contains_a_bracket_tag():
 # ---------------------------------------------------------------- convenience
 def test_strip_tag_helper():
     assert strip_tag("[surprised]すごい") == ("すごい", "surprised")
+    assert strip_tag("[Surprised]すごい") == ("すごい", "surprised")
+    assert strip_tag("[sad]すごい") == ("すごい", NEUTRAL)
     assert strip_tag("すごい") == ("すごい", NEUTRAL)

@@ -445,3 +445,114 @@ def test_a_compaction_mid_turn_is_recorded_and_announced():
     asyncio.run(loop._turn(np.zeros(16000, dtype=np.float32)))
     assert [e.active for e in seen] == [True, False]
     assert loop.timings[-1].compaction_ms == 14_000.0
+
+
+# ------------------------------------------------ releasing the key mid-unwind (2026-09-12)
+class StickyBrain(SlowBrain):
+    """A turn that takes a while to honour its cancellation, like one joining a thread."""
+
+    def __init__(self, gate, linger_s: float):
+        super().__init__(gate)
+        self.linger_s = linger_s
+
+    async def turn(self, text):
+        self.turns.append(text)
+        try:
+            await self.gate.wait()
+        except asyncio.CancelledError:
+            await asyncio.sleep(self.linger_s)
+            raise
+        yield TextDelta("はい。")
+        yield TurnComplete(text="はい。")
+
+
+def test_releasing_the_key_while_the_last_turn_unwinds_waits_then_proceeds():
+    """`ptt_end` used to drop the utterance silently when the cancelled task was not yet done."""
+    async def scenario():
+        gate = asyncio.Event()
+        brain, voice, vad = StickyBrain(gate, linger_s=0.05), FakeVoice(), FakeVad()
+        loop = VoiceLoop(turn_mode="ptt", brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice,
+                         handover_timeout_s=1.0)
+        loop.ptt_begin(); loop._ptt_buf.extend(speech(1.0)); loop.ptt_end()
+        await asyncio.sleep(0.01)
+        loop._speaking = True
+        loop.ptt_begin()                              # barge in: the old task is cancelled...
+        loop._ptt_buf.extend(speech(1.0))
+        loop.ptt_end()                                # ...and still unwinding when the key comes up
+        assert loop._turn_task is not None
+        gate.set()
+        await loop._turn_task
+        assert brain.turns == ["こんにちは。", "こんにちは。"]   # the second utterance was heard
+        assert [c.text for c in voice.said] == ["はい。"]
+
+    asyncio.run(scenario())
+
+
+def test_a_turn_that_will_not_stop_in_time_is_reported_not_swallowed():
+    async def scenario():
+        gate = asyncio.Event()
+        brain, voice, vad = StickyBrain(gate, linger_s=0.3), FakeVoice(), FakeVad()
+        notices, states = [], []
+        loop = VoiceLoop(turn_mode="ptt", brain=brain, stt=FakeStt(accepted()), vad=vad, voice=voice,
+                         handover_timeout_s=0.05, on_notice=notices.append, on_state=states.append)
+        loop.ptt_begin(); loop._ptt_buf.extend(speech(1.0)); loop.ptt_end()
+        await asyncio.sleep(0.01)
+        loop._speaking = True
+        loop.ptt_begin()
+        stuck = brain.turns[:]
+        loop._ptt_buf.extend(speech(1.0)); loop.ptt_end()
+        await loop._turn_task
+        assert brain.turns == stuck                   # dropped...
+        assert notices and "not heard" in notices[0]  # ...and said so
+        assert states[-1] == "listening"
+        await asyncio.sleep(0.4)                      # let the sticky task finish unwinding
+
+    asyncio.run(scenario())
+
+
+# --------------------------------------------- honest voice-to-voice (spec §10, 2026-09-12)
+class PlayingVoice(FakeVoice):
+    """A queue that knows when its first sentence started playing, like the real one."""
+
+    def __init__(self):
+        super().__init__()
+        self.first_play_at = None
+
+    def resume(self):
+        super().resume()
+        self.first_play_at = None
+
+    async def drain(self):
+        # Playback starts after say() returned with the audio in hand: the hop to the page.
+        await asyncio.sleep(0.02)
+        if self.first_play_at is None and self.said:
+            import time
+            self.first_play_at = time.monotonic()
+        await super().drain()
+
+
+def test_first_play_is_stamped_from_the_queue_and_is_the_voice_to_voice_number():
+    loop = VoiceLoop(turn_mode="vad", brain=FakeBrain(), stt=FakeStt(accepted()), vad=FakeVad(),
+                     voice=PlayingVoice())
+    asyncio.run(loop._turn(np.zeros(16000, dtype=np.float32)))
+    t = loop.timings[-1]
+    assert t.first_audio_ms > 0 and t.first_play_ms >= t.first_audio_ms
+    assert t.voice_to_voice_ms() == t.first_play_ms
+
+
+def test_a_voice_that_cannot_report_playback_falls_back_to_audio_ready():
+    loop, *_ = loop_with(accepted())                  # FakeVoice: no first_play_at at all
+    asyncio.run(loop._turn(np.zeros(16000, dtype=np.float32)))
+    t = loop.timings[-1]
+    assert t.first_play_ms == 0.0 and t.voice_to_voice_ms() == t.first_audio_ms > 0
+
+
+def test_quiet_over_floor_and_the_ceiling_are_the_stts_and_the_loops_own():
+    class ConfiguredStt(FakeStt):
+        quiet_rms = 0.02
+
+    loop = VoiceLoop(turn_mode="vad", brain=FakeBrain(), stt=ConfiguredStt(accepted()), vad=FakeVad(),
+                     voice=FakeVoice(), quiet_over_floor=2.0)
+    assert loop.quiet_rms() == 0.02                   # the configured ceiling, not the module constant
+    loop._floor = 0.005
+    assert loop.quiet_rms() == pytest.approx(0.01)    # floor x the configured factor

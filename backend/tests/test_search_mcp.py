@@ -120,6 +120,20 @@ def test_unknown_category_falls_back_to_general():
     assert "categories=general" in calls[0][1]
 
 
+def test_language_is_allowlisted_like_category():
+    """`language` goes straight into the SearxNG query and the model chooses it: only ja/en/all."""
+    calls = install(lambda r: httpx.Response(200, json=SAMPLE))
+    call(query="x", language="en")
+    assert "language=en" in calls[-1][1]
+    call(query="x", language="all")
+    assert "language=all" in calls[-1][1]
+    call(query="x", language="xx&safesearch=0")
+    assert "language=ja" in calls[-1][1] and "safesearch" not in calls[-1][1]
+    call(query="x")
+    assert "language=ja" in calls[-1][1]
+    assert set(m.LANGUAGES) == {"ja", "en", "all"} and m.DEFAULT_LANGUAGE in m.LANGUAGES
+
+
 def test_403_explains_the_searxng_setting():
     install(lambda r: httpx.Response(403, text="forbidden"))
     out = call(query="x")

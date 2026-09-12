@@ -1,4 +1,18 @@
-"""`make check-secrets`: no token-shaped strings and no current secret values in the tracked tree."""
+"""`make check-secrets`: no token-shaped strings and no current secret values in the tracked tree.
+
+Spec §11: greps the tracked (and untracked-but-not-ignored) tree for token-shaped strings, for
+every value currently in `settings.json`, and for every value in a leftover `.env` — which
+nothing reads any more (ADR-022 amendment), so one still holding a secret is reported too.
+
+Token shapes, by service (backend/srs/http.py builds the headers):
+- WaniKani: the personal access token is a UUID v4; its `Authorization: Bearer <uuid>` header.
+  A bare UUID is not enough — VOICEVOX's speaker list is full of them (fixtures/voicevox) — so a
+  UUID v4 counts when the line also says wanikani/token, or when it sits in an SRS fixture or a
+  document, where no UUID has any business being.
+- Bunpro: `Authorization: Token token=<token>`; the token's own alphabet is not documented, so
+  the header echo and a `bunpro … token = <24+ chars with a digit>` assignment are what is
+  matched (the digit keeps identifier-shaped values such as the opt-in parameter name out).
+"""
 from __future__ import annotations
 
 import re
@@ -11,9 +25,16 @@ from backend import config
 PATTERNS = [
     re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),
     re.compile(r"Bearer [A-Za-z0-9_-]{24,}"),
-    re.compile(r"Token token=[A-Za-z0-9_-]{16,}"),
-    re.compile(r"eyJ[A-Za-z0-9_-]{30,}\.[A-Za-z0-9_-]{20,}"),  # JWT
+    re.compile(r"Token token=[A-Za-z0-9_-]{16,}"),                    # Bunpro header echo
+    re.compile(r"eyJ[A-Za-z0-9_-]{30,}\.[A-Za-z0-9_-]{20,}"),         # JWT
 ]
+UUID_V4 = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b", re.I)
+WANIKANI_CONTEXT = re.compile(r"wanikani|token", re.I)
+BUNPRO_ASSIGNMENT = re.compile(r"bunpro[^\n]{0,60}?token\w*[\"']?\s*[:=]\s*[\"']?([A-Za-z0-9_-]{24,})", re.I)
+#: Where a bare UUID is a leak even without a word of context beside it.
+UUID_ANYWHERE_DIRS = ("backend/tests/fixtures/wanikani/", "backend/tests/fixtures/bunpro/")
+UUID_ANYWHERE_SUFFIXES = (".md", ".txt", ".rst")
+SKIP_SUFFIXES = {".glb", ".png", ".jpg", ".wav", ".bin", ".ico", ".woff", ".woff2"}
 
 
 def tracked_files(root: Path) -> list[Path]:
@@ -22,24 +43,72 @@ def tracked_files(root: Path) -> list[Path]:
     return [root / line for line in res.stdout.splitlines() if line]
 
 
-def main() -> int:
-    root = Path(__file__).resolve().parents[2]
-    secrets = list(config.load().secrets().values())
+def suspicious(line: str, rel_posix: str, secrets: list[str] = ()) -> str | None:
+    """Why this line may hold a secret, or None."""
+    if any(s in line for s in secrets):
+        return "a configured secret value"
+    if any(p.search(line) for p in PATTERNS):
+        return "token-shaped string"
+    if UUID_V4.search(line):
+        if WANIKANI_CONTEXT.search(line):
+            return "UUID next to wanikani/token (WaniKani token shape)"
+        if rel_posix.startswith(UUID_ANYWHERE_DIRS) or rel_posix.endswith(UUID_ANYWHERE_SUFFIXES):
+            return "UUID in an SRS fixture or a document (WaniKani token shape)"
+    m = BUNPRO_ASSIGNMENT.search(line)
+    if m and any(ch.isdigit() for ch in m.group(1)):
+        return "Bunpro token assignment"
+    return None
+
+
+def scan(root: Path, files: list[Path], secrets: list[str]) -> list[str]:
     hits: list[str] = []
-    for path in tracked_files(root):
-        if not path.is_file() or path.suffix in {".glb", ".png", ".jpg", ".wav", ".bin"}:
+    for path in files:
+        if not path.is_file() or path.suffix in SKIP_SUFFIXES:
             continue
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
+        rel = path.relative_to(root).as_posix()
         for i, line in enumerate(text.splitlines(), 1):
-            if any(p.search(line) for p in PATTERNS) or any(s in line for s in secrets):
-                hits.append(f"{path.relative_to(root).as_posix()}:{i}")
+            why = suspicious(line, rel, secrets)
+            if why:
+                hits.append(f"{rel}:{i}: {why}")
+    return hits
+
+
+def dotenv_report(root: Path) -> tuple[str | None, list[str]]:
+    """(message, secret values) for a leftover `.env`: None when there is none; the values are
+    added to the scan so a token that lived there is caught in the tree too."""
+    path = root / ".env"
+    if not path.is_file():
+        return None, []
+    values = config.read_dotenv(path)
+    leaked = [v for k, v in values.items() if k in config.SECRET_KEYS and v]
+    if leaked:
+        return (f"FAIL: {path.name} still holds a value for {len(leaked)} secret key(s) that nothing reads any "
+                "more. Import it (python -m backend.tools.migrate_env) and delete the file (spec §11).", leaked)
+    return (f"warning: a leftover {path.name} at the repo root; nothing reads it any more (ADR-022). "
+            "Compose's SEARXNG_SECRET is generated by the launcher, so the file can go.", [])
+
+
+def main() -> int:
+    root = Path(__file__).resolve().parents[2]
+    try:
+        secrets = list(config.load().secrets().values())
+    except config.ConfigError as exc:
+        # The pre-commit hook runs this: a malformed settings.json is one line, not a traceback.
+        sys.exit(f"check-secrets: cannot read the settings: {exc}")
+    message, leaked = dotenv_report(root)
+    secrets.extend(v for v in leaked if v not in secrets)
+    hits = scan(root, tracked_files(root), secrets)
+    if message:
+        print(f"check-secrets: {message}", file=sys.stderr)
     if hits:
         print("check-secrets: possible secret in tracked/untracked-unignored files:", file=sys.stderr)
         for h in hits:
             print("  " + h, file=sys.stderr)
+    if hits or leaked:
         return 1
     print("check-secrets: OK")
     return 0

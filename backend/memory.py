@@ -33,11 +33,15 @@ import datetime as dt
 import json
 import re
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from backend import config
+
+#: The words the tutor reads over each memory tier — a file, like every other instruction the
+#: model reads (ADR-012). See render() and memory_headings().
+HEADINGS_FILE = config.REPO_ROOT / "prompts" / "memory.md"
 
 #: How many past sessions' topics to show. Enough to stop a week of lessons opening on the same
 #: typhoon; few enough to stay a single short line in the prompt.
@@ -89,6 +93,10 @@ class Memory:
     #: <state>/memory — what is true of the student, whoever is teaching. Defaults to `root`, so a
     #: Memory built by hand (tests, tools) keeps everything in one directory as before.
     shared: Path | None = None
+    #: The calendar day the lesson began. Fixed at construction so one lesson is ONE log file:
+    #: taking today's date at each write split a lesson crossing midnight into two files with
+    #: the same session id, and once the first was summarised the second never was (2026-09-12).
+    date: str = field(default_factory=lambda: dt.date.today().isoformat())
 
     @classmethod
     def from_config(cls, cfg, session_id: str = "", persona: str | None = None) -> "Memory":
@@ -159,7 +167,7 @@ class Memory:
         return self.root / "topics.jsonl"
 
     def log_path(self) -> Path:
-        return self.sessions / f"{dt.date.today().isoformat()}-{self.session_id}.jsonl"
+        return self.sessions / f"{self.date}-{self.session_id}.jsonl"
 
     # --------------------------------------------------------------- turn log
     def record_turn(self, *, student: str, tutor_sentences: list[dict[str, Any]],
@@ -182,8 +190,8 @@ class Memory:
             "tutor": {"text": "".join(s.get("text", "") for s in tutor_sentences),
                       "sentences": tutor_sentences},
             "tools": tools or [],
-            "latency": {"ttft_ms": None, "first_audio_ms": None, "voice_to_voice_ms": None,
-                        **(latency or {})},
+            "latency": {"ttft_ms": None, "first_audio_ms": None, "first_play_ms": None,
+                        "voice_to_voice_ms": None, **(latency or {})},
             "usage": usage or {},
         }
         line = json.dumps(record, ensure_ascii=False)
@@ -234,26 +242,24 @@ class Memory:
         like it did before memory existed (ROADMAP subsystem 18).
         """
         parts: list[str] = []
+        say = memory_headings()
         student_facts, tutor_facts = self.facts()
         if student_facts or tutor_facts:
-            known = ["WHAT YOU TWO ALREADY KNOW — this is a person you have taught before, so talk "
-                     "like it: use their name, ask after what is going on in their life, and never "
-                     "contradict anything here about yourself."]
+            known = [say["known"]]
             if student_facts:
-                known.append("Them: " + "; ".join(_keep(student_facts, STUDENT_FACTS)))
+                known.append(say["known_student"] + " " + "; ".join(_keep(student_facts, STUDENT_FACTS)))
             if tutor_facts:
-                known.append("You, as they know you: " + "; ".join(_keep(tutor_facts, TUTOR_FACTS)))
+                known.append(say["known_tutor"] + " " + "; ".join(_keep(tutor_facts, TUTOR_FACTS)))
             parts.append("\n".join(known))
         brief = _read(self.brief_md).strip()
         if brief:
-            parts.append("LAST SESSION\n" + brief)
+            parts.append(say["brief"] + "\n" + brief)
         topics = self.recent_topics()
         if topics:
-            parts.append("RECENTLY DISCUSSED — do not open on these; follow one up only if the "
-                         "student raises it: " + "、".join(topics))
+            parts.append(say["topics"] + " " + "、".join(topics))
         notes = _strip_comments(_read(self.student_md)).strip()
         if notes:
-            parts.append("ABOUT THE STUDENT\n" + notes)
+            parts.append(say["notes"] + "\n" + notes)
         return "\n\n".join(parts)
 
     # ------------------------------------------------------------ summarising
@@ -264,11 +270,15 @@ class Memory:
         back as their own. Logs written before personas were split carry no name, and are taken
         by whoever is teaching now — there was only one memory then.
         """
-        done = {row.get("session") for row in _read_jsonl(self.topics_jsonl)}
+        # Keyed by (date, session), the two things a log's name carries and every topics row has
+        # always written: a lesson that an older writer split across midnight is two files with
+        # one session id, and the second must not read as done because the first is.
+        done = {(str(row.get("date") or ""), str(row.get("session") or ""))
+                for row in _read_jsonl(self.topics_jsonl)}
         pending = []
         for log in sorted(self.sessions.glob("*.jsonl")):
-            session = log.stem.split("-", 3)[-1]
-            if not session or session in done or session == self.session_id:
+            session, date = log.stem.split("-", 3)[-1], log.stem[:10]
+            if not session or (date, session) in done or session == self.session_id:
                 continue
             if (who := _log_persona(log)) and self.persona and who != self.persona:
                 continue
@@ -401,16 +411,48 @@ class Memory:
 
 
 # ---------------------------------------------------------------------- helpers
+def memory_headings(path: Path = HEADINGS_FILE) -> dict[str, str]:
+    """The `## key` blocks of prompts/memory.md, comments stripped. A key the file lacks renders
+    as the key itself in capitals — a visible placeholder, never a silent blank."""
+    out: dict[str, str] = {}
+    key = None
+    for line in _strip_comments(_read(path)).splitlines():
+        if line.startswith("## "):
+            key = line[3:].strip()
+            out[key] = ""
+        elif key is not None and line.strip():
+            out[key] = (out[key] + " " + line.strip()).strip()
+    return _Headings(out)
+
+
+class _Headings(dict):
+    def __missing__(self, key: str) -> str:
+        return str(key).upper()
+
+
 def has_a_lesson(excerpt: str) -> bool:
     """Whether a transcript is worth a summariser call: the student has to have said something.
     Her own greeting to an empty room is not a lesson."""
     return any(line.startswith("STUDENT: ") and line[9:].strip() for line in excerpt.splitlines())
 
 
-def excerpt_of(log: Path, limit: int = EXCERPT_MAX_CHARS) -> str:
-    """Text-only transcript of one session, newest turns kept if it must be cut."""
+def launch_stamp() -> str:
+    """Now, in the form every turn record's `ts` has — the `since` a handoff is built from."""
+    return dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+
+
+def excerpt_of(log: Path, limit: int = EXCERPT_MAX_CHARS, since: str | None = None) -> str:
+    """Text-only transcript of one session, newest turns kept if it must be cut.
+
+    `since` (a `launch_stamp()`) keeps only the turns recorded from that moment on: a rotation
+    handoff must carry THIS launch's lesson, not an earlier one that happens to share the log —
+    told "do not greet again" over a lesson that ended hours ago, a replacement spawned before the
+    first turn never greeted at all (2026-09-12). Empty when nothing has happened since.
+    """
     lines: list[str] = []
     for row in _read_jsonl(log):
+        if since and str(row.get("ts") or "") < since:
+            continue
         student = (row.get("student") or {}).get("text") or ""
         tutor = (row.get("tutor") or {}).get("text") or ""
         if student:

@@ -3,7 +3,8 @@
  *  labels, one-line help, the right control for each setting. A key not curated here still appears
  *  under Advanced with its raw name, so a new setting is never hidden, only unpolished. Secrets
  *  arrive as {set, hint} and are never shown or sent back; a blank box means "leave it". Keys set
- *  in .env are locked, because .env wins at launch.
+ *  as ATAMA_* environment variables are locked, because the environment wins over settings.json
+ *  at launch (ADR-022; there is no .env any more).
  *
  *  Sign-in fields are listed from the schema (`secret`), never by key: spec §0's build-time grep
  *  fails on the SRS token key names anywhere in frontend/src, and the server supplies the labels. */
@@ -259,7 +260,7 @@ function kindOf(s: Field): Kind {
 const CONTROLS: Record<Kind, (s: Field, it: Item, v: unknown, off: boolean, options?: Option[]) => string> = {
   secret(s, _it, _v, off) {
     const st = (values()[s.key] || {}) as { set?: boolean };
-    const ph = off ? "kept in your .env file" : st.set ? "paste a new one to replace it" : "paste it here";
+    const ph = off ? "set in the environment (ATAMA_*), not here" : st.set ? "paste a new one to replace it" : "paste it here";
     return `<div class="secret"><span class="state${st.set ? " yes" : ""}">${st.set ? "connected" : "not set"}</span>`
       + `<input type="password" autocomplete="off" data-k="${s.key}" placeholder="${esc(ph)}" value="${esc(pending[s.key] || "")}"${dis(off)}></div>`;
   },

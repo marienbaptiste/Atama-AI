@@ -3,12 +3,18 @@
 #
 #   docker compose up -d
 #
+# Images are PINNED (ADR-015: verified interfaces, not moving tags). Bump deliberately, and
+# re-verify what the pin protects (VOICEVOX's OpenAPI, SearXNG's settings.yml keys).
 
 services:
   searxng:
     # Self-hosted metasearch: gives the tutor a way to find something to talk about without
     # an API key or a third-party account (ADR-028).
-    image: searxng/searxng:latest
+    # Pinned 2026-09-12 to the build that was pulled as :latest on the target machine
+    # (org.opencontainers.image.version 2026.9.8-3fdc6d753, index digest
+    # sha256:3547509b419cd6a67333d6d68bd1ffad8d46d3669d82e7a7bd538f7b45827432), the one
+    # docker/searxng/settings.yml was written against.
+    image: searxng/searxng:2026.9.8-3fdc6d753
     container_name: atama-searxng
     ports:
       - "127.0.0.1:8888:8080"
@@ -36,7 +42,9 @@ services:
   voicevox:
     # Japanese TTS. CPU build on purpose (ADR-005): the GPU belongs to Whisper, and CPU
     # synthesis already fits the 0.40 s first-chunk budget for the short sentences Sensei speaks.
-    image: voicevox/voicevox_engine:cpu-latest
+    # Pinned to the engine version V0.3 verified against /openapi.json (0.25.2, 2026-09-09;
+    # backend/constants.py). The tag exists on Docker Hub (manifest checked 2026-09-12).
+    image: voicevox/voicevox_engine:cpu-0.25.2
     container_name: atama-voicevox
     ports:
       - "127.0.0.1:50021:50021"

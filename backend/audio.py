@@ -505,7 +505,8 @@ def capture_resilient(device: Any = None, frame_samples: int = FRAME_SAMPLES,
 
 
 def to_pcm16(frame: np.ndarray) -> bytes:
-    """float32 [-1, 1] -> PCM16 bytes, the wire format of spec §8's `audio_chunk`."""
+    """float32 [-1, 1] -> PCM16 bytes: what the local sink plays and the WAV writers store (the
+    page receives whole sentences as WAV inside `speak`, spec §8 — not a per-frame stream)."""
     return (np.clip(frame, -1.0, 1.0) * 32767.0).astype("<i2").tobytes()
 
 

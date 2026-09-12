@@ -11,6 +11,9 @@ import pytest
 
 from backend import config, models, settings_view as sv
 
+#: The socket admits a client with no Origin header only from loopback (backend/app.py).
+LOOPBACK = ("127.0.0.1", 50000)
+
 
 @pytest.fixture(autouse=True)
 def no_dotenv(monkeypatch):
@@ -96,7 +99,7 @@ def test_the_socket_opens_with_a_masked_echo_and_saves_through_it(store, monkeyp
 
     monkeypatch.setattr(config, "env_overrides", lambda environ=None: {})
     store.write_text(json.dumps({"wanikani_token": "wk-secret-abcdef1234"}), encoding="utf-8")
-    with TestClient(app.build(app.Hub())) as client, client.websocket_connect("/ws") as ws:
+    with TestClient(app.build(app.Hub()), client=LOOPBACK) as client, client.websocket_connect("/ws") as ws:
         first = ws.receive_json()
         assert first["type"] == "settings" and len(first["fields"]) == len(config.KEYS)
         assert "wk-secret-abcdef1234" not in json.dumps(first, ensure_ascii=False)
@@ -140,7 +143,7 @@ def test_a_live_key_save_reaches_the_running_session(store, monkeypatch):
     hub = app.Hub()
     applied = []
     hub.on_settings = applied.append
-    with TestClient(app.build(hub)) as client, client.websocket_connect("/ws") as ws:
+    with TestClient(app.build(hub), client=LOOPBACK) as client, client.websocket_connect("/ws") as ws:
         ws.receive_json()
         ws.send_json({"type": "settings", "values": {"AUDIO_INPUT_DEVICE": "Headset"}})
         ws.receive_json()
@@ -155,7 +158,7 @@ def test_a_page_that_connects_late_still_hears_the_last_mic_status(store, monkey
     monkeypatch.setattr(config, "env_overrides", lambda environ=None: {})
     hub = app.Hub()
     asyncio.run(hub.status("microphone", "missing", "no microphone found"))
-    with TestClient(app.build(hub)) as client, client.websocket_connect("/ws") as ws:
+    with TestClient(app.build(hub), client=LOOPBACK) as client, client.websocket_connect("/ws") as ws:
         assert ws.receive_json()["type"] == "settings"
         status = ws.receive_json()
         assert status["type"] == "service_status" and status["state"] == "missing"
@@ -174,6 +177,6 @@ def test_mic_level_is_part_of_the_protocol_and_only_sent_to_watchers():
     hub.send = capture
     asyncio.run(hub.level(0.01, 0.9))
     assert sent == []                                   # no page open: nothing built or sent
-    hub._clients.add(object())
+    hub.attach(object())
     asyncio.run(hub.level(0.0123456, 0.9))
     assert sent == [{"type": "mic_level", "level": 0.01235, "speech": 0.9}]

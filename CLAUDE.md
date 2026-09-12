@@ -20,9 +20,15 @@ brain is the `claude` CLI running headless as a persistent subprocess.
 
 **Current state: M0 done, M1 done, M2 declared done by the user (2026-09-10, ADR-034). M4 then M3 by user directive: M4's code is complete (its gates are live checks, not met); M3's frontend is built (2026-09-11, `frontend/`) — gate M3a met, M3b–M3f are live checks, not met.** The page's message types are generated: after changing `backend/models.py`, run `python -m backend.tools.gen_protocol`. The read-only gate, config/settings store, status registry,
 GET-only SRS client, WaniKani + Bunpro fetchers, profile renderer, Bunpro MCP server, sentence
-chunker, prompt assembly, the `Brain` interface with its Claude CLI provider, and the text REPL
+chunker, prompt assembly, the `Brain` interface with its Claude CLI provider, the text REPL and
+**`make doctor`** (`backend/tools/doctor.py`, written 2026-09-12; `--live`, `--skip-claude`)
 all exist with tests (`make test`). Verified live: Sensei answers in character, uses the MCP
-tools, and weaves in the student's ghost reviews.
+tools, and weaves in the student's ghost reviews. **The orchestrator is split (2026-09-12):**
+`backend/repl.py` is the CLI entry only; `backend/orchestrator.py` holds the `Lesson` (wiring,
+rotation, resync, persona switch), `backend/page_control.py` the browser control dispatch, and
+`backend/terminal.py` the console rendering. What was fixed today but not yet seen on the real
+machine is the **"Live checks pending (2026-09-12)"** list in `ROADMAP.md` — read it before
+claiming any of those work.
 
 **M2: declared done by the user (ADR-034) — code-complete, some checks deferred to the end.** `vad.py`, `stt.py`, `tts_voicevox.py`,
 `visemes.py`, `audio.py` and `voice_loop.py` all exist with hermetic tests, and the voice loop
@@ -38,7 +44,9 @@ the user declared M2 done with M2a, M2b's silence check and M2c's overlap and em
 **deferred to the end of the project, not met** (ADR-034). Do not describe them as met.
 
 Run the tutor: `.venv/Scripts/python -m backend.repl` (`--refresh` to re-sync SRS, `--no-srs`
-offline, `--speak` for the tutor voice, `--listen` for the mic — `--listen` implies `--speak`).
+offline, `--speak` for the tutor voice, `--listen` for the mic — `--listen` implies `--speak`;
+`--browser` sends her voice to the page, `--no-open` skips her opening line). Check the machine
+first with `make doctor`.
 
 **Also built ahead of its milestone, by user directive:** the browser avatar with push-to-talk
 over a WebSocket (`backend/app.py`, `.
@@ -126,8 +134,10 @@ ready marker before the first turn; never `sleep` for it** (ROADMAP findings, 20
 **Never read a `.env` and never send a stored secret back to the browser.** The settings page is
 the configuration interface and `config.py`'s schema is the whole key inventory; `ATAMA_*`
 environment variables are an optional override for automation; secrets echo as `{set, hint}`
-(ADR-022, amended 2026-09-12 — the app stopped reading `.env` entirely; the one at the repo root
-belongs to docker compose).
+(ADR-022, amended 2026-09-12 — the app stopped reading `.env` entirely, and there is none for
+docker compose either: `backend/tools/up.py` generates `SEARXNG_SECRET` into the per-user state
+directory and passes it through the process environment; `make check-secrets` flags a leftover
+`.env`).
 
 **Never swap a pinned stack piece without asking** — no React, no cloud TTS, no cloud STT, no GPU
 VOICEVOX. Each is an ADR with reasoning; if you think one is wrong, propose superseding it.

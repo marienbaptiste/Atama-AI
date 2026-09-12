@@ -79,3 +79,40 @@ describe("the talk key", () => {
     expect(t.talking).toBe(false);
   });
 });
+
+describe("a hold that outlives its socket (2026-09-12)", () => {
+  it("cancels rather than commits when the page loses focus mid-hold", () => {
+    // `blur` is bound to cancel(): a capture cut by an alt-tab is a bad capture (spec §9b).
+    const { t, sent } = talk();
+    t.press(true);
+    t.cancel();
+    expect(sent).toEqual(["start", "cancel"]);
+  });
+
+  it("owes the next socket a cancel when the link died during a hold", () => {
+    let up = true;
+    const { t, sent } = talk({ connected: () => up, send: a => { if (up) sent.push(a); return up; } });
+    t.press(true);
+    up = false;
+    t.reset();                                   // the socket closed with the key down
+    expect(t.talking).toBe(false);
+    expect(sent).toEqual(["start"]);             // nothing could be sent
+    up = true;
+    t.relink();                                  // the new socket opened
+    expect(sent).toEqual(["start", "cancel"]);
+    t.relink();
+    expect(sent).toEqual(["start", "cancel"]);   // owed once
+  });
+
+  it("owes nothing when there was no hold, or the cancel went through", () => {
+    const { t, sent } = talk();
+    t.reset();
+    t.relink();
+    expect(sent).toEqual([]);
+    t.press(true);
+    t.reset();                                   // the link still carried it
+    expect(sent).toEqual(["start", "cancel"]);
+    t.relink();
+    expect(sent).toEqual(["start", "cancel"]);
+  });
+});

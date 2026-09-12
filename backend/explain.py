@@ -17,7 +17,6 @@ from typing import Any, Awaitable, Callable
 
 from backend import brain as brain_api
 from backend import model_tiers
-from backend.brain import TextDelta, TurnComplete
 
 LANGUAGES = {"en": "English", "ja": "Japanese"}
 #: An answer nobody has after this long is not worth the wait; the page says so and stays usable.
@@ -89,14 +88,8 @@ class Explainer:
             return await self._ask(prompt)
         async with self._lock:               # one question at a time: it is one process
             worker = await self._ready()
-            out: list[str] = []
-            async for event in worker.turn(prompt):
-                if isinstance(event, TextDelta):
-                    out.append(event.text)
-                elif isinstance(event, TurnComplete):
-                    break
             self._turns += 1
-            return "".join(out)
+            return await brain_api.reply_text(worker, prompt)   # raises on a failed turn
 
     async def _ready(self) -> Any:
         if self._worker is not None and self._turns < MAX_TURNS:

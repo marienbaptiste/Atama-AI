@@ -39,8 +39,9 @@ const chat = new Chat($("chat-list"), (point, mark) => showPoint(point, mark),
 //: EXPLAIN_LANGUAGE: the language a grammar explanation comes back in (a translation is English).
 let explainLang: "en" | "ja" = "en";
 
+//: Never rejects: without TalkingHead she is a voice (avatar.ts), and the chat still fills.
 const avatarReady: Promise<Avatar> = Avatar.create($("stage"), onSentence);
-avatarReady.then(a => { avatar = a; mountRigPanel(a); },
+avatarReady.then(a => { avatar = a; if (a.available) mountRigPanel(a); },
                  err => log(`the avatar could not load: ${esc(err)}`, "err"));
 
 /** Her sentence, the moment its audio starts: the face has just been set (speech.ts). */
@@ -77,20 +78,16 @@ const handlers: Handlers = {
     log(`<b>you:</b> ${esc(m.text)}` + (m.accepted ? "" : ` <i>(discarded: ${esc(m.reason)})</i>`),
         m.accepted ? "you" : "err");
   },
-  // Not sent today: `speak` carries each sentence, shown as its audio starts.
-  assistant_text: m => log(`<b>her:</b> ${esc(m.text)}`, "her"),
   speak: async m => {
     const a = await avatarReady;
-    await a.loaded;                                 // she cannot speak before her model is on stage
+    await a.loaded;                                 // her model is on stage, or she is a voice only
     await a.player.play(m);
   },
-  emotion: async m => (await avatarReady).emote(m.emotion),
   bargein: async m => {
     (await avatarReady).stop(m.turn);
     bargedIn();
     if (mode !== "ptt") log("she heard you and stopped");
   },
-  srs_profile: m => { $("profile").textContent = m.text; },
   service_status: m => onService(m),
   settings: m => onSettings(m),
   mic_level: m => onLevel(m.level, m.speech),
@@ -115,6 +112,9 @@ const LOADING: Record<string, (m: ServiceStatusMsg) => string | null> = {
 //: (§5b), so without this the bubble came back mid-lesson saying she was thinking of how to start
 //: (user, 2026-09-12).
 let hasSpoken = false;
+//: The "getting everything ready…" bubble belongs to a fresh page, once: a reconnect is not a
+//: launch, and the status replay that follows it names what is really still loading.
+let welcomed = false;
 
 function waitingFor(m: ServiceStatusMsg): void {
   if (hasSpoken) return;
@@ -218,7 +218,7 @@ function onLevel(level: number, speech: number): void {
 function showTiming(m: TimingMsg): void {
   if (m.barged_in) return;                          // an interrupted turn was not slow
   const s = (v: number | null) => (v == null ? "-" : (v / 1000).toFixed(1) + " s");
-  log(`last turn: <b>${s(m.first_audio_ms)}</b> until her voice (listening ${s(m.stt_ms)}, `
+  log(`last turn: <b>${s(m.first_play_ms || m.first_audio_ms)}</b> until her voice (listening ${s(m.stt_ms)}, `
     + `first sentence ${s(m.first_chunk_ms)}` + (m.thinking_chars ? `, thought ${m.thinking_chars} chars` : "")
     + ")" + (m.p90_ms != null ? ` · session p90 ${s(m.p90_ms)} of 5.0 s over ${m.turns}` : ""));
 }
@@ -314,7 +314,9 @@ const link = new Link(handlers, {
     // A reconnect is a new socket: tell the server again that this page can play sound.
     if (unlocked) link.send({ type: "control", action: "ready" });
     live("connected — hold SPACE, or the button, and speak", "on");
-    if (!hasSpoken) chat.loading("getting everything ready…");   // until her first sentence lands
+    if (!welcomed && !hasSpoken) chat.loading("getting everything ready…");   // until her first sentence lands
+    welcomed = true;
+    talk.relink();                                  // a hold cut by the last socket is cancelled
     talk.render();
     settings.refresh();
   },

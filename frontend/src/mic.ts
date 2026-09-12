@@ -15,7 +15,7 @@
  *  dropped server-side, and because the hold is over as far as this module is concerned, releasing
  *  the talk key sends nothing. Press again to retry. */
 import type { ServiceStatusMsg } from "./protocol.gen";
-import { live, log } from "./ui";
+import { esc, live, log } from "./ui";
 
 //: Only controls where SPACE TYPES something keep it. A focused button is no reason to lose
 //: push-to-talk: after clicking the cog, SPACE used to reopen the settings panel (2026-09-10).
@@ -73,7 +73,9 @@ export class Talk {
     addEventListener("keyup", e => {
       if (e.code === "Space" && this.talking) { e.preventDefault(); this.press(false); }
     });
-    addEventListener("blur", () => this.press(false));
+    // Focus left mid-hold (alt-tab, a click on another window): the capture is a bad one, so it
+    // is dropped (spec §9b) rather than sent as half a sentence.
+    addEventListener("blur", () => this.cancel());
     this.button.addEventListener("pointerdown", e => { e.preventDefault(); this.press(true, e.timeStamp); });
     addEventListener("pointerup", () => this.press(false));
   }
@@ -113,18 +115,32 @@ export class Talk {
     this.render();
   }
 
+  /** A cancel the link could not carry: sent on the next socket (`relink`). The server ends the
+   *  hold itself when the socket drops (backend/app.py `Hub.leave`); this covers a link that died
+   *  without the server noticing yet, so the next press is never refused. */
+  private owedCancel = false;
+
   /** What the last press actually did (service_status "ptt"). */
   ack(msg: ServiceStatusMsg): void {
     clearTimeout(this.ackTimer);
     this.serverAcks = true;
     live(msg.detail, TROUBLE.includes(msg.state) ? "warn" : "on");
-    if (TROUBLE.includes(msg.state)) log(msg.detail, "err");
+    if (TROUBLE.includes(msg.state)) log(esc(msg.detail), "err");
   }
 
+  /** The link went: a hold in progress is over, and its cancel is owed to the next socket. */
   reset(): void {
     clearTimeout(this.ackTimer);
-    this.talking = false;
+    if (this.talking) {
+      this.talking = false;
+      this.owedCancel = !this.d.send("cancel");
+    }
     this.render();
+  }
+
+  /** The link is back: settle what the last one left unsaid. */
+  relink(): void {
+    if (this.owedCancel && this.d.send("cancel")) this.owedCancel = false;
   }
 
   render(): void {

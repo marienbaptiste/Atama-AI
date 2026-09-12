@@ -46,6 +46,8 @@ Throwaway scripts, deleted or moved into `backend/tests/fixtures/` when done. Ea
 | **V0.7** | **Does a trustworthy Bunpro MCP server exist?** Survey community stdio MCP servers for Bunpro; check they work against the current site/API, what credential they take, whether the code is small enough to read end-to-end (it receives your credentials), and — **disqualifying** — whether it exposes any write tool that cannot be removed from the surface (ADR-021). If none passes, the decision is to write `backend/srs/bunpro_mcp.py` (spec §5) with read tools only. | A decision recorded in ADR (new entry), plus either a pinned version or a stub module. | **Done 2026-09-09** — decision: **write our own** (ADR-023). See findings log. |
 | **V0.9** | WaniKani token permissions: confirm from `/v2/user` which fields expose the token's granted permissions, so `make doctor` can warn on a write-capable token (ADR-021). | Pinned field name + a sanitised fixture for both a read-only and a write-capable token. | **Done 2026-09-09 — negative result.** `/v2/user.data` keys are `current_vacation_started_at, id, level, preferences, profile_url, started_at, subscription, username`; **token scopes are not exposed** and probing them would require a write. Read-only scope can only be guaranteed at token creation; the doctor and the settings page *instruct*, they cannot verify. Test pins the absence. |
 | **V0.8** | Do MCP tools survive `--tools ""`? Spawn with the Bunpro MCP configured and `--tools ""`; check `init.tools[]` for the MCP tool names. | Pinned: either `--tools ""` stands, or the fallback `--disallowedTools` list of the 20 built-in names from `init.tools`. | **Done 2026-09-09 — `--tools ""` stands**, *provided the MCP server is connected before the first turn*. See findings log ("Claude subprocess, live"). The disallow fallback is retired (tool names vary by platform). |
+| **V0.10** | — | — | **No spike was ever recorded under this number** (checked against the whole git history, 2026-09-12): the numbering jumped from V0.9 to V0.11 when ADR-025/028 were written. Row kept so the gap is explained rather than silent. |
+| **V0.11** | SearxNG's JSON API (`/search?format=json`, `language`, `categories`): verify the response shape against a running instance before writing the search MCP client (ADR-028; ADR-015 forbade coding it blind — on 2026-09-09 no instance was reachable and the Docker daemon was down). | A pinned request/response shape, the `search_mcp.py` client, a fixture. | **Done 2026-09-09, multi-source 2026-09-10** — verified live once the container was up: `backend/search_mcp.py` (one read tool, `search`; `language` ∈ {ja, en, all}), results interleaved round-robin across engines, Yahoo! JAPAN RSS merged as one provider, NHK excluded (frozen feed). Spec §5c, `test_search_mcp.py`. This row was never added to the table when ADR-028 cited it; restored 2026-09-12. |
 
 | **V0.12** | **Context: how big is the window, and what does the provider do when it fills?** Drive one long real session, logging `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` per turn until the CLI compacts on its own. Answer: the usable window in tokens; how compaction announces itself on the stream (an event? silence?); **how long it stalls**; and whether the session id survives it. | Pinned constants: usable window, a safe `CONTEXT_ROTATE_AT` fraction under it, and the measured stall — the number that justifies ADR-032. Plus a fixture of whatever the stream emits. | **Closed differently, 2026-09-11** — the user rejected a one-off measurement: where the CLI compacts is provider policy and can move under us. Verified live (CLI 2.1.159, claude-sonnet-5): the **window** is reported every turn (`modelUsage[].contextWindow` = 200000 here, though the docs list Sonnet 5 at ~1M); compaction **announces itself** — `system/status "compacting"`, then `system/compact_boundary {trigger, pre_tokens, post_tokens, duration_ms}` (pinned in constants.py, fixtures in test_brain_claude_cli.py); the **stall** was 11.9 s for a manual 24.5k→0.8k compaction; the **session id survives** it. **No command reports where it will compact on its own** (`/context` answers locally with usage and window only; the documented `autoCompactWindow` and `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` did not trigger it at 24.5k). So the point is watched for, not measured: rotation runs at a fraction of the reported window, and an `auto` compaction that beats it lowers that fraction for good (`session.learn`, `.cache/compaction.json`) — ADR-032 amendment. |
 
@@ -327,8 +329,8 @@ pointed at the cause:
 
 Also found: **Claude Code exports `CLAUDE_EFFORT` and friends into the shell**, and our config
 keys have the same names, so running the app from inside a Claude Code session picked up the
-parent's values. Process-environment overrides now require the `ATAMA_` prefix; the `.env` file
-keeps bare names.
+parent's values. Process-environment overrides now require the `ATAMA_` prefix (the `.env` file
+that then kept bare names has since been removed altogether — ADR-022 amendment, 2026-09-12).
 
 **Measured (sonnet, `--effort high`, prompt 1 739 tokens: soul 345 + profile 594):** first
 sentence 1.8–2.4 s, ttft 1.6–2.2 s, MCP tool call 10 ms. The Claude stage budget is 1.60 s
@@ -599,7 +601,7 @@ module does.
 - **Gate M0a** — All violation fixtures caught, clean tree passes, hook installed and
   demonstrated. **No SRS fetcher is written before this gate is green.**
 
-### 1. Claude session — `backend/claude_session.py` — **M1**
+### 1. Claude session — `backend/brain/claude_cli.py` (behind the `Brain` interface, ADR-027) — **M1**
 
 **Contract:** `send(user_text) -> async iterator of text deltas + lifecycle events`. One
 persistent subprocess, isolated per ADR-016. Survives a crash without losing conversation memory.
@@ -613,8 +615,11 @@ persistent subprocess, isolated per ADR-016. Survives a crash without losing con
   set — the spawned child's env contains none of them and does contain `PATH`. **Auth test:**
   `apiKeySource != "none"` → the session refuses to start and raises a clear error. **cwd test:**
   the child is spawned from `.cache/claude-cwd/`, which contains no `CLAUDE.md`, and the same
-  cwd is used on restart. Timeout test: a turn that never produces `result` gets SIGINT at the
-  configured deadline and surfaces the apology line.
+  cwd is used on restart. Timeout test: a turn that never produces `result` is **interrupted**
+  (the stdin `control_request`/`interrupt` of ADR-037, never a signal) at the configured deadline
+  and surfaces the apology line; a fake that ignores the interrupt is killed as a tree and resumed
+  (`test_brain_claude_cli.py`). `init.session_id` is asserted equal to the id passed, on `--resume`
+  too (verified live 2026-09-12).
 - **Validate** — Live: 10-turn conversation. Kill `-9` the child mid-turn; assert it restarts
   with `--resume <our session id>` and still remembers turn 1. Inspect `init.tools[]` — it must
   be empty or MCP-only (V0.8). Confirm `apiKeySource == "none"` in the real init.
@@ -629,8 +634,9 @@ a stream. No I/O.
 
 - **Test** — Splits on `。！？` and newline; does **not** split mid-sentence when a delta arrives
   split across a boundary character; handles `…` and `‥` without emitting an empty chunk;
-  strips exactly one leading `[happy]|[thinking]|[surprised]|[serious]` **at turn start and at
-  any sentence start**, attaching it to that sentence; a sentence without a tag inherits the
+  strips exactly one leading emotion tag — the seven of `chunker.EMOTIONS`, case-insensitive; a
+  TalkingHead mood name in brackets is stripped and recorded as stray, `[neutral]` resets —
+  **at turn start and at any sentence start**, attaching it to that sentence; a sentence without a tag inherits the
   previous sentence's emotion within the turn; brackets appearing mid-sentence are left alone
   (and logged — the prompt forbids them); flushes a trailing partial sentence when the turn
   ends. Property test: concatenating all emitted chunks reproduces the input minus the tags.
@@ -651,10 +657,12 @@ events.
   speech at ≥ `BARGEIN_THRESHOLD_FACTOR`× sustained ≥ 250 ms does; anything in the first 150 ms
   of playback is ignored. Pause detection emits the ≥ 300 ms pause events the avatar's nod
   reactions use.
+  The tests are hermetic: `test_vad.py` injects a spy session in place of the Silero ONNX model
+  (the two tests that need the real model skip when `.cache/models/silero_vad.onnx` is absent).
 - **Validate** — Live mic in a real room. Tune the silence window against actual conversational
   pauses; confirm the 0.50 s VAD budget line holds.
 - **Integrate** — Upstream of STT; also the barge-in trigger (subsystem 8) and the listening
-  reactions (subsystem 9).have you planned the conne
+  reactions (subsystem 9).
 - **Gate M2a** — No false end-of-turn in 3 minutes of natural speech with normal pauses.
   **DEFERRED 2026-09-10, user directive.** `TURN_MODE=ptt` is now the default and the key decides
   when a turn ends, so this gate measures the fallback mode rather than the one in use. It does
@@ -690,10 +698,13 @@ events.
 
 - **Test** — Against a stubbed HTTP layer: `audio_query` then `synthesis` are called in order
   with the **emotion's** style id; the emotion table's `speedScale`/`pitchScale`/
-  `intonationScale` reach the query; neutral uses the base style and `.env` defaults; a mapped
+  `intonationScale` reach the query; neutral uses the base style and the config defaults; a mapped
   style id missing from the `/speakers` fixture degrades to base style + scalars with a warning;
   a VOICEVOX 5xx or timeout degrades to a logged error, a skipped chunk, and a `voicevox=down`
-  status — never a dead turn.
+  status — never a dead turn. An engine unreachable at startup leaves the table unresolved and
+  `ensure_table()` rebuilds it on the first successful call; single-style pitch widening applies
+  only when the catalogue confirms one style (`test_tts_voicevox.py`). The speech queue —
+  synthesise N+1 while N plays, barge-in flush — has its own hermetic tests in `test_speaker.py`.
 - **Validate** — Live engine: measure first-chunk synthesis + WS delivery against the 0.40 s
   budget for a typical ≤ 25-character sentence. Confirm the engine is on CPU (`nvidia-smi` shows
   no VOICEVOX process). Listen to the same sentence under all five emotions; tune the table by
@@ -765,8 +776,9 @@ avatar's own voice through the speakers must **not** trigger it (ADR-018).
 - **Validate** — Live, two runs: on headphones, interrupt the avatar 10 times and measure
   client-side stop latency; on laptop speakers at normal volume, hold a 10-turn conversation
   **without** interrupting and count self-interruptions.
-- **Integrate** — Client-side detection with server confirmation (`bargein_ack` → `bargein`),
-  state-gated thresholds from subsystem 3.
+- **Integrate** — The page stops on the key event and the server confirms with `bargein`
+  (closing the turn epoch); the brain's turn is interrupted with the control request of ADR-037;
+  state-gated thresholds from subsystem 3 in `vad` mode.
 - **Gate M3b** — Headphones: speech stops in **< 300 ms**, 10/10, no stale audio after.
   Speakers: **zero** self-interruptions in 10 turns.
 
@@ -814,7 +826,11 @@ sentence ahead of the voice. `/` serves `frontend/dist` and is the only page —
 `preview.html` was removed on 2026-09-11 (user). `make run` / `.\run` builds the page first when its
 source is newer, and stops with a reason if there is no build at all to open. Headless tests: 33 in
 Vitest (the rig table, the reactions, the speech queue with a delayed start and barge-in, the
-dispatcher, the chip colours, push-to-talk). **Gate M3c (the live 10-turn acceptance) is not met.**
+dispatcher, the chip colours, push-to-talk). Added 2026-09-12: `expression.test.ts` (the
+expression settles at the end of the turn, the next tag cancels a pending release — ADR-020
+amendment) and `audio_only.test.ts` (the audio-only fallback when TalkingHead or the GLB cannot
+load: sentences still play in order and reach the chat as their audio starts). **Gate M3c (the
+live 10-turn acceptance) is not met.**
 
 ### 10. Latency instrumentation — cross-cutting — **M2 onward, enforced at M3**
 
@@ -822,10 +838,16 @@ dispatcher, the chip colours, push-to-talk). **Gate M3c (the live 10-turn accept
 the same record is sent to the client as `timing`.
 
 - **Test** — The timing record is emitted for every turn including barged-in and errored ones;
-  the Claude stage uses `result.ttft_ms` / `duration_api_ms` as ground truth; filler-masked
-  turns log **true first-content latency separately** from perceived latency.
+  the Claude stage uses `result.ttft_ms` / `duration_api_ms` as ground truth; when fillers exist,
+  filler-masked turns log **true first-content latency separately** from perceived latency.
+  **Fillers are not built — deferred to the end of the project** (ADR-008 amendment, 2026-09-12;
+  there is no `FILLER_AFTER_MS`). The voice→voice number is `first_play_ms` — playback start; for
+  the browser, the hand-over to the page, the WS hop not included — and `first_audio_ms` is when
+  synthesis finished; until 2026-09-12 the latter was stamped as if it were the former
+  (`voice_loop.TurnTiming`).
 - **Validate** — A scripted 20-turn conversation produces the p50/p90 report.
-- **Integrate** — `--profile` overlay and the session JSONL.
+- **Integrate** — the console `timing_line` / `/profile` command, the page's `timing` message,
+  and the session JSONL (there is no `--profile` flag).
 - **Gate M3d (hard)** — **voice→voice p90 ≤ 5.0 s over 20 turns** (3.0 s until 2026-09-10, ADR-033). Fillers do not count toward
   meeting it. Missing this gate blocks M4.
 - **Harness: built 2026-09-10** — `python -m backend.tools.latency_run` (recorded clips → warm
@@ -850,8 +872,8 @@ the same record is sent to the client as `timing`.
 
 ### 11. VRAM instrumentation — cross-cutting — **M2 onward**
 
-- **Validate** — `make doctor` and the `--profile` overlay read `nvidia-smi`; a warning fires
-  above 10 GB; the `stt` chip shows the model's share.
+- **Validate** — `make doctor` and `orchestrator.watch_vram` read `nvidia-smi`; a warning fires
+  above `VRAM_WARN_GB` (10 GB); the `stt` chip shows the model's share.
 - **Gate M3e (hard)** — Steady-state total ≤ 10 GB with the browser open and a conversation
   running. Over cap → fall back to Whisper `medium` int8 per ADR-004 and re-measure.
 
@@ -864,17 +886,23 @@ superseding ADR-021 — which the user has said will not happen.
 
 - **Test** — Against the V0.5 fixtures: level, per-stage counts, ~30 recent unlocks (kanji +
   reading + meaning), ~15 leeches derived by low stage + high incorrect count. Disk cache under
-  `.cache/` honours the 1 h TTL; a stale cache is refreshed, a fresh one is not re-fetched;
+  `.cache/` honours `SRS_CACHE_TTL_S` when set (a younger snapshot is not re-fetched at launch); at the default 0 every launch fetches;
   `control: resync` bypasses the TTL but not the rate limiter. Rate limiting stays under
   ~60 req/min. Status transitions: no token → `disabled`; fetch ok → `ok`; fetch fails with
   cache → `stale`; fetch fails without cache → `error`. The token never appears in a status
   `detail` or `last_error`. **Read-only (ADR-021):** the fetcher is built on
   `backend/srs/http.py`, which has a `get()` method and nothing else — a test asserts no
   `post`/`put`/`patch`/`delete` attribute exists; a recording transport asserts every request in
-  a full fetch is `GET`; the `/v2/user` permissions fixture with a write-capable token makes
-  `make doctor` warn.
-- **Validate** — One live fetch with a real token, inside the 10 s session-start budget. Confirm
-  the real token was created with no write scopes (doctor prints the granted permissions).
+  a full fetch is `GET` — the standing version over a whole mocked session (launch fetches,
+  `resync`, all three Bunpro MCP tools) is `backend/tests/test_srs_readonly_session.py`
+  (2026-09-12). Pagination follows `pages.next_url` up to `MAX_PAGES` (20) and a capped
+  collection is reported in `last_error`; a 429 ends the fetch with no retry and reads `stale`
+  "rate limited"; a `partial` snapshot is never re-used (`test_srs_fetchers.py`,
+  `test_srs_http.py`). (V0.9: `/v2/user` does not expose scopes, so there is no
+  write-capable-token fixture and nothing for the doctor to warn on.)
+- **Validate** — One live fetch with a real token, inside the 10 s session-start budget. The
+  token's scopes cannot be read back (V0.9): `make doctor` prints the ones to leave unticked and
+  `--live` proves the token authenticates with one GET.
 - **Gate M1c** — Absent token, expired token, and network failure each produce a clean session
   with the correct status (chip from M3; console/log status from M1). Read-only recording test
   green.
@@ -885,9 +913,10 @@ Treated as fragile by design (ADR-010). The fetcher lands in **M1** on the GET-o
 alongside WaniKani. The MCP server is whatever V0.7 decided and lands in **M4**.
 
 - **Test** — Every call path wrapped: malformed response, auth failure, timeout, and total
-  absence each log a warning and continue. `mcp.json` is generated from the template and `.env`
-  into `.cache/`, and a test asserts no credential is ever written to a tracked path and that
-  the credential appears **only** in the Bunpro entry's `env` block. If we wrote the MCP server:
+  absence each log a warning and continue. `mcp.json` is generated by `tools/mcp_config.py`
+  from the resolved config into `.cache/` (no template), and a test asserts no credential is ever
+  written to a tracked path — since ADR-024 the Bunpro entry's `env` block carries only the
+  snapshot path, no token at all. If we wrote the MCP server:
   its three tools return the documented shapes against fixtures and never echo the credential in
   an error. **Read-only (ADR-021):** the MCP server's tool list is exactly
   `get_review_queue`, `get_ghost_reviews`, `get_grammar_progress` (enum test); it is built on
@@ -908,7 +937,7 @@ alongside WaniKani. The MCP server is whatever V0.7 decided and lands in **M4**.
 - **Test** — Output is **≤ 600 tokens** with a full WaniKani + Bunpro payload (a hard assertion,
   since this is a latency ally per ADR-011). Renders correctly with zero, one, or both sources,
   and says which are present so the tutor does not guess. Written to `logs/profile-<date>.json`
-  and rendered into `.cache/tutor_prompt_rendered.txt`.
+  and rendered into `.cache/prompts/<session-id>.txt` (one file per brain).
 - **Validate** — Read the rendered profile as prose. If it would not help a human tutor, it will
   not help this one.
 - **Integrate** — Into `prompts/tutor.md` at `{{student_profile}}` at session start.
@@ -922,8 +951,8 @@ alongside WaniKani. The MCP server is whatever V0.7 decided and lands in **M4**.
   assistant text, stage timings, emotion(s), tool calls (name + sanitised args + ok/error).
   Parseable by a trivial reader script — it is the future Anki mine, so schema stability matters
   more than richness. **Redaction test (spec §11):** with fake tokens in the environment, run a
-  session that triggers an MCP tool error and a WaniKani auth error; assert no `.env` value and
-  no `Bearer …` string appears under `logs/` or `.cache/` except `.cache/mcp.json`.
+  session that triggers an MCP tool error and a WaniKani auth error; assert no configured secret
+  value and no `Bearer …` string appears under `logs/` or `.cache/` except `.cache/mcp.json`.
 - **Validate** — On 「さようなら」 the tutor gives a 3-sentence Japanese summary and the session
   closes cleanly.
 - **Gate M5a** — A whole session round-trips through a reader script with no malformed lines;
@@ -1021,7 +1050,11 @@ background with a handoff from the lesson's turn log (`prompt.build(handoff=...)
 budget, "carry on, do not greet again"), swaps only at a turn boundary via `VoiceLoop.before_turn`,
 closes the old session only after the new one has taken a turn, discards a pending replacement on
 a tutor switch, and gives up after 3 failed starts (the provider's own compaction then being the
-logged fallback). `tests/test_session.py` covers the contract above.
+logged fallback). `tests/test_session.py` covers the contract above. **2026-09-12:** the handoff keeps the
+**newest** lines within `HANDOFF_MAX_TOKENS` (`prompt.build(keep="tail")`), covers only this
+launch's turns (`memory.excerpt_of(..., since=launch_stamp)`), and is omitted entirely before the
+launch's first turn so a replacement spawned then greets normally — the first lesson of the day is
+greeted (user directive; ADR-032 amendment). The heading is `prompts/handoff.md`.
 
 **Status 2026-09-11 — on by default at 0.7, and adaptive.** V0.12 closed without a one-off
 measurement (V0 table): the CLI announces every compaction, so the brain emits `Compacting` events,
@@ -1079,18 +1112,19 @@ whole key inventory. Resolution is defaults → `settings.json` → `ATAMA_*`. T
 
 - **Test** — Resolution order (a key set in all three sources resolves to env; in two, to
   `settings.json`; in none, to the default). `settings.json` is written atomically and with mode
-  `0600` (skip the mode assertion on Windows, assert the atomic rename everywhere). A
+  `0600` where the OS has modes (the mode assertion is skipped on Windows, where the profile's
+  ACLs are the protection; the atomic rename is asserted everywhere). `config.load()` rejects a
+  value outside its choices or range with a one-line `ConfigError` (`test_config.py`). A
   `settings` WS update with an invalid type is rejected with `error` and nothing is persisted.
   The echo of a secret is `{set: true, hint: "…" + last 4}` and never the value. Inventory test:
-  keys in `config.py` == keys in `.env.example` == keys in the settings schema. First-run test:
-  no `settings.json` → the server reports `first_run: true` in the initial `settings` echo.
-  `settings_test` for each service dispatches to the real check function (stubbed) and results
-  in a `service_status`.
+  every key in `config.py`'s schema is presentable on the page (`.env.example` is gone, and the
+  test that compared the two with it). First-run test: with no secrets set the initial `settings`
+  echo lets the page show the first-run card. There is no `settings_test` message; "does it work"
+  is the status chips and `make doctor`.
 - **Validate** — Fresh clone, **no `.env`**: start the app, enter tokens on the settings page,
-  press each Test button, watch chips go green, hold a conversation. Change `model` and confirm
-  the conversation memory survives the respawn. Restart the app and confirm everything persisted.
-- **Integrate** — The `settings` / `settings_test` messages (subsystem 7) and the status
-  registry (subsystem 16).
+  watch the chips go green after Refresh, hold a conversation. Change `model` and confirm the
+  conversation memory survives the respawn. Restart the app and confirm everything persisted.
+- **Integrate** — The `settings` message (subsystem 7) and the status registry (subsystem 16).
 - **Persona picker (user directive 2026-09-10).** `TUTOR_PERSONA` is one setting that switches
   character, voice *and* face together (ADR-026/030), so the settings page offers it as a single
   choice rather than three. Two rules the picker has to respect:
@@ -1142,13 +1176,27 @@ Consequences that follow from picking the CLI:
 
 ---
 
-### 21. `make doctor` — `backend/tools/doctor.py` — **M0 deliverable, NOT WRITTEN (found 2026-09-10)**
+### 21. `make doctor` — `backend/tools/doctor.py` — **M0 deliverable; found missing 2026-09-10, WRITTEN 2026-09-12**
 
-The Makefile target exists and invokes `backend.tools.doctor`; the module does not. `make doctor`
-has therefore never run, despite M0 being recorded as done and the spec listing its checks under
-M0. Anyone following README's Setup section hits an import error on the third command.
+The Makefile target existed and invoked `backend.tools.doctor` while the module did not, so
+`make doctor` had never run despite M0 being recorded as done. It exists now
+(`make doctor`, or `.venv/Scripts/python -m backend.tools.doctor`; `--skip-claude` skips the
+`claude -p` probe, `--live` adds ONE GET per configured SRS token — never by default, ADR-024).
+Every check prints one PASS / WARN / FAIL line with what to do; the exit code is non-zero on any
+FAIL; nothing prints a secret. **Checks, in order:** `claude` on PATH and its version against the
+pin; `ANTHROPIC_API_KEY` absent (FAIL if present); the `claude -p "respond with OK"` probe under
+the app's own spawn rules (allowlisted env, cwd outside the repo, no shell) asserting
+`init.apiKeySource == "none"`; VOICEVOX, the app port and SearXNG loopback-only (FAIL if any
+answers on a LAN address); the Docker engine and the compose containers; the tokens as set/unset
+with their hints; the WaniKani scope reminder (cannot verify — V0.9); with `--live`, one GET per
+token; `.gitignore` via `git check-ignore` on every personal/generated path; the pre-commit hook;
+CUDA via `nvidia-smi` against `VRAM_WARN_GB`; the persona's avatar file; the §15 topology (native
+Windows / WSL2 / Linux, with the WSL2 `/mnt` warning); then the last persisted §5b status table.
+Hermetic tests in `test_doctor.py` cover every branch through injected effects. The M0 acceptance
+line "actionable errors for every missing prerequisite" is **met** by this; the M0 gate as a whole
+(M0a) was already green. Not on the list yet, from the paragraph below: the audio-device check.
 
-Spec M0 defines what it must check: `claude` CLI present and version-pinned, `ANTHROPIC_API_KEY`
+Spec M0 defined what it must check: `claude` CLI present and version-pinned, `ANTHROPIC_API_KEY`
 absent from the shell, a trivial `claude -p` returning `init.apiKeySource == "none"`, CUDA
 visible, VOICEVOX reachable on loopback **and not on other interfaces**, tokens present, every
 ignored path actually ignored via `git check-ignore`, and the §5b status table printed.
@@ -1213,7 +1261,7 @@ session (the one she greets with), the rest are caught up by a background task o
 talking, each reported as it goes, and an older catch-up can no longer overwrite a newer brief
 (`test_memory.py`). The prompt's ceiling went 2550 → 2650 for the new rule.
 
-**Status 2026-09-13 — explanations and translations on click are built.** `backend/explain.py`:
+**Status 2026-09-12 — explanations and translations on click are built.** `backend/explain.py`:
 a click sends `explain`, one worker (`claude -p`, haiku tier, no tools, §4 rules, never the tutor's
 session) answers, and every answer is cached on disk under `.cache/explain/` per grammar point and
 language, and per sentence — the second click is free. `EXPLAIN_LANGUAGE` (en | ja) chooses the
@@ -1325,7 +1373,7 @@ marks' verification and the float's colour. Cost: `TOTAL_MAX_TOKENS` 3250 → 34
 is now ~1985 tokens: **the next session's first job is to rewrite these rules shorter**, not to
 raise the ceiling again (item 6 below).
 
-## Next session — plan for 2026-09-13 (set 2026-09-12)
+## Next session — what is left (set 2026-09-12; items 3 and 4 were done the same day)
 
 **1. One real lesson on the new page, first.** Refresh study data at the start (Settings → Account)
 so the kanji progress is current. Watch: grammar in red, the hint lighting when she asks for a form,
@@ -1336,9 +1384,9 @@ tutor switch fails again, the `[tutor]` lines in the terminal are the evidence t
 plus the same measure for the study marks — how often she tags grammar, sets a target, credits the
 student. A low rate is prompt wording, not plumbing (ROADMAP 17, gate M3f).
 
-**3. Explanations on click (ADR-036 point 2).** DONE 2026-09-13.
+**3. Explanations on click (ADR-036 point 2).** DONE 2026-09-12 (status note above).
 
-**4. Translate icon per sentence.** DONE 2026-09-13 on her sentences. Still to decide: whether the
+**4. Translate icon per sentence.** DONE 2026-09-12 on her sentences. Still to decide: whether the
 student's own sentences get one too.
 
 **5. Word cards (ADR-036 point 3).** HALF DONE 2026-09-12: a blue word opens a card with its kana
@@ -1384,6 +1432,59 @@ Also: `SEARXNG_SECRET` is generated by the launcher into the per-user state dire
 living in `.env`, because a fresh clone had nothing to interpolate and `docker compose up` failed
 before anything started (user). There is now no `.env` in the repo at all.
 
+**Status 2026-09-12 (night) — five fixes from review, and the orchestrator split.** The Claude
+subprocess is interrupted with the CLI's own `control_request`/`interrupt` on stdin, never a
+signal (ADR-037; `taskkill /T` for the whole tree on Windows, `--resume` silently if an interrupt
+never settles; `init.session_id` asserted on resume too). `first_play_ms` is the voice→voice
+number; `first_audio_ms` is synthesis done. The WS handshake checks `Origin` (ADR-017 amendment);
+each page has its own outbox with `mic_level` coalesced, a stuck page is closed, a page that
+drops mid-hold has its hold cancelled, and `blur` cancels a capture. The expression settles at the
+end of the turn (ADR-020 amendment); the avatar falls back to audio-only playback with a notice.
+The handoff is the newest lines of this launch only and is omitted before the first turn, so a
+switched-in tutor greets (ADR-032 amendment); the turn log is one file per lesson; `tools`/`usage`
+are filled on the voice path. `ReadOnlyTransport` is the runtime guard's name (`_GuardTransport`
+kept as the alias the gate pins); a refusal is CRITICAL and the chip reads `error`; WaniKani
+pagination to 20 pages with truncation reported; 429 → `stale` with no retry; `partial` snapshots
+re-fetched. `make doctor` exists (subsystem 21); `make check-secrets` flags a leftover `.env` and
+the WaniKani/Bunpro token shapes; `config.load()` validates choices and ranges; `app.py` pre-binds
+the port and names `PORT` if it is taken; `run.cmd` says how to create `.venv` when there is none.
+The docker images are pinned (`voicevox/voicevox_engine:cpu-0.25.2`,
+`searxng/searxng:2026.9.8-3fdc6d753`). **`backend/repl.py` is split** (spec §13): `repl.py` is
+the CLI entry only (137 lines: `parse`/`run`/`text_loop`/`main`; flags `--refresh --no-srs
+--no-open --speak --listen --browser --show`; there is no `--profile` flag — `/profile` is a
+slash command of the text loop beside `/status`, `/prompt`, `/quit`; the banner reads
+"atama-AI · voice lesson / text lesson"). `backend/orchestrator.py` holds the `Lesson` class —
+SRS sync, page, voice, memory, prompt, brain; `account`, `open_lesson`, `switch_persona`,
+`spawn_rotation`, `resync`, `adopt`, `close` — plus `listen()`, `load_stt`, `check_microphone`,
+`stop_containers`, `summarise`, `one_turn`, `watch_vram` and `sanitised()`.
+`backend/page_control.py` holds `PageControl` (`from_browser` dispatch, `do_resync`,
+`change_tutor`, `settings_saved`, status routed through `registry.sanitize`) and `LevelSender`
+(`mic_level` coalesced to one send per 0.1 s). `backend/terminal.py` holds the console rendering
+(`LevelMeter`, `timing_line`, `session_report` with nearest-rank percentiles). Every tool exits
+with one line on a malformed `settings.json` (`ConfigError`). Tests: `backend/tests/test_repl.py`
+(12, hermetic). Prompt text moved to files: `prompts/handoff.md`, `prompts/memory.md`,
+`prompts/summariser.md` (ADR-012).
+
+## Live checks pending (2026-09-12)
+
+Each of these is code-complete and hermetically tested, and **not yet observed on the real
+machine**. None is a gate; every gate's status is unchanged by this list (M2a–M2d per ADR-034,
+M3b–M3f, M4c and M4d all remain not met).
+
+1. **Barge-in, then a clean next turn, on Windows** — press the key over her, confirm the
+   `control_response` and `error_during_execution` result arrive, the next turn is answered on the
+   same session id, and `tasklist` shows **no orphan `claude.exe`** (ADR-037).
+2. **A turn timeout, then a clean next turn** — the apology line, then a normal answer.
+3. **A persona switch before the first turn greets** — no "carry on" handoff to a student who has
+   not spoken (ADR-032 amendment).
+4. **A late-booting VOICEVOX switches to the real styles on the first sentence** that reaches it
+   (`ensure_table`), rather than staying on the base style for the lesson.
+5. **`pauseLengthScale` semantics** — synthesise one sentence with a 、 at scale 1.0 and 2.0, same
+   `speedScale`, and compare the WAVs against `VOICEVOX_PAUSE_SCALE_SEMANTICS`; then flip
+   `constants.VOICEVOX_PAUSE_SCALE_VERIFIED` to `True` with the date.
+6. **Browser first audio right after a PTT barge-in** — the interrupted sentence's late audio is
+   dropped (epoch) and the new turn's first sentence plays without a stale one in front of it.
+
 ## Integration order
 
 Each row is the seam introduced, and the one assertion that proves it.
@@ -1417,9 +1518,9 @@ Runs from M2 onward, every milestone, before any gate is called met:
 1. `make doctor` — clean on the target machine, including loopback-only and `git check-ignore`
    checks, and the status table printed.
 2. `make test` — hermetic unit + golden tests, no network, no GPU. Includes the env-allowlist,
-   `apiKeySource`, `.env.example`-vs-`config.py` inventory, and protocol contract tests.
-3. `make check-secrets` — no token-shaped strings and no current `.env` value in the tracked
-   tree.
+   `apiKeySource`, schema-is-presentable inventory, and protocol contract tests.
+3. `make check-secrets` — no token-shaped strings (WaniKani and Bunpro shapes included) and no
+   current `settings.json` value in the tracked tree; a leftover `.env` is flagged.
 4. **20-turn latency run** — p50/p90 reported; p90 ≤ 5.0 s (`python -m backend.tools.latency_run`).
 5. **VRAM check** — steady state ≤ 10 GB with the browser open.
 6. **Speakers run** — 10 turns on laptop speakers, zero self-interruptions.

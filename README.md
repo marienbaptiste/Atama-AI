@@ -70,9 +70,9 @@ What it gives you:
 - **Barge-in.** Start talking while the avatar is speaking and it stops in under 300 ms, flushes
   its queue and takes you as the next turn. It does not interrupt itself on laptop speakers.
 - **Real lip-sync.** VOICEVOX mora timings become Oculus visemes. Nothing is guessed from text.
-- **Emotion end to end.** The tutor tags sentences `[happy]`, `[thinking]`, `[surprised]` or
-  `[serious]`. The tag drives the VOICEVOX voice style and the avatar's face together, when that
-  sentence plays.
+- **Emotion end to end.** The tutor tags sentences `[happy]`, `[thinking]`, `[surprised]`,
+  `[serious]`, `[encouraging]`, `[proud]` or `[confused]`. The tag drives the VOICEVOX voice style
+  and the avatar's face together, when that sentence plays.
 - **Read-only SRS.** WaniKani and Bunpro are never written to. Enforced at token, client and tool
   level rather than by a prompt.
 - **Status bar.** You can see whether WaniKani, Bunpro, the Bunpro MCP, Claude, VOICEVOX and
@@ -148,13 +148,19 @@ conversation on the right as a chat:
 | VOICEVOX engine | `:50021` | `127.0.0.1`   |
 | Frontend (dev)  | `:5173`  | `localhost`   |
 
-**Loopback only.** The WebSocket carries your raw microphone stream and your SRS profile, and
-nothing listens on the LAN. `make doctor` fails if anything does.
+**Loopback only.** The WebSocket carries the tutor's audio, your transcripts and your study marks,
+and nothing listens on the LAN. `make doctor` fails if anything does. The socket also refuses any
+page that is not its own: the handshake's `Origin` must be `127.0.0.1`, `localhost` or `[::1]` at
+the app's port (or the Vite dev server), so another site open in your browser cannot drive the
+lesson.
 
 ### One turn, end to end
 
-1. Browser streams mic PCM (16 kHz mono, PCM16 via AudioWorklet) over the WebSocket.
-2. Silero VAD detects the end of speech (about 600 ms of silence, configurable).
+1. The orchestrator captures the microphone (sounddevice, 16 kHz mono); the page only holds the
+   turn open — **hold SPACE** — with `control: start` / `stop` over the WebSocket. No audio goes
+   from browser to server.
+2. Releasing the key ends the turn. (In `TURN_MODE=vad`, Silero VAD ends it after
+   `VAD_SILENCE_MS` of silence instead, 900 ms by default.)
 3. faster-whisper transcribes with `language="ja"`.
 4. The transcript is written to the Claude subprocess stdin as newline-delimited stream-JSON.
 5. Claude's streamed text is cut into sentences at `。！？…\n` **as tokens arrive**, and each
@@ -165,9 +171,11 @@ nothing listens on the LAN. `make doctor` fails if anything does.
    emotion}` goes to the browser.
 8. TalkingHead `speakAudio(...)` plays it with lip-sync, and the face takes the emotion the moment
    the audio starts.
-9. If you speak mid-playback, **barge-in** stops the audio, flushes the TTS queue, marks the
-   remaining assistant text undelivered and starts the next turn. The avatar's own voice through
-   the speakers is filtered out by echo cancellation and a raised, state-gated VAD threshold.
+9. If you press the key mid-playback, **barge-in** stops the audio on the key event itself,
+   flushes the TTS queue, interrupts the tutor's turn in the `claude` process (its own interrupt
+   request on stdin, never a signal — ADR-037), marks the remaining text undelivered and starts
+   the next turn. Because a key press ends turns, the avatar's own voice through the speakers
+   cannot end one; in `vad` mode a raised, state-gated VAD threshold does that job.
 
 Stages are pipelined: TTS for sentence *N* overlaps generation of sentence *N+1*, and the first
 sentence ships the instant it closes.
@@ -191,8 +199,10 @@ library. One page plus a settings page and a few modules.
 
 **Brain.** The `claude` CLI (verified against 2.1.159), headless, subscription auth.
 
-**Orchestration.** docker-compose for VOICEVOX only. Everything else runs bare so Whisper gets the
-host GPU.
+**Orchestration.** docker-compose for VOICEVOX and SearXNG, both on loopback and both **pinned**
+(`voicevox/voicevox_engine:cpu-0.25.2`, `searxng/searxng:2026.9.8-3fdc6d753` — bumping a tag is a
+deliberate change that re-verifies what the pin protects, ADR-015). Everything else runs bare so
+Whisper gets the host GPU.
 
 ---
 
@@ -218,10 +228,13 @@ seconds (ADR-033). Claude is still the variable stage, so its settings are enfor
 built-in tool removed** (`--tools ""`), and rationed MCP tool use. `model` and `fallback model` are
 settings, so you can drop to a faster model if p90 drifts.
 
-If the first sentence has not closed by 1.2 s, a pre-synthesised filler (うーん、そうですね…) masks
-the gap. Fillers are masking, not budget compliance, so true first-content latency is logged
-separately. Any turn over 5.0 s logs a warning with the full stage breakdown, and rolling p50 and
-p90 go into the session log.
+Fillers (a pre-synthesised うーん、そうですね… if the first sentence has not closed by 1.2 s) are
+part of the design (ADR-008) but **not built** — deferred to the end of the project. When they
+come they are masking, not budget compliance, so true first-content latency stays the number.
+What is measured today: `first_play_ms`, when her first sentence started playing (for the browser,
+the hand-over to the page), is the voice-to-voice figure; `first_audio_ms` is when its synthesis
+finished. Any turn over 5.0 s logs a warning with the full stage breakdown, and rolling p50 and
+p90 go into the session log and the page's timing line.
 
 ### VRAM: 8 to 10 GB cap on a 16 GB RTX-generation card
 
@@ -234,7 +247,7 @@ p90 go into the session log.
 | **Total**                                  | **~5.6 GB** |
 
 - VOICEVOX stays on CPU. Always.
-- `make doctor` and the `--profile` overlay report `nvidia-smi` usage and warn above 10 GB.
+- `make doctor` and the orchestrator's VRAM watch report `nvidia-smi` usage and warn above 10 GB.
 - If VRAM gets tight, set `WHISPER_COMPUTE_TYPE=int8_float16` (2.2 GB, costs accuracy) before
   dropping to `medium` int8 in settings. Do not breach the cap.
 - The remaining 6 GB or so is reserved for a future photoreal (MuseTalk) experiment.
@@ -261,14 +274,14 @@ portable: VOICEVOX is the CPU Docker image, the VAD and the avatar are CPU and W
 | **macOS, or any machine without an NVIDIA GPU** | **Not supported today.** CTranslate2 has no Metal backend and the STT device is not configurable, so it would fall back to CPU, which the latency budget does not survive at `large-v3`. |
 
 Making it work on a Mac is possible rather than promised: it needs a second STT backend
-(whisper.cpp or MLX Whisper on Apple Silicon), `WHISPER_DEVICE` as a setting, and the latency gate
-re-measured. The rest of the stack already runs there.
+(whisper.cpp or MLX Whisper on Apple Silicon), an STT device setting that does not exist today,
+and the latency gate re-measured. The rest of the stack already runs there.
 
 ### Prerequisites
 
 - Python 3.11+
 - Node 20+ (builds the avatar page; `make run` and the `run` script do it for you)
-- Docker (VOICEVOX only)
+- Docker, with the engine running (VOICEVOX and SearXNG are containers; both images are pinned)
 - An NVIDIA GPU with CUDA available to CTranslate2
 - The `claude` CLI, logged in. See [Claude login](#claude-login).
 - A GLB avatar. See [The avatar](#the-avatar).
@@ -297,6 +310,18 @@ make stop                     # stop everything, containers included
 .\run                          # start everything and open the avatar
 .\stop                         # stop everything
 ```
+
+**Check the machine first:** `make doctor` (or `.venv/Scripts/python -m backend.tools.doctor` on
+Windows). It prints one PASS / WARN / FAIL line per check with what to do: the `claude` CLI and its
+version, `ANTHROPIC_API_KEY` absent from your shell, a trivial `claude -p` probe proving
+subscription auth (`init.apiKeySource == "none"`), VOICEVOX / the app port / SearXNG on loopback
+and not on the LAN, the Docker engine and its containers, which tokens are set, the WaniKani
+scopes to leave unticked, `.gitignore`, the pre-commit hook, CUDA via `nvidia-smi`, the persona's
+avatar, and which platform topology it detected; then the last status table. It makes **no**
+request to WaniKani or Bunpro unless you pass `--live`, which sends exactly one GET per configured
+token to prove it authenticates (the APIs are otherwise contacted only at launch and Refresh,
+ADR-024). `--skip-claude` skips the probe and saves about ten seconds. The exit code is non-zero
+on any FAIL.
 
 `make run` brings up the containers, waits until VOICEVOX genuinely answers rather than assuming
 it, builds the avatar page if its source is newer than the last build (the first time it also runs
@@ -354,8 +379,7 @@ Fetch the known-good default (TalkingHead's reference avatar, CC BY-NC 4.0):
 python -m backend.tools.get_avatar
 ```
 
-Or supply your own from [Ready Player Me](https://readyplayer.me) or
-[Avaturn](https://avaturn.me), exported with both morph-target groups:
+Or supply your own from [Avaturn](https://avaturn.me), exported with both morph-target groups:
 
 ```
 https://models.readyplayer.me/<YOUR_ID>.glb?morphTargets=ARKit,Oculus%20Visemes
@@ -386,8 +410,9 @@ its mouth.
   to show up in the latency budget.
 - **On Windows:** only the browser. WSL2 forwards `localhost`, so `http://localhost:5173` works,
   and because everything is bound to loopback it stays off the LAN.
-- The mic is captured by the Windows browser and streamed over the WebSocket. No WSL2 audio device
-  is needed.
+- The mic is captured by the **backend** (sounddevice), not the browser, so under WSL2 the backend
+  needs an audio device it can open — WSL2 has none by default. This topology is documented, not
+  verified; the machine this is developed on is native Windows.
 
 ---
 
@@ -404,7 +429,8 @@ two ways to log in:
    the token into the settings page as the Claude OAuth token. Use this when the backend runs
    somewhere the interactive login is awkward.
 
-`make doctor` proves which is active: it runs a trivial prompt in stream-json mode and asserts
+`make doctor` proves which is active: it runs a trivial prompt in stream-json mode, under the same
+spawn rules as the tutor (allowlisted environment, cwd outside the repo, no shell), and asserts
 `init.apiKeySource == "none"`, the only reliable signal that you are on subscription rather than
 API billing. It also **fails hard if `ANTHROPIC_API_KEY` is set in your shell**, because that
 variable silently overrides subscription auth and bills the API.
@@ -417,13 +443,16 @@ shows it and the configured fallback model carries the conversation.
 ## Settings
 
 Configuration lives in the app's **settings page** and is stored in `settings.json` (repo root,
-git-ignored, mode `0600`). There is no `.env` to edit.
+git-ignored, mode `0600` where the OS has file modes — on Windows your profile's ACLs are the
+protection). There is no `.env` to edit. A value outside its type, choices or range stops the
+launch with one line (`ConfigError`) rather than starting on it.
 
 **Built today:** the cog at the right end of the status bar (or `/#settings`, `/#settings/sound`)
 opens a panel generated from `config.py` with every key, grouped, typed, and described. Tabs:
 Account, Brain, Voice, Sound, Display, Advanced. Save writes `settings.json`. The **microphone and
 output pickers list what is plugged in right now** and apply at once; everything else applies the
-next time you launch. Live apply of the rest, and the Test buttons below, are not built yet. A key
+next time you launch. Live apply of the rest is not built yet, and there are no per-service Test
+buttons (`make doctor` and the status chips are the check). A key
 set in an `ATAMA_*` environment variable shows as **set in environment** and is locked, because
 that overrides `settings.json` and a value saved here would be ignored. `HOST` is never editable
 from the page (ADR-017).
@@ -440,16 +469,17 @@ returns (spec §9). The page shows the microphone's state under the talk button.
 
 | Group              | What's there                                                                 |
 |--------------------|------------------------------------------------------------------------------|
-| Account & tokens   | WaniKani token, Bunpro API key, Claude OAuth token, masked, with a **Test** button each |
-| Voice              | VOICEVOX speaker/style, speed, intonation, and the emotion to voice table    |
-| Speech detection   | Whisper model, VAD silence window, barge-in sensitivity                      |
-| Model              | Claude model, effort level, fallback model, per-turn timeout                 |
-| Display            | Subtitles (JP / off), furigana, chat panel, status heartbeat                 |
-| Advanced           | Ports and bind address, cache and log dirs, latency and VRAM warning thresholds |
+| Account & tokens   | WaniKani token, Bunpro API key, Claude OAuth token, masked                   |
+| Brain              | Claude model, effort level, fallback model, per-turn timeout, memory and rotation |
+| Voice              | VOICEVOX speaker override, speed, pitch, intonation, pause scale             |
+| Sound              | Turn mode (push-to-talk / hands-free), microphone and output device, VAD window and thresholds, barge-in sensitivity |
+| Display            | Subtitles (JP / off), furigana, chat panel, explanation language, status heartbeat |
+| Advanced           | Ports and bind address, cache and log dirs, STT confidence thresholds, latency and VRAM warning thresholds, service URLs and timeouts |
 
-Changes apply live where they can (voice, VAD, display). Changing the model respawns the Claude
-subprocess with `--resume`, so conversation memory survives. Changing a token re-runs the
-session-start fetch.
+Today the microphone and output pickers and the tutor persona apply live; every other change
+applies at the next launch (the model respawn with `--resume` and the live re-fetch on a token
+change are the design, not yet built). There are no per-service Test buttons: the status chips
+and `make doctor` answer "does it work".
 
 Secrets never come back to the browser. Once stored, the page only ever sees
 `{set: true, hint: "…abcd"}`.
@@ -471,7 +501,9 @@ outgoing request in a full mocked session and asserts all are `GET`:
 
 1. **Token scope.** Create your WaniKani token with **no write permissions ticked**
    (`assignments:start`, `reviews:create`, `study_materials:*`, `user:update` all unticked).
-   `make doctor` reads `/v2/user` and warns if the token can write.
+   WaniKani's API does not report a token's scopes, so nothing can check this for you:
+   `make doctor` prints the list to leave unticked, and `make doctor --live` sends one GET per
+   token to prove it authenticates.
 2. **Client.** Every SRS module is built on one HTTP client that has a `get()` method and nothing
    else. There is no write method to call.
 3. **Tool surface.** The Bunpro MCP server exposes read tools only (`get_review_queue`,
@@ -490,7 +522,7 @@ block of its `mcp.json` entry.
 
 - **WaniKani** (official, stable). Level, item counts by SRS stage, every vocabulary item still
   below Guru, and about 15 leeches. The rate limit (about 60 req/min) is respected and results are
-  cached to disk with a 1 h TTL.
+  fetched at every launch and on Refresh, and stored to disk between them (`SRS_CACHE_TTL_S`, default 0, re-uses a younger snapshot at launch if you set it).
 - **Bunpro** (unofficial, treated as fragile). JLPT progress and the grammar you have not settled
   yet (ghosts first, then beginner, adept and seasoned) for the static profile, plus a small MCP
   server written in this repo so Claude can check your review queue mid-conversation, on request or
@@ -498,7 +530,14 @@ block of its `mcp.json` entry.
   API**; the app never asks for your Bunpro email or password and never reads browser cookies.
   Bunpro has no official API, so these endpoints can change without warning. Every response is
   validated and a change shows up as a red chip rather than as wrong data. Every call is wrapped,
-  failures log a warning, and the session continues. Bunpro breakage never blocks startup.
+  failures log a warning, and the session continues. Bunpro breakage never blocks startup. The
+  sanitised fixtures the tests run against come from `make capture-bunpro`, which captures the
+  eight launch endpoints including `srs_level_{beginner,adept,seasoned}_grammar`.
+
+A sync in which some endpoints failed is kept as `partial` and fetched again at the next launch;
+an HTTP 429 ends that service's sync with no retry and the chip reads `stale` (rate limited).
+WaniKani collections are paged (up to 20 pages each — more than a level-60 account needs) and a
+truncated one is reported on the chip rather than silently short.
 
 The result is rendered into a **Student Profile** (≤ 600 tokens) injected into the tutor prompt, and
 written to `logs/profile-<date>.json` for debugging.
@@ -570,8 +609,13 @@ their weight at about 0.4.
 ## Emotions
 
 The tutor may open the turn, or any later sentence, with exactly one of `[happy]` `[thinking]`
-`[surprised]` `[serious]`. It picks the tag for how the sentence should sound. The tag is stripped
-before TTS and applies to that sentence and the ones after it until the next tag.
+`[surprised]` `[serious]` `[encouraging]` `[proud]` `[confused]`. It picks the tag for how the
+sentence should sound. The tag is stripped before TTS and applies to that sentence and the ones
+after it until the next tag; the face settles back to neutral at the end of the turn, not on a
+timer. Tags are case-insensitive, `[neutral]` resets, and a TalkingHead mood name in brackets is
+stripped and logged, never spoken. The table below shows the original five rows; all seven have a
+voice row (`backend/emotions.py`) and a face row (`frontend/src/rig.ts`), and a test keeps the two
+in step.
 
 One tag drives two outputs from one config table, applied **when that sentence's audio starts** so
 face and voice change together:
@@ -631,32 +675,42 @@ before "fixing" it.
 ```
 atama-ai/
 ├─ backend/
-│  ├─ app.py            # FastAPI + WS
-│  ├─ claude_session.py # subprocess mgmt, stream-json, resume, env allowlist
-│  ├─ chunker.py        # sentence chunking + emotion tags
+│  ├─ app.py            # FastAPI + WS: Hub (fan-out, turn epochs, per-client outbox), Origin check
+│  ├─ repl.py           # the CLI entry (`python -m backend.repl`)
+│  ├─ orchestrator.py   # the Lesson: SRS sync, page, voice, memory, prompt, brain; rotation, resync, tutor switch
+│  ├─ page_control.py   # what the page's buttons do; mic level to the page
+│  ├─ terminal.py       # console rendering: level meter, timing line, session report
+│  ├─ brain/            # Brain interface + claude_cli.py (subprocess, stream-json, interrupt, resume, env allowlist)
+│  ├─ voice_loop.py  audio.py  device_watch.py  speaker.py
 │  ├─ stt.py  vad.py  tts_voicevox.py  visemes.py
+│  ├─ chunker.py        # sentence chunking + emotion / study tags
 │  ├─ emotions.py       # emotion → VOICEVOX style/params table
-│  ├─ status.py         # service status registry → service_status messages
+│  ├─ prompt.py  memory.py  session.py  usage.py
+│  ├─ study.py  annotate.py  explain.py  model_tiers.py
+│  ├─ mcp_ready.py  search_mcp.py  status.py  settings_view.py  vram.py
 │  ├─ tools/readonly_gate.py  # Golden Rule gate, runs on every test/run/doctor/commit
+│  ├─ tools/doctor.py   # `make doctor`
+│  ├─ tools/            # up, down, check_secrets, hooks, mcp_config, gen_protocol, latency_run, …
 │  ├─ srs/http.py       # GET-only client + ReadOnlyTransport
-│  ├─ srs/wanikani.py  srs/bunpro.py  srs/profile.py
+│  ├─ srs/wanikani.py  srs/bunpro.py  srs/profile.py  srs/cache.py
 │  ├─ srs/bunpro_mcp.py # stdio MCP server, read tools only
 │  ├─ config.py  constants.py (verified CLI/endpoint findings, dated)
 │  ├─ models.py (pydantic WS protocol)
-│  ├─ study.py  annotate.py  memory.py  explain.py
-│  ├─ data/             # hallucination_blocklist.txt, fillers.txt, readings.txt
+│  ├─ data/             # hallucination_blocklist.txt, model_tiers.txt, news_feeds.txt, readings.txt
 │  └─ tests/            # fixtures/ (sanitised, committed)  fixtures/private/ (ignored)
 ├─ frontend/            # vite, vanilla TS (ADR-009)
-│  ├─ index.html  src/{main, ws, protocol.gen, avatar, speech, chat, rig, rigpanel, mic, status, settings, ui}.ts
+│  ├─ index.html  src/{main, ws, protocol.gen, avatar, audio_only, speech, expression, chat, rig,
+│  │                     rigpanel, mic, status, settings, ui, talkinghead_pins}.ts
 │  ├─ scripts/srs-grep.mjs  # prebuild half of the §0 gate
-│  └─ public/avatar.glb (git-ignored; see The avatar)  cast.json, <persona>.speak.json (generated)
-├─ prompts/tutor.md  prompts/<persona>.md  prompts/summarise.md
-├─ .cache/              # git-ignored, created at startup: mcp.json, rendered prompt,
-│                       #   claude-cwd/, srs cache, fillers/, explain/
+│  └─ public/<persona>.glb (git-ignored; see The avatar)  cast.json, <persona>.speak.json (generated)
+├─ prompts/tutor.md  prompts/<persona>.md  prompts/{memory,handoff,summarise,summariser}.md
+├─ docker/searxng/settings.yml
+├─ .cache/              # git-ignored, created at startup: mcp.json, prompts/<session-id>.txt,
+│                       #   srs/ snapshots, explain/, compaction.json
 ├─ logs/                # git-ignored
-├─ settings.json        # git-ignored, mode 0600, written by the settings page
-├─ docker-compose.yml   # voicevox and searxng, published on 127.0.0.1
-├─ mcp.json.template  .gitignore  Makefile        (.env: docker compose only)
+├─ settings.json        # git-ignored, 0600 where the OS has modes, written by the settings page
+├─ docker-compose.yml   # voicevox and searxng, pinned images, published on 127.0.0.1
+├─ .gitignore  Makefile  run.cmd  stop.cmd  pyproject.toml   (there is no .env)
 ├─ README.md  ROADMAP.md  ADR.md  CLAUDE.md  ATAMA-AI_SPEC.md
 ```
 
@@ -665,15 +719,20 @@ atama-ai/
 Message types are defined once in `backend/models.py` and generated into
 `frontend/src/protocol.gen.ts`. A contract test fails when the two drift.
 
-**client to server:** `audio_chunk` (base64 PCM16), `control` (`start`, `stop`, `cancel`,
-`bargein_ack`, `resync`, `quit`, `new_topic`, `ready`), `settings` (partial update of any key,
-secrets included), `settings_test` (`{service}`), `explain` (`{kind, text, context, lang}`).
+**client to server:** `control` (`start`, `stop`, `cancel`, `resync`, `quit`, `new_topic`,
+`ready`), `settings` (partial update of any key, secrets included), `explain`
+(`{kind, text, context, lang}`). No audio: the backend captures the microphone.
 
-**server to client:** `state` (`listening` | `thinking` | `speaking`), `stt_final`,
-`assistant_text`, `speak` (`{audio_b64, visemes[], vtimes[], vdurations[], text, emotion, turn,
-grammar[], vocab[], readings[], target, used, used_kind}`), `emotion`, `bargein`, `srs_profile`,
-`service_status`, `settings` (echo, secrets as `{set, hint}`), `explanation`, `timing`, `meters`,
-`error`. `stt_partial` is reserved and never emitted.
+**server to client:** `state` (`listening` | `thinking` | `speaking`, with the turn epoch),
+`stt_partial` (reserved, never emitted), `stt_final`, `speak` (`{audio_b64, visemes[], vtimes[],
+vdurations[], text, emotion, turn, grammar[], target, used, used_kind, readings[], vocab[]}`),
+`bargein`, `service_status`, `settings` (echo, secrets as `{set, hint}`), `mic_level`, `meters`,
+`timing` (stages incl. `first_play_ms`, rolling p50/p90), `explanation`, `error`.
+
+Each page has its own send queue: `mic_level` is coalesced to the newest, everything else is
+delivered in order, and a page that stops reading is closed so it reconnects. If a page drops
+while holding the talk key, the hold is cancelled server-side; losing window focus cancels it on
+the page.
 
 ---
 
@@ -684,7 +743,7 @@ validation and integration plan behind these lives in [ROADMAP.md](ROADMAP.md).
 
 | #      | Milestone                                   | Ships                                                                                                                       | Acceptance                                                                                                                                    |
 |--------|---------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
-| **M0** | Skeleton & environment doctor               | **Read-only gate first**, then repo layout, `.gitignore`, config resolution, GET-only SRS client, verified CLI constants, `make doctor`, `make hooks` | Gate catches every violation fixture and passes a clean tree; actionable errors for every missing prerequisite; `apiKeySource == "none"`; loopback-only; every ignored path actually ignored |
+| **M0** | Skeleton & environment doctor               | **Read-only gate first**, then repo layout, `.gitignore`, config resolution, GET-only SRS client, verified CLI constants, `make doctor`, `make hooks` | Gate catches every violation fixture and passes a clean tree; actionable errors for every missing prerequisite (`make doctor`, written 2026-09-12); `apiKeySource == "none"`; loopback-only; every ignored path actually ignored |
 | **M1** | SRS fetchers (read-only) + text brain loop  | WaniKani + Bunpro fetchers, profile renderer, persistent claude subprocess, CLI REPL with the real profile in the prompt     | Read-only recording test green; env allowlist; restart/`--resume`; chunker + emotion tests; no built-in tools in `init.tools[]`                |
 | **M2** | Ears & mouth (no avatar)                    | Mic → VAD → Whisper → M1 → VOICEVOX → playback; emotion → voice live; latency + VRAM instrumentation                        | Viseme golden tests; hallucination filter; five emotions audibly distinct; VAD gating test                                                     |
 | **M3** | Face                                        | Full frontend: TalkingHead, lip-sync, emotions (face + voice), listening reactions, status bar, settings drawer, barge-in    | 10 turns on headphones, barge-in < 300 ms; **10 turns on speakers, zero self-interruptions**; 4 emotions distinct; **p90 ≤ 5.0 s**; VRAM ≤ 10 GB |
@@ -724,7 +783,11 @@ The rules that shape this codebase. Most were expensive to learn. They are docum
 - **Parse stdout line by line as JSON.** Log and skip unknown event types, and never crash on one.
 - **No `--bare`** (it never reads OAuth), **no `--dangerously-skip-permissions`**, **no
   `--no-session-persistence`** (it kills resume).
-- **Per-turn timeout (default 60 s)**, then SIGINT, an apology line, and `--resume` if needed.
+- **Per-turn timeout (default 60 s)**, then the CLI's own interrupt request on stdin (never a
+  signal — ADR-037), an apology line, and a silent whole-tree kill plus `--resume` only if the
+  interrupt never settles. On Windows the tree is `taskkill /T`'d, because terminating the
+  `claude.CMD` shim alone leaves `claude.exe` orphaned. The allowlisted env includes `SYSTEMROOT`,
+  `COMSPEC` and `TMP`, which that shim needs.
 
 ### Global
 
@@ -772,13 +835,26 @@ subscription auth, bills the API, and would leak into the subprocess.
 **`apiKeySource` is not `"none"`.** Same cause as above through some other path, such as a profile
 file or a settings file. The tutor refuses to run until it is fixed.
 
-**The WaniKani chip says my token can write.** Create a new personal access token with every write
-permission unticked and paste it in settings. The app will never use write scopes, but it should
-not hold them either.
+**I am not sure my WaniKani token is read-only.** Nothing can check it for you — the API does not
+report a token's scopes. Open WaniKani's token page: every write permission (`assignments:start`,
+`reviews:create`, `study_materials:*`, `user:update`) must be unticked. If in doubt, create a new
+token that way and paste it in settings; the app never uses write scopes, but it should not hold
+them either.
 
-**The avatar keeps interrupting itself on speakers.** Echo cancellation is not engaging (some
-browsers ignore it on certain devices). Use headphones, or raise the barge-in sensitivity factor in
-settings. If it happens on headphones, that is a bug worth filing.
+**`make doctor` says the Docker engine is not running.** Start Docker Desktop (or the daemon), then
+run it again; `make run` creates and starts the containers. Without Docker, run VOICEVOX and
+SearXNG yourself and start with `--no-docker`.
+
+**The launch says the port is in use and names `PORT`.** Another tutor is probably still running:
+stop it (`make stop` / `.\stop`), or change `PORT` in Settings → Advanced. The app binds the port
+before starting anything else so this is the first thing you see, not the last.
+
+**`.\run` says there is no virtual environment.** Create it exactly as the message says
+(`python -m venv .venv && .venv\Scripts\pip install -e ".[dev]"`), then run again.
+
+**The avatar keeps interrupting itself on speakers.** With push-to-talk (the default) it cannot:
+only your key ends a turn. In `TURN_MODE=vad`, raise the barge-in sensitivity factor in settings or
+use headphones. If it happens on headphones in `vad` mode, that is a bug worth filing.
 
 **Replies are being billed to the API.** See the two items above, and check that nothing in your
 shell profile exports `ANTHROPIC_API_KEY`.
@@ -800,8 +876,8 @@ TalkingHead expects (ms rather than s, pinned in code).
 **The face changes before the voice does.** The emotion is being applied on message receipt instead
 of at audio start. It must come from the playback-start callback.
 
-**p90 latency creeping past 5.0 s.** Check the `--profile` overlay for the stage blowing its
-budget. If it is Claude, drop to a faster model, shrink the profile, or ration MCP tool use
+**p90 latency creeping past 5.0 s.** Check the timing line (console, or the page) for the stage
+blowing its budget. If it is Claude, drop to a faster model, shrink the profile, or ration MCP tool use
 further.
 
 **VRAM above 10 GB.** Confirm VOICEVOX is still on CPU, then fall back to Whisper `medium` int8 in

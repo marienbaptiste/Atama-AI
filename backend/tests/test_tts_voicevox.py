@@ -1,7 +1,10 @@
 """Emotion -> voice table and the VOICEVOX client (spec §7, ADR-005/020)."""
 from __future__ import annotations
 
+import asyncio
+import io
 import json
+import wave
 from pathlib import Path
 
 import httpx
@@ -78,6 +81,19 @@ def test_apply_multiplies_the_students_baseline_speed():
 
 
 # -------------------------------------------------------------------- client
+def fake_wav(ms: float, rate: int = 24000) -> bytes:
+    """A real, minimal WAV (16-bit mono silence) of the given length — what VOICEVOX returns,
+    shape-wise. `b"RIFFfake"` used to stand in, which made `_wav_duration_ms` 0 and `fitted_to`
+    a no-op in every say() test (2026-09-12)."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b"\x00\x00" * int(rate * ms / 1000.0))
+    return buf.getvalue()
+
+
 def transport(handler):
     calls: list[httpx.Request] = []
 
@@ -97,7 +113,7 @@ def engine(req: httpx.Request) -> httpx.Response:
     if path == "/audio_query":
         return httpx.Response(200, json=GREETING)
     if path == "/synthesis":
-        return httpx.Response(200, content=b"RIFFfake", headers={"content-type": "audio/wav"})
+        return httpx.Response(200, content=fake_wav(2300.0), headers={"content-type": "audio/wav"})
     if path == "/initialize_speaker":
         return httpx.Response(204)
     return httpx.Response(404)
@@ -140,6 +156,104 @@ def test_unreachable_engine_leaves_the_client_constructible(tmp_path):
     c, _ = client(tmp_path, dead)
     assert c.is_up() is False and c.table          # table still built, from defaults
     assert c.params_for("happy").style_id == 29    # no catalogue -> base speaker
+    assert c.table_resolved is False
+    assert any("unavailable" in w for w in c.warnings)
+
+
+def test_an_unknown_catalogue_is_not_a_single_style_speaker(tmp_path):
+    """Regression, 2026-09-12: with the engine down at startup `speakers()` was [], every
+    emotion fell to the base id, and the table looked exactly like a one-style voice — so the
+    1.8x pitch spread was applied to No.7, a multi-style voice, for the whole session."""
+    table, warnings = emotions.resolve(cfg(tmp_path, VOICEVOX_SPEAKER="29"), [])
+    assert table["serious"].pitch == pytest.approx(-0.03)          # tuned value, not widened
+    assert table["surprised"].pitch == pytest.approx(0.09)
+    assert {p.style_id for p in table.values()} == {29}
+    assert any("unavailable" in w for w in warnings)
+    same, _ = emotions.resolve(cfg(tmp_path, VOICEVOX_SPEAKER="29"), None)
+    assert same == table
+
+
+def test_a_late_booting_engine_is_picked_up_at_the_first_synthesis(tmp_path):
+    """No restart needed: the table is re-resolved the first time the engine answers."""
+    up = {"now": False}
+
+    def flaky(req):
+        if not up["now"]:
+            raise httpx.ConnectError("still booting")
+        return engine(req)
+
+    c, calls = client(tmp_path, flaky)
+    assert c.table_resolved is False and c.params_for("serious").style_id == 29
+    with pytest.raises(tts_voicevox.VoicevoxError):
+        c.say("まだ。")                                # still down: fails, stays unresolved
+    assert c.table_resolved is False
+
+    up["now"] = True
+    speech = c.say("こんにちは。", "serious")
+    assert c.table_resolved is True
+    assert speech.style_id == 30                      # アナウンス, from the live catalogue
+    assert c.params_for("serious").style_name == "アナウンス"
+    before = len(calls)
+    c.say("もう一度。", "serious")
+    assert [r.url.path for r in calls[before:]] == ["/audio_query", "/synthesis"]   # resolved once
+
+
+def test_warm_up_re_resolves_a_table_built_blind(tmp_path):
+    up = {"now": False}
+
+    def flaky(req):
+        if not up["now"]:
+            raise httpx.ConnectError("still booting")
+        return engine(req)
+
+    c, calls = client(tmp_path, flaky)
+    up["now"] = True
+    loaded, _ = c.warm_up()
+    assert c.table_resolved and loaded > 1            # every style of the resolved table
+
+
+def test_from_config_async_is_the_same_client_built_off_the_loop(tmp_path):
+    tr, calls = transport(engine)
+    c = asyncio.run(tts_voicevox.VoicevoxClient.from_config_async(cfg(tmp_path), transport=tr))
+    assert c.table_resolved and c.version == "0.25.2"
+    assert c.say("はい。").style_id == 29
+
+
+def test_the_request_timeout_comes_from_config(tmp_path):
+    c, _ = client(tmp_path, VOICEVOX_TIMEOUT_S="7.5")
+    assert c.timeout_s == 7.5
+    assert c.http.timeout.read == 7.5
+
+
+def test_resolve_is_pure_and_refuses_to_read_the_persona_itself(tmp_path):
+    """-1 means "ask the persona"; the file read belongs to the caller, never in here."""
+    with pytest.raises(ValueError, match="base_id"):
+        emotions.resolve(cfg(tmp_path, VOICEVOX_SPEAKER="-1"), SPEAKERS)
+    table, _ = emotions.resolve(cfg(tmp_path, VOICEVOX_SPEAKER="-1"), SPEAKERS, base_id=53)
+    assert {p.style_id for p in table.values()} == {53}
+
+
+def test_wav_duration_is_read_from_the_header():
+    assert tts_voicevox._wav_duration_ms(fake_wav(1234.0)) == pytest.approx(1234.0, abs=0.05)
+    assert tts_voicevox._wav_duration_ms(fake_wav(0.0)) == 0.0
+    assert tts_voicevox._wav_duration_ms(b"RIFFfake") == 0.0
+    assert tts_voicevox._wav_duration_ms(b"") == 0.0
+
+
+def test_say_fits_the_timeline_to_the_real_wav(tmp_path):
+    """Gate M2d's mechanism, end to end: the timeline ends exactly with the audio."""
+    c, _ = client(tmp_path)
+    speech = c.say("こんにちは。")
+    assert speech.duration_ms == pytest.approx(2300.0, abs=0.05)
+    assert speech.timeline.vtimes[-1] + speech.timeline.vdurations[-1] <= 2300.0 + 1e-6
+
+
+def test_the_emotions_demo_has_a_line_for_every_emotion(tmp_path):
+    """encouraging/proud/confused were added to EMOTIONS and the demo raised KeyError."""
+    from backend.tools import voices
+    c, _ = client(tmp_path)
+    out = voices.emotions_demo(c, tmp_path / "demo.wav")
+    assert out.exists() and out.stat().st_size > 44
 
 
 def test_empty_text_is_refused(tmp_path):

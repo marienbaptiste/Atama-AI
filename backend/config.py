@@ -39,6 +39,20 @@ class Setting:
     group: str
     description: str
     secret: bool = False
+    #: A closed set of values (strings): the page shows a picker, `load()` and the panel refuse
+    #: the rest. Empty = free text.
+    choices: tuple[str, ...] = ()
+    #: Inclusive bounds for a number. None = unbounded on that side.
+    low: float | None = None
+    high: float | None = None
+
+
+class ConfigError(ValueError):
+    """settings.json (or an ATAMA_* override) holds something this app cannot run with.
+
+    One line, naming the key and the file, so a launch — or the pre-commit hook, which loads the
+    config at import — prints what to fix instead of a traceback.
+    """
 
 
 # fmt: off
@@ -48,26 +62,27 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("BUNPRO_API_TOKEN", "", str, "account", "Bunpro -> Settings -> API -> Account API Token", secret=True),
     Setting("CLAUDE_CODE_OAUTH_TOKEN", "", str, "account", "Optional; from `claude setup-token`. Empty = interactive login", secret=True),
     # Model
-    Setting("BRAIN_PROVIDER", "claude-cli", str, "model", "Which brain implementation to use (ADR-027). Implemented: claude-cli. An OpenAI headless provider is planned (ROADMAP subsystem 20)"),
+    Setting("BRAIN_PROVIDER", "claude-cli", str, "model", "Which brain implementation to use (ADR-027). Implemented: claude-cli. An OpenAI headless provider is planned (ROADMAP subsystem 20)", choices=("claude-cli",)),
     Setting("CLAUDE_MODEL", "sonnet", str, "model", "Model tier for the tutor: sonnet | opus | haiku, each resolved to the NEWEST model your account can use (backend/data/model_tiers.txt, checked once a week). A full model id pins that exact model"),
-    Setting("CLAUDE_EFFORT", "medium", str, "model", "CLI effort level (low|medium|high|xhigh|max). Measured 2026-09-09, median first-token BETWEEN turns / opening turn: low 2.75s/8.6s, medium 2.14s/5.8s, high 3.75s/19.2s. Medium is the floor, not a compromise: it is the fastest of the three on BOTH numbers, so dropping to low would buy nothing. Sonnet cannot turn thinking off at any level (docs, 2026-09-10); the Claude stage budget is 3.60s since ADR-033 (spec S10)"),
+    Setting("CLAUDE_EFFORT", "medium", str, "model", "CLI effort level (low|medium|high|xhigh|max). Measured 2026-09-09, median first-token BETWEEN turns / opening turn: low 2.75s/8.6s, medium 2.14s/5.8s, high 3.75s/19.2s. Medium is the floor, not a compromise: it is the fastest of the three on BOTH numbers, so dropping to low would buy nothing. Sonnet cannot turn thinking off at any level (docs, 2026-09-10); the Claude stage budget is 3.60s since ADR-033 (spec S10)", choices=("low", "medium", "high", "xhigh", "max")),
     Setting("CLAUDE_FALLBACK_MODEL", "haiku", str, "model", "Fallback when the model is overloaded / rate limited"),
     Setting("CLAUDE_REPLACE_SYSTEM_PROMPT", True, bool, "model", "true: --system-prompt (Sensei only). false: --append-system-prompt, which leaves Claude Code's coding-agent prompt in front and breaks the persona"),
-    Setting("CLAUDE_TURN_TIMEOUT_S", 60, int, "model", "Per-turn timeout before SIGINT + apology"),
+    Setting("CLAUDE_TURN_TIMEOUT_S", 60, int, "model", "Per-turn timeout before SIGINT + apology", low=1),
     Setting("CLAUDE_CWD", "", str, "advanced", "Dir the claude subprocess runs in. Empty = platform default OUTSIDE the repo (Claude Code walks up the tree for CLAUDE.md and keys project memory by it — verified 2026-09-09)"),
     # Network
     Setting("HOST", "127.0.0.1", str, "advanced", "Bind address. Loopback only (ADR-017)"),
-    Setting("PORT", 8000, int, "advanced", "Orchestrator port"),
+    Setting("PORT", 8000, int, "advanced", "Orchestrator port", low=1, high=65535),
     Setting("VOICEVOX_URL", "http://127.0.0.1:50021", str, "advanced", "VOICEVOX engine (local Docker)"),
+    Setting("VOICEVOX_TIMEOUT_S", 30.0, float, "advanced", "How long one VOICEVOX request may take (s). Synthesis of a long sentence on a cold CPU engine can take a few seconds; 30 leaves room for a Docker engine that is still waking up without hanging the launch forever", low=1),
     Setting("SEARXNG_URL", "http://127.0.0.1:8888", str, "advanced", "Self-hosted SearxNG for the tutor's search tool (ADR-028). News also draws on the headline feeds in backend/data/news_feeds.txt"),
     # Voice
     Setting("VOICEVOX_SPEAKER", -1, int, "voice", "Base VOICEVOX style id. -1 = take it from the persona, which is what you usually want. 53 = 麒ヶ島宗麟 (たなか), 67 = 栗田まろん (はやし), 29 = No.7 (みなみ), 14 = 冥鳴ひまり (ゆい)"),
-    Setting("VOICEVOX_SPEED_SCALE", 0.9, float, "voice", "Default speech speed for learners"),
-    Setting("VOICEVOX_INTONATION_SCALE", 1.0, float, "voice", "Default intonation. Above 1 is livelier, below 1 flatter"),
-    Setting("VOICEVOX_PITCH_SCALE", 0.0, float, "voice", "Baseline pitch shift for every emotion. Negative lowers the register: -0.06 to -0.12 makes a well-trained female voice read as male without losing its quality"),
-    Setting("VOICEVOX_PRE_PHONEME", 0.0, float, "voice", "Lead-in silence per sentence (s). VOICEVOX defaults to 0.1, but we synthesise sentence by sentence, so it lands BETWEEN sentences as dead air"),
-    Setting("VOICEVOX_POST_PHONEME", 0.08, float, "voice", "Trailing silence per sentence (s). Enough to breathe, not enough to sound chopped"),
-    Setting("VOICEVOX_PAUSE_SCALE", 1.0, float, "voice", "Multiplies the pauses at 、 and 。 Higher is more measured"),
+    Setting("VOICEVOX_SPEED_SCALE", 0.9, float, "voice", "Default speech speed for learners", low=0.5, high=2.0),
+    Setting("VOICEVOX_INTONATION_SCALE", 1.0, float, "voice", "Default intonation. Above 1 is livelier, below 1 flatter", low=0.0, high=2.0),
+    Setting("VOICEVOX_PITCH_SCALE", 0.0, float, "voice", "Baseline pitch shift for every emotion. Negative lowers the register: -0.06 to -0.12 makes a well-trained female voice read as male without losing its quality", low=-0.15, high=0.15),
+    Setting("VOICEVOX_PRE_PHONEME", 0.0, float, "voice", "Lead-in silence per sentence (s). VOICEVOX defaults to 0.1, but we synthesise sentence by sentence, so it lands BETWEEN sentences as dead air", low=0.0, high=1.5),
+    Setting("VOICEVOX_POST_PHONEME", 0.08, float, "voice", "Trailing silence per sentence (s). Enough to breathe, not enough to sound chopped", low=0.0, high=1.5),
+    Setting("VOICEVOX_PAUSE_SCALE", 1.0, float, "voice", "Multiplies the pauses at 、 and 。 Higher is more measured", low=0.0, high=3.0),
     Setting("EMOTION_HAPPY", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
     Setting("EMOTION_THINKING", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
     Setting("EMOTION_SURPRISED", "", str, "voice", "Override for this emotion, e.g. style=31,speed=1.05,pitch=0.02,intonation=1.15. Empty = the built-in table in backend/emotions.py, which picks styles by name"),
@@ -78,52 +93,75 @@ SCHEMA: tuple[Setting, ...] = (
     # Speech detection
     Setting("WHISPER_MODEL", "large-v3", str, "speech", "faster-whisper model (fallback: medium)"),
     Setting("WHISPER_COMPUTE_TYPE", "float16", str, "speech", "CTranslate2 compute type. float16 is the default because int8 buys nothing on a GPU that does fp16 natively: measured 2026-09-09, same median latency (287 vs 290 ms) and better transcripts, for 1.7 GB of headroom we were not spending. int8_float16 is the fallback if VRAM ever gets tight"),
-    Setting("TURN_MODE", "ptt", str, "speech", "How a turn ends: ptt (you press a key - reliable, and the tutor's own voice can never end your turn) or vad (silence ends it - hands-free, but see VAD_SILENCE_MS)"),
-    Setting("VAD_SILENCE_MS", 900, int, "speech", "Silence that ends an utterance. Raised 600 -> 900 on 2026-09-10: 600 ms cut the student off mid-thought. It is spent DIRECTLY from the 5.0 s voice->voice budget (spec S10 allots 0.50 s to this stage), so raising it buys patience with latency"),
-    Setting("VAD_MIN_SPEECH_MS", 300, int, "speech", "Minimum speech before an utterance counts"),
-    Setting("BARGEIN_THRESHOLD_FACTOR", 2.0, float, "speech", "VAD threshold multiplier while the avatar speaks"),
-    Setting("BARGEIN_MIN_SPEECH_MS", 250, int, "speech", "Sustained speech required to barge in"),
-    Setting("PLAYBACK_ONSET_IGNORE_MS", 150, int, "speech", "Ignore VAD at playback onset"),
-    # Latency / VRAM guards
-    Setting("FILLER_AFTER_MS", 1200, int, "advanced", "Play a filler if the first sentence has not closed"),
-    Setting("LATENCY_WARN_S", 5.0, float, "advanced", "Warn when a turn exceeds this. 5.0 since 2026-09-10 (ADR-033): the gate is voice->voice p90 <= 5.0 s"),
-    Setting("VRAM_WARN_GB", 10, int, "advanced", "Warn above this GPU memory use"),
-    Setting("CONTEXT_ROTATE_AT", 0.7, float, "advanced", "Start a fresh session (with the lesson so far) when her context passes this fraction of the model's window, before Claude condenses it on its own - which is seconds of silence mid-lesson (ADR-032). 0 = never. The window is read from Claude after every turn. Where Claude condenses is its own policy and nothing reports it, so if Claude ever condenses first the app rotates earlier from then on (kept in .cache/compaction.json)"),
+    Setting("TURN_MODE", "ptt", str, "speech", "How a turn ends: ptt (you press a key - reliable, and the tutor's own voice can never end your turn) or vad (silence ends it - hands-free, but see VAD_SILENCE_MS)", choices=("ptt", "vad")),
+    Setting("VAD_SILENCE_MS", 900, int, "speech", "Silence that ends an utterance. Raised 600 -> 900 on 2026-09-10: 600 ms cut the student off mid-thought. It is spent DIRECTLY from the 5.0 s voice->voice budget (spec S10 allots 0.50 s to this stage), so raising it buys patience with latency", low=0),
+    Setting("VAD_MIN_SPEECH_MS", 300, int, "speech", "Minimum speech before an utterance counts", low=0),
+    Setting("BARGEIN_THRESHOLD_FACTOR", 2.0, float, "speech", "VAD threshold multiplier while the avatar speaks", low=1.0),
+    Setting("BARGEIN_MIN_SPEECH_MS", 250, int, "speech", "Sustained speech required to barge in", low=0),
+    Setting("PLAYBACK_ONSET_IGNORE_MS", 150, int, "speech", "Ignore VAD at playback onset", low=0),
+    # Speech detection, the knobs nobody should need (spec §11: still not magic numbers in code).
+    Setting("VAD_SPEECH_THRESHOLD", 0.5, float, "advanced", "Silero probability at or above which a 32 ms frame counts as speech while listening. While the tutor speaks the bar is raised by BARGEIN_THRESHOLD_FACTOR (backend/vad.py active_threshold)", low=0.0, high=1.0),
+    Setting("VAD_ONSET_TOLERANCE_MS", 200, int, "advanced", "How long a dip below the threshold may last before a forming utterance is abandoned. Speech is not continuous: plosives and syllable gaps dip constantly, and resetting on the first one meant speech was never detected (2026-09-09)", low=0),
+    Setting("STT_QUIET_RMS", 0.012, float, "advanced", "Audio below this RMS is effectively silence, so a confident-sounding transcript on it is a lie (the hallucination filter). An upper bound: the voice loop measures the room between turns and uses a few times that level when it is lower (QUIET_OVER_FLOOR)", low=0.0, high=1.0),
+    Setting("QUIET_OVER_FLOOR", 4.0, float, "advanced", "Audio this many times above the room's own level is not quiet. A fixed level assumed a loud microphone and, on a quiet headset (speech at rms 0.003), rejected real sentences as silence (2026-09-10)", low=1.0),
+    Setting("STT_MIN_AVG_LOGPROB", -1.0, float, "advanced", "faster-whisper confidence floor: a transcript whose mean segment avg_logprob is below this is discarded (spec §9)", high=0.0),
+    Setting("STT_MAX_NO_SPEECH_PROB", 0.6, float, "advanced", "Above this no_speech_prob the transcript is suspect - but never rejected on that alone: Whisper's no-speech head is unreliable on utterances that start abruptly, which is all of ours once Silero has trimmed the lead-in (2026-09-09). It needs quiet audio or STT_CORROBORATING_AVG_LOGPROB to agree", low=0.0, high=1.0),
+    Setting("STT_CORROBORATING_AVG_LOGPROB", -0.7, float, "advanced", "The second opinion a high no_speech_prob needs: an avg_logprob below this corroborates it and the transcript is discarded", high=0.0),
+    Setting("PTT_HANDOVER_TIMEOUT_S", 1.0, float, "advanced", "Releasing the talk key while the previous turn is still stopping: how long to wait for it before giving up on the new utterance (and saying so)", low=0.0, high=10.0),
+    # Latency / VRAM guards. (No FILLER_AFTER_MS: the filler pool of spec §10 / ADR-008 is not built,
+    # so the knob offered nothing - removed 2026-09-12.)
+    Setting("LATENCY_WARN_S", 5.0, float, "advanced", "Warn when a turn exceeds this. 5.0 since 2026-09-10 (ADR-033): the gate is voice->voice p90 <= 5.0 s", low=0.0),
+    Setting("VRAM_WARN_GB", 10, int, "advanced", "Warn above this GPU memory use", low=0),
+    Setting("CONTEXT_ROTATE_AT", 0.7, float, "advanced", "Start a fresh session (with the lesson so far) when her context passes this fraction of the model's window, before Claude condenses it on its own - which is seconds of silence mid-lesson (ADR-032). 0 = never. The window is read from Claude after every turn. Where Claude condenses is its own policy and nothing reports it, so if Claude ever condenses first the app rotates earlier from then on (kept in .cache/compaction.json)", low=0.0, high=1.0),
     # Display
     Setting("TUTOR_PERSONA", "minami", str, "voice", "Which tutor: a name in prompts/ (tanaka, hayashi, minami, mori) or a path. The persona declares its own voice AND its avatar, so this one setting switches character, voice and face together (ADR-026/030). Default is minami because she is the one with a shipped avatar"),
-    Setting("SUBTITLES", "jp", str, "display", "jp | off"),
-    Setting("EXPLAIN_LANGUAGE", "en", str, "display", "Language for a grammar explanation when you click a red point: en | ja. A sentence translation is always English"),
-    Setting("FURIGANA", "unknown", str, "display", "Furigana over kanji in the chat: all | unknown (only kanji you have not yet reached Guru on in WaniKani - the default) | off"),
+    Setting("SUBTITLES", "jp", str, "display", "jp | off", choices=("jp", "off")),
+    Setting("EXPLAIN_LANGUAGE", "en", str, "display", "Language for a grammar explanation when you click a red point: en | ja. A sentence translation is always English", choices=("en", "ja")),
+    Setting("FURIGANA", "unknown", str, "display", "Furigana over kanji in the chat: all | unknown (only kanji you have not yet reached Guru on in WaniKani - the default) | off", choices=("all", "unknown", "off")),
     Setting("STUDY_PANEL", True, bool, "display", "The conversation as a chat beside the tutor: her grammar points in red, and a hint of what she wants you to use (ADR-036). Off = the tutor full-width, with subtitles"),
     Setting("AUDIO_INPUT_DEVICE", "", str, "audio", "Microphone, by name. Empty = system default. If it is unplugged, or not there at launch, the app uses the system default and switches back when it returns (spec §9)"),
     Setting("AUDIO_OUTPUT_DEVICE", "", str, "audio", "Speakers/headphones for the terminal voice (--speak), by name. Empty = system default. If they are unplugged, or not there at launch, the app uses the system default and switches back when they return (spec §9). On the avatar page her voice plays through the browser, which follows the OS default output"),
-    Setting("STATUS_HEARTBEAT_S", 30, int, "display", "service_status heartbeat"),
+    Setting("STATUS_HEARTBEAT_S", 30, int, "display", "service_status heartbeat", low=1),
     # Files
-    Setting("SETTINGS_FILE", "settings.json", str, "advanced", "Config store (git-ignored, 0600)"),
+    Setting("SETTINGS_FILE", "settings.json", str, "advanced", "Config store (git-ignored; mode 0600 where the OS has modes - Windows relies on the profile's ACLs)"),
     Setting("LOG_DIR", "logs", str, "advanced", "Session logs"),
     Setting("MEMORY_ENABLED", True, bool, "model", "Cross-session memory (spec §6b): the tutor remembers last session, avoids recently discussed topics, and keeps notes about you in an editable file outside the repo"),
     Setting("EXPLAIN_MODEL", "haiku", str, "model", "Model that answers a click on a grammar point or a translate icon (spec §8b). Cheap on purpose: it runs off the conversation path and every answer is cached"),
     Setting("MEMORY_SUMMARY_MODEL", "haiku", str, "model", "Model that summarises each past session at the next launch. Cheap on purpose: it runs once per session over a short excerpt, never on the conversation path"),
     Setting("CACHE_DIR", ".cache", str, "advanced", "Generated/personal files"),
-    Setting("SRS_CACHE_TTL_S", 3600, int, "advanced", "SRS disk cache TTL"),
-    Setting("SRS_FETCH_BUDGET_S", 10, int, "advanced", "Session-start fetch budget, PER SERVICE (they fetch in parallel). Measured 2026-09-09: bunpro 5.1s, wanikani 4.3s, so 10s is roughly 2x headroom. On timeout the last snapshot is served as stale, never dropped"),
+    Setting("SRS_CACHE_TTL_S", 0, int, "advanced", "Launch re-uses an SRS snapshot younger than this many seconds instead of fetching. 0 (the default, user directive 2026-09-12): every launch fetches the latest WaniKani and Bunpro data; only a manual Refresh fetches after that (ADR-024)", low=0),
+    Setting("SRS_FETCH_BUDGET_S", 10, int, "advanced", "Session-start fetch budget, PER SERVICE (they fetch in parallel). Measured 2026-09-09: bunpro 5.1s, wanikani 4.3s, so 10s is roughly 2x headroom. On timeout the last snapshot is served as stale, never dropped", low=1),
 )
 # fmt: on
 
 KEYS: tuple[str, ...] = tuple(s.key for s in SCHEMA)
 _BY_KEY = {s.key: s for s in SCHEMA}
 SECRET_KEYS: frozenset[str] = frozenset(s.key for s in SCHEMA if s.secret)
+#: String keys with a closed set of values, from the schema (the settings page reads this too).
+CHOICES: dict[str, tuple[str, ...]] = {s.key: s.choices for s in SCHEMA if s.choices}
 
 
 def _coerce(setting: Setting, raw: Any) -> Any:
+    """The stored/env value as the schema's type — refusing what is outside its choices or range.
+
+    Messages are `KEY: <problem>` so the settings panel can show the problem alone, per key.
+    """
     if raw is None:
         return setting.default
     if setting.type is bool:
         return str(raw).lower() in ("1", "true", "yes", "on")
     try:
-        return setting.type(raw)
+        value = setting.type(raw)
     except (TypeError, ValueError) as e:
-        raise ValueError(f"{setting.key}: expected {setting.type.__name__}, got {raw!r}") from e
+        raise ConfigError(f"{setting.key}: expected {setting.type.__name__}, got {raw!r}") from e
+    if setting.choices and value not in setting.choices:
+        raise ConfigError(f"{setting.key}: one of: {', '.join(setting.choices)} (got {value!r})")
+    if setting.type in (int, float):
+        if setting.low is not None and value < setting.low:
+            raise ConfigError(f"{setting.key}: must be at least {setting.low:g} (got {value!r})")
+        if setting.high is not None and value > setting.high:
+            raise ConfigError(f"{setting.key}: must be at most {setting.high:g} (got {value!r})")
+    return value
 
 
 class Config:
@@ -250,25 +288,44 @@ def load(settings_file: str | os.PathLike | None = None, env: dict[str, str] | N
     stored: dict[str, Any] = {}
     first_run = not settings_path.exists()
     if not first_run:
-        stored = json.loads(settings_path.read_text(encoding="utf-8") or "{}")
+        stored = _read_store(settings_path)
     values: dict[str, Any] = {}
     for s in SCHEMA:
         raw: Any = s.default
+        where = "built-in default"
         if s.key.lower() in stored:
-            raw = stored[s.key.lower()]
+            raw, where = stored[s.key.lower()], str(settings_path)
         if s.key in env and env[s.key] != "":
-            raw = env[s.key]
-        values[s.key] = _coerce(s, raw)
+            raw, where = env[s.key], f"{ENV_PREFIX}{s.key} in the environment"
+        try:
+            values[s.key] = _coerce(s, raw)
+        except ConfigError as exc:
+            raise ConfigError(f"{exc} — from {where}; fix it on the settings page or in that file") from None
     return Config(values, settings_path, first_run)
 
 
+def _read_store(path: Path) -> dict[str, Any]:
+    """settings.json as a dict, or one clear line about why it is not one."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+    except (OSError, ValueError) as exc:
+        raise ConfigError(f"{path} is not valid JSON ({exc}); fix or delete it") from None
+    if not isinstance(data, dict):
+        raise ConfigError(f"{path} must hold a JSON object, not {type(data).__name__}; fix or delete it")
+    return data
+
+
 def save(updates: dict[str, Any], settings_file: str | os.PathLike | None = None) -> Path:
-    """Merge `updates` (env-style keys) into settings.json atomically, mode 0600."""
+    """Merge `updates` (env-style keys) into settings.json atomically.
+
+    Written through a temp file + rename, mode 0600 where the OS supports modes; on Windows the
+    profile directory's ACLs are the protection, and `chmod` is a no-op there.
+    """
     cfg = load(settings_file)
     path = cfg.settings_path
     current: dict[str, Any] = {}
     if path.exists():
-        current = json.loads(path.read_text(encoding="utf-8") or "{}")
+        current = _read_store(path)
     for key, value in updates.items():
         if key not in _BY_KEY:
             raise KeyError(f"unknown setting {key}")

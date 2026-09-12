@@ -14,11 +14,11 @@ reasoning behind it. Build sequencing is in [ROADMAP.md](ROADMAP.md).
 | 001 | Claude CLI subprocess, not the Anthropic API SDK              | Accepted |
 | 002 | One persistent subprocess per session, not one per turn       | Accepted |
 | 003 | No tools for the tutor; no permission bypass                  | Superseded by ADR-016 |
-| 004 | Local STT: faster-whisper `large-v3` @ `int8_float16`         | Accepted |
+| 004 | Local STT: faster-whisper `large-v3` @ `int8_float16`         | Accepted; amended 2026-09-09 (`float16` is the default) |
 | 005 | VOICEVOX on CPU in Docker, never on the GPU                   | Accepted |
-| 006 | Server-side Silero VAD over raw PCM from an AudioWorklet      | Accepted |
+| 006 | Server-side Silero VAD over raw PCM from an AudioWorklet      | Accepted; amended 2026-09-12 (the orchestrator captures the mic) |
 | 007 | `speakAudio` with explicit visemes, never `speakText`         | Accepted |
-| 008 | Sentence-level streaming, with fillers as masking only        | Accepted |
+| 008 | Sentence-level streaming, with fillers as masking only        | Accepted; fillers deferred to the end of the project (2026-09-12) |
 | 009 | Vanilla TS + Vite frontend; no React, no state library        | Accepted |
 | 010 | SRS sources are optional; Bunpro is fragile by assumption     | Accepted |
 | 011 | Student Profile capped at 600 tokens                          | Accepted |
@@ -26,20 +26,28 @@ reasoning behind it. Build sequencing is in [ROADMAP.md](ROADMAP.md).
 | 013 | No database — JSONL files, one user                           | Accepted |
 | 014 | ~6 GB of VRAM headroom is reserved, not spent                 | Accepted |
 | 015 | No external interface is coded against unverified             | Accepted |
-| 016 | Subprocess isolation: `--tools ""`, strict MCP, empty cwd, env allowlist | Accepted |
-| 017 | Loopback-only binding for every service                        | Accepted |
+| 016 | Subprocess isolation: `--tools ""`, strict MCP, empty cwd, env allowlist | Accepted; amended by ADR-037 (interrupt protocol) |
+| 017 | Loopback-only binding for every service                        | Accepted; amended 2026-09-12 (Origin check) |
 | 018 | Self-barge-in is designed out, not tuned out                   | Accepted |
 | 019 | Service health is surfaced from real signals, in the UI       | Accepted |
-| 020 | Emotion is one tag, sentence-scoped, driving face and voice together | Accepted |
+| 020 | Emotion is one tag, sentence-scoped, driving face and voice together | Accepted; amended 2026-09-12 (seven tags; settles at end of turn) |
 | 021 | WaniKani and Bunpro are read-only, enforced at three layers     | Accepted |
-| 022 | Configuration lives in a settings interface; `.env` is an optional override | Accepted |
+| 022 | Configuration lives in a settings interface; `.env` is gone   | Accepted; amended 2026-09-12 |
 | 023 | Bunpro MCP server is written in-repo; credential is the Settings→API token only | Accepted |
 | 024 | SRS APIs are called only at launch and manual refresh; MCP tools read the snapshot | Accepted |
 | 025 | Session topic seed fetched by the orchestrator, never by the tutor | Superseded by ADR-028 |
-| 026 | Sensei has a soul file: persona lives in `prompts/soul.md` | Accepted |
+| 026 | Sensei has a soul file: persona lives in `prompts/soul.md` | Accepted; amended by ADR-030 (one file per persona) |
 | 027 | The brain is a provider behind an interface; Claude CLI is the only implementation | Accepted |
-| 028 | The tutor finds its own topic, through a search tool we provide | Accepted (not yet implemented — V0.11) |
+| 028 | The tutor finds its own topic, through a search tool we provide | Accepted; implemented and verified live 2026-09-09 (spec §5c) |
 | 029 | Sensei's prompt replaces Claude Code's, and is passed as a file | Accepted |
+| 030 | A tutor is a persona *and* a voice; voices shortlisted by measurement, chosen by ear | Accepted |
+| 031 | Memory is read once at session start and written in the gaps; never retrieved mid-turn | Accepted; amended 2026-09-10 and 2026-09-12 |
+| 032 | Context is rotated pre-emptively during the avatar's speech, never compacted mid-turn | Accepted; amended 2026-09-11 and 2026-09-12 |
+| 033 | Latency gate relaxed to p90 ≤ 5.0 s: answer quality over the last seconds | Accepted — user directive |
+| 034 | M2 declared done by the user; M4 is built before M3 | Accepted — user directive |
+| 035 | The page's protocol is generated; barge-in closes a turn epoch; a face changes with its audio | Accepted |
+| 036 | The study panel: the tutor tags, the student clicks, the dictionary is local | Accepted; partly built |
+| 037 | A turn is stopped by the CLI's interrupt request, never by a signal | Accepted (2026-09-12); amends ADR-016 |
 
 ---
 
@@ -144,6 +152,13 @@ blocklist is a **data file**, not code, so new hallucinations are one line, not 
 **Reversed if:** the latency or VRAM budget cannot be met locally at acceptable accuracy — and
 that is a conversation with the user, not a unilateral swap (spec §14).
 
+**Amendment (2026-09-09, recorded 2026-09-12; ROADMAP V0.13 addendum).** The default
+`WHISPER_COMPUTE_TYPE` is **`float16`**, not `int8_float16`: measured on the user's own voice, int8
+bought nothing on a GPU that does fp16 natively (287 vs 290 ms median) and lost transcripts (貯金
+heard as ショッキング), for 1.7 GB of headroom the budget was not spending (3 880 MiB at fp16, still
+well inside §10b). `int8_float16` stays as the documented step-down if VRAM ever gets tight, ahead
+of `medium`. The decision above otherwise stands unchanged.
+
 ---
 
 ## ADR-005 — VOICEVOX on CPU in Docker, never on the GPU
@@ -157,7 +172,8 @@ characters, spec §6).
 
 **Decision.** Official VOICEVOX Docker image, CPU build, on `:50021`, managed by
 docker-compose — the only containerised component. Never moved to the GPU. Speaker id,
-`speedScale` (default `0.9` for learners) and `intonationScale` are configurable in `.env`.
+`speedScale` (default `0.9` for learners) and `intonationScale` are configurable (the settings
+page, ADR-022; the speaker id comes from the persona since ADR-030).
 
 **Consequences.** The GPU is Whisper's alone, and VRAM accounting stays simple. Docker becomes a
 prerequisite, which `make doctor` checks.
@@ -186,6 +202,17 @@ fast, confirmed by the server.
 policy in one place, which is what makes barge-in coherent.
 
 **Reversed if:** the app ever runs over a real network, where bandwidth would start to matter.
+
+**Amendment (2026-09-12).** The server-side VAD and the server's ownership of turn-taking stand;
+the *capture* half did not happen as written. The microphone is captured by the **orchestrator**
+(`backend/audio.py`, sounddevice/PortAudio, with the device recovery of spec §9) and the browser
+never streams audio — the page holds the turn open with push-to-talk `control: start`/`stop`
+(`cancel` drops it) over the WebSocket, and there is no `audio_chunk` message (spec §8). The
+AudioWorklet path was never built; with `TURN_MODE=ptt` the default (spec §9), the key is the
+end-of-turn signal and the VAD feeds the level meter and the listening reactions. Consequence: the
+`getUserMedia` echo-cancellation layer of ADR-018 does not apply — the capture device's own
+processing does — and under WSL2 the backend, not the Windows browser, needs an audio device
+(spec §15, unverified there).
 
 ---
 
@@ -235,6 +262,14 @@ the reason per-stage timings are logged from M2 onward.
 **Reversed if:** first-token latency ever drops far enough that whole-reply synthesis fits the
 budget.
 
+**Amendment (2026-09-12) — the decision stands, the fillers are deferred.** Sentence-level
+streaming with N+1 overlap is built and is how the voice path works. The filler pool is **not
+built**: there is no `FILLER_AFTER_MS` setting (removed from the schema so the panel does not
+offer a knob that does nothing), no `.cache/fillers/`, no filler branch in `voice_loop.py`. It is
+deferred to the end of the project, with the M2 checks the user deferred (ADR-034); the filler
+rule above — masking, never budget compliance — applies unchanged when it lands. Until then the
+measured first-content number is the only one there is (spec §10: `first_play_ms`).
+
 ---
 
 ## ADR-009 — Vanilla TS + Vite frontend; no React, no state library
@@ -276,8 +311,8 @@ budget. The app runs correctly with zero, one, or both configured.
   check the live review queue mid-conversation — rationed to on-request or roughly every
   15 minutes, because each tool call is latency (ADR-011).
 
-`mcp.json` is generated from `mcp.json.template` plus `.env` at startup so credentials are never
-committed.
+`mcp.json` is generated at startup (`backend/tools/mcp_config.py`, from the resolved config — no
+template file, no `.env`) so credentials are never committed; since ADR-024 it carries none at all.
 
 **Consequences.** More error-handling code than a happy path needs, and a degradation matrix in
 the standing regression suite. In exchange, Bunpro breaking is a logged warning rather than an
@@ -326,6 +361,14 @@ of the pipeline. The prompt is version-controlled, so a personality regression i
 
 **Reversed if:** never, realistically.
 
+**Addendum (2026-09-12) — every model-facing text is a file.** The rule now covers more than the
+template (which is passed as a file, ADR-029): the persona files (ADR-026/030), the memory section
+headings (`prompts/memory.md`), the rotation handoff heading (`prompts/handoff.md`), and the
+summariser's instructions and system prompt (`prompts/summarise.md`, `prompts/summariser.md`).
+Each is read at use and raises if missing or empty, so a deleted file is an error, not a silent
+default. **Known deviation:** `backend/explain.py` still holds the explainer's short system text in
+Python (`SYSTEM`); it is to move to `prompts/` later.
+
 ---
 
 ## ADR-013 — No database — JSONL files, one user
@@ -359,7 +402,8 @@ to put a bigger model or a second one.
 **Decision.** Hard cap of **8–10 GB** total. The ~6 GB remainder is **deliberately reserved** for
 a future MuseTalk/photoreal experiment and is not to be spent on the current pipeline. Anything
 that pushes past the cap gets reduced (ADR-004's `medium` int8 fallback) rather than accommodated.
-`make doctor` and the `--profile` overlay report `nvidia-smi` and warn above 10 GB.
+`make doctor` and the orchestrator's VRAM watch (`backend/vram.py`) report `nvidia-smi` and warn
+above `VRAM_WARN_GB` (10 GB).
 
 **Consequences.** Some quality is left on the table today to keep a future option open. That is
 the intended trade.
@@ -395,7 +439,10 @@ changes upstream, the dated comment says when it was last true.
 
 ## ADR-016 — Subprocess isolation: `--tools ""`, strict MCP, empty cwd, env allowlist
 
-**Status:** Accepted (2026-09-09) — supersedes ADR-003
+**Status:** Accepted (2026-09-09) — supersedes ADR-003; **amended by ADR-037** (2026-09-12: how a
+turn in flight is stopped, and the whole-tree kill on Windows). The allowlist below gained
+`SYSTEMROOT`, `COMSPEC` and `TMP` the same day — the `claude.CMD` shim is a cmd.exe script and
+cannot run without them (`constants.CLAUDE_CHILD_ENV_ALLOWLIST`).
 
 **Context.** Verified against Claude Code 2.1.159 on 2026-09-09. Three findings changed the
 spawn design:
@@ -459,6 +506,17 @@ config value on purpose and read the comment next to it.
 
 **Reversed if:** never, for this product. A multi-device version would be a different product
 (ADR-013).
+
+**Amendment (2026-09-12) — the handshake checks `Origin`.** Loopback binding keeps the LAN out;
+it does not keep out another site open in the same browser, whose script can open a WebSocket to
+`127.0.0.1:8000` and drive the lesson (send `control: quit`, change settings). So `backend/app.py`
+compares the handshake's `Origin` **whole** — scheme, host and port — against the page's own
+origins: `127.0.0.1`, `localhost` and `[::1]` at `PORT`, plus the Vite dev server on `5173`
+(whose proxy forwards the browser's Origin unchanged; a test asserts the two files agree on the
+port). Anything else, including the `null` of a sandboxed frame, is refused **before** the socket
+is accepted. A client with no Origin header is not a browser (a test client, a script) and is
+admitted only from the loopback address itself. SearXNG is also published on loopback only
+(`127.0.0.1:8888:8080`).
 
 ---
 
@@ -550,6 +608,25 @@ audibly distinct.
 **Reversed if:** VOICEVOX styles prove too coarse for the tone shifts wanted — then the scalar
 overrides carry the load and the style column is dropped, not the mechanism.
 
+**Amendment (2026-09-12).** Four things changed in practice, none of them the mechanism:
+
+- **Seven tags, not four.** `chunker.EMOTIONS` is `happy, thinking, surprised, serious,
+  encouraging, proud, confused`; `encouraging` is the tag for the elicitation question of the
+  study panel (ADR-036), `proud` for praise after effort, `confused` for a genuine failure to
+  understand. Every one has a voice row (`backend/emotions.py`) and a rig row (`frontend/src/rig.ts`),
+  and `test_models.py` asserts the two tables agree.
+- **Tags are case-insensitive**, and a TalkingHead mood name in brackets (`[angry]`, `[sad]`,
+  `[love]`…) is still a tag: stripped so it is never spoken, recorded as stray so a prompt bug is
+  visible, and ignored for the emotion. `[neutral]` alone resets to neutral.
+- **The expression settles at the end of the turn, not on a timer.** It used to relax on a fixed
+  4 s timer, which put her back to neutral in the middle of a long sentence, and each sentence's
+  release timer was never kept, so a stale one could fire under the next tag. Now
+  (`frontend/src/expression.ts`) the next tag cancels the pending release, and only the end of the
+  turn schedules the settle (`expression.test.ts`).
+- **A face is optional at runtime.** If TalkingHead or the GLB cannot load, the sentence still
+  plays audio-only and still reaches the chat as its audio starts (`frontend/src/audio_only.ts`);
+  the emotion then reaches the voice alone, which is the degraded state, not a violation.
+
 ---
 
 ## ADR-021 — WaniKani and Bunpro are read-only, enforced at three layers
@@ -566,9 +643,11 @@ explicitly forbidden any write.
 **Decision.** The application **never writes** to WaniKani or Bunpro. Enforcement is
 structural, at three independent layers (spec §5):
 
-1. **Token scope** — the WaniKani token is created with no write permissions; `make doctor`
-   reads `/v2/user` and warns if any write permission is present. (Bunpro's key is unscoped, so
-   the next two layers are its entire defence.)
+1. **Token scope** — the WaniKani token is created with no write permissions. The API does not
+   expose a token's scopes (ROADMAP V0.9, 2026-09-09), so this layer is *instructed*, not
+   verified: `make doctor` prints the scopes to leave unticked, and with `--live` makes one GET
+   per configured token to prove it authenticates — never more, and never by default (ADR-024).
+   (Bunpro's key is unscoped, so the next two layers are its entire defence.)
 2. **Client construction** — one shared SRS HTTP client exposing only `get()`. No write method
    exists to be called, and a test asserts it.
 3. **Tool surface** — the Bunpro MCP server exposes read tools only. A community server with
@@ -584,8 +663,11 @@ spec's Golden Rule (§0) with mechanical enforcement at every build/start point,
 test suite: a static AST gate (`backend/tools/readonly_gate.py`) that is the first target of
 `make test` and a prerequisite of `make run` and `make doctor`; an import-time self-check in
 `srs/http.py` that its client exposes only `get`; a `ReadOnlyTransport` that raises on any
-non-`GET` request at runtime; a startup assertion on the MCP tool surface; a `prebuild` grep in
-the frontend; and a pre-commit hook installed by `make hooks`. The gate bans **any setter-shaped
+non-`GET` request at runtime (the gate pins the older class name `_GuardTransport`, kept as an
+alias; a refusal is logged CRITICAL and the service's chip goes to `error`); a startup assertion
+on the MCP tool surface; a `prebuild` grep in the frontend; and a pre-commit hook installed by
+`make hooks`. The standing recording test — every request of a full mocked session, MCP tools
+included, is `GET` — is `backend/tests/test_srs_readonly_session.py` (2026-09-12). The gate bans **any setter-shaped
 name** in `backend/srs/**` (`set_`, `write_`, `update_`, `create_`, `delete_`, `submit_`,
 `start_`, `post_`, `put_`, `patch_`, `mark_`, `reset_`, `assign_`) regardless of behaviour, and
 has no bypass flag, env var, or marker comment. Editing the gate itself requires a new ADR
@@ -652,8 +734,13 @@ in step; a test now asserts every key is presentable in the panel instead.
 `backend.tools.migrate_env` imports an old file in one command and now moves the **tokens** too —
 they were left behind before as the user's call, and with nothing reading `.env` that choice would
 simply lose them; `settings.json` is git-ignored and written 0600. `config.stale_dotenv()` reports
-what is left and the launch prints the one command to fix it. Docker Compose keeps its own `.env`
-for `SEARXNG_SECRET`: that is compose's mechanism, and the file at the repo root exists only for it.
+what is left and the launch prints the one command to fix it. There is **no `.env` for compose
+either** (later the same day): `SEARXNG_SECRET`, the one variable `docker-compose.yml`
+interpolates, is generated by the launcher (`backend/tools/up.py`) into the per-user state
+directory — `config.claude_cwd().parent / "searxng-secret"`, 0600 where the OS has modes — and
+passed to compose through the process environment, because a fresh clone had nothing to
+interpolate and `docker compose up` failed before anything started. The settings page's copy no
+longer mentions `.env` at all, and `make check-secrets` flags a leftover one.
 
 *And the empty state is a feature.* With no keys the launch says what is missing, where to add it,
 what happens meanwhile (the tutor teaches as if the student were an early beginner) and how to be
@@ -733,8 +820,15 @@ show its status.
 
 **Decision.**
 1. **Two triggers only:** app launch and the student's manual Refresh (`control: resync`).
-   No timer, no per-turn fetch, no MCP-driven fetch. A launch re-uses a snapshot younger than
-   `SRS_CACHE_TTL_S` (default 10 min) so rapid restarts during development do not hammer the APIs.
+   No timer, no per-turn fetch, no MCP-driven fetch. **Every launch fetches** the latest data
+   (user directive 2026-09-12: "at launch, then manual refresh"); `SRS_CACHE_TTL_S` (default
+   **0**; it was 1 h, and this entry said 10 min, until 2026-09-12) is an opt-in guard that
+   re-uses a snapshot younger than that instead, so rapid restarts during development do not
+   hammer the APIs. A snapshot in which
+   some endpoints failed is stored `partial: true` and is fetched again at the next launch
+   regardless of age; a 429 ends that service's fetch with no retry and the chip reads `stale`
+   "rate limited". `make doctor --live` is the one other caller, on demand only: one GET per
+   token, never by default.
 2. **Snapshot + status are stored.** `.cache/srs/<service>.json` carries `fetched_at` and the
    raw payloads; `.cache/srs/status.json` persists the registry so the UI shows the last known
    state on restart. Chips read `synced HH:MM`; `stale` means "serving an older snapshot".
@@ -746,7 +840,8 @@ show its status.
 
 **Consequences.** Mid-conversation Bunpro data can be up to a session old — acceptable for a
 tutor that is told the age and can suggest a Refresh. The credential surface shrank to one
-process. Measured: launch fetch of both sources 4.6 s (budget 10 s).
+process. Measured: launch fetch of both sources 4.6 s (budget 10 s) with 6 Bunpro + 5 WaniKani
+calls; 8 Bunpro calls since 2026-09-12 (three more grammar levels, spec §8b).
 
 **Reversed if:** never for the trigger policy (user directive). The snapshot format may change
 freely.
@@ -804,7 +899,10 @@ freely.
 
 ## ADR-026 — Sensei has a soul file: persona lives in `prompts/soul.md`
 
-**Status:** Accepted (2026-09-09) — user directive
+**Status:** Accepted (2026-09-09) — user directive. **Amended by ADR-030:** there is no
+`prompts/soul.md`; the soul is one file per tutor — `prompts/{tanaka,hayashi,minami,mori}.md`,
+selected by `TUTOR_PERSONA` — each carrying its `<!-- voice: NN -->` declaration. Everything
+below about position, budget and the file being user-editable applies to those files unchanged.
 
 **Context.** The user wants "background and life" for the teacher. A tutor with a consistent
 history — where she is from, what she does on Sundays, what she finds funny — has something to
@@ -840,7 +938,7 @@ within its total.
 (subscription auth, no per-token billing). But the rest of the pipeline — VAD, STT, chunker,
 TTS, visemes, avatar — has nothing to do with *which* model produces the text. The user wants
 the option to swap in a local model or another vendor later without that being a rewrite. Raised
-before `claude_session.py` was written, when the seam costs nothing; adding it afterwards would
+before the CLI provider (planned as `claude_session.py`, built as `brain/claude_cli.py`) was written, when the seam costs nothing; adding it afterwards would
 mean unpicking Claude-shaped types from the orchestrator, the status registry and the logs.
 
 **Decision.** Introduce a narrow **`Brain`** interface. Everything upstream of the chunker talks
@@ -1246,6 +1344,15 @@ and writes Claude Code's coding-session summary, so it does not reverse this dec
 **Reversed if:** the provider gains a way to compact incrementally, or to be told when to do it.
 Then we tell it, in the same gap, and skip the second process.
 
+**Amendment 2026-09-12 — what the handoff carries, and when there is none.** Point 3's brief is
+the **newest** lines of the turn log that fit `HANDOFF_MAX_TOKENS` (600; `prompt.build` keeps the
+tail, not the head — the end of a lesson is what the replacement must pick up), and only the turns
+of **this launch**: a replacement never inherits yesterday, which the memory tiers already carry.
+Before the launch's first turn the brief is empty and the heading (`prompts/handoff.md`) is
+omitted entirely, so a replacement spawned then — a Refresh, a tutor switch — opens with a
+greeting like any first session: **the first lesson of the day is greeted** (user directive
+2026-09-12, after a switched-in tutor said "carry on" to a student who had not yet spoken).
+
 ---
 
 ---
@@ -1384,7 +1491,7 @@ derive each client from it instead of emitting TypeScript directly.
 **Status:** Accepted by the user (2026-09-11). Partly built 2026-09-12: the chat beside the tutor,
 the tutor's inline marks, red grammar, the hint (point 1), and furigana from local data — the
 tokenizer and the student's WaniKani kanji progress (point 3's readings, point 4's `FURIGANA` and
-`STUDY_PANEL`). Explanations and translations on click (point 2) followed on 2026-09-13:
+`STUDY_PANEL`). Explanations and translations on click (point 2) followed the same day:
 `backend/explain.py`, one cached answer per grammar point and language, and per sentence. Word cards are built for their own vocabulary
 (2026-09-12); the offline dictionary — on'yomi/kun'yomi, and words outside WaniKani — is the rest
 of point 3. Spec §8b.
@@ -1438,3 +1545,55 @@ dictionary's readings are exact and free).
 
 **Reversed if:** inline tagging proves unreliable in prompt tuning; then one background call per
 turn replaces point 1.
+
+---
+
+## ADR-037 — A turn is stopped by the CLI's interrupt request, never by a signal
+
+**Status:** Accepted (2026-09-12). Amends ADR-016; refines spec §4 ("send SIGINT"), which
+this supersedes.
+
+**Context.** Spec §4 said a wedged turn gets SIGINT. Two things made that wrong in practice. On
+Windows `shutil.which("claude")` resolves to `claude.CMD`, a cmd.exe shim that runs
+`bin\claude.exe` as a child: `proc.terminate()` kills the shim only, and `claude.exe` survives it,
+orphaned, still holding the session (measured 2026-09-12). And a signal ends the *process*, when
+what a barge-in wants is to end the *turn* — the conversation, its session id and its MCP servers
+should all survive the student talking over the tutor, which happens several times a lesson.
+
+**Verified live 2026-09-12** (CLI 2.1.159, `-p` stream-json, Windows 11, haiku; pinned in
+`backend/constants.py`). The Agent SDK's wire protocol rides the same stdin: writing
+`{"type":"control_request","request_id":"<id>","request":{"subtype":"interrupt"}}` is answered by a
+`control_response` of subtype `success`, then the turn's `assistant`/`user` events and its `result`
+with `subtype: "error_during_execution", is_error: true, result: null` — all within the same
+millisecond of the request. **The process stays up**, and the next user turn is answered normally
+on the same `session_id`, preceded by a fresh `init`. This is **not** in `claude --help`, so it is
+re-verified on every CLI upgrade (ADR-015). Also verified: `taskkill /PID <launcher> /T /F` takes
+cmd.exe, `claude.exe` and their children together while the launcher is alive; stdin EOF is the
+clean exit (both gone 0.55 s after close); and on `--resume <id>` both `init.session_id` and
+`result.session_id` equal the id passed, so spec §4's assertion holds after a restart.
+
+**Decision.**
+
+1. A barge-in and a per-turn timeout both **interrupt** the turn with the control request
+   (`ClaudeCliBrain._interrupt`), then consume what the interrupted turn still owes — its `result` —
+   before the next turn is written (`_settle`, bounded by `INTERRUPT_GRACE_S`, a ceiling for a
+   stuck CLI and never a wait).
+2. A deliberate interrupt that never settles inside the grace kills the **whole tree**
+   (`kill_tree`: `taskkill /PID … /T /F` on Windows; on POSIX the launcher exec()s the binary, so
+   a plain SIGTERM reaches it, with SIGKILL after 3 s) and resumes the session
+   **silently** with `--resume` — silently because the student asked for the interruption; a
+   timeout still gets its apology line.
+3. The interrupt is never `proc.terminate()`, never a signal, on any platform. Signals do not
+   exist in this design except inside `kill_tree`.
+4. `init.session_id` is asserted equal to the id we passed on every spawn, resume included; a
+   mismatch refuses the process rather than writing memory to the wrong session.
+
+**Consequences.** Barge-in costs one line on stdin and nothing else — no respawn, no MCP
+reconnect, no lost context. The protocol is a pinned external interface with a test fixture
+(`test_brain_claude_cli.py`) and a live check still pending on Windows: barge-in, then a clean
+next turn, with no orphan `claude.exe` (ROADMAP live checks). Cost: one more undocumented
+interface to re-verify on each CLI upgrade.
+
+**Reversed if:** the CLI documents a different cancel mechanism, or the control request stops
+being answered — then the timeout falls back to point 2 for every interrupt, which is what the
+spec had before, minus the signal.

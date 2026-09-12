@@ -21,6 +21,12 @@ code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:4px}
 /* ---- the stage, and her mood drifting up behind her. TalkingHead's canvas is transparent
    (WebGLRenderer alpha:true, talkinghead.mjs 1.4 line 818), so the faces show through. */
 #stage{position:fixed;inset:0;right:var(--chat-w);z-index:1}
+/* Her face could not load (avatar.ts): she is a voice, and the stage says so rather than staying blank. */
+#stage .noavatar{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);max-width:min(420px,80%);
+     padding:16px 20px;border-radius:18px;background:rgba(255,255,255,.72);backdrop-filter:blur(14px);
+     font:13.5px/1.55 system-ui,"Segoe UI",sans-serif;color:#4a515c;text-align:center;
+     box-shadow:0 6px 24px rgba(16,24,40,.12)}
+#stage .noavatar b{display:block;margin-bottom:4px;color:var(--ink)}
 #moodbg{position:fixed;inset:0;right:var(--chat-w);z-index:0;overflow:hidden;pointer-events:none}
 .kao{position:absolute;bottom:-60px;left:var(--x);color:#fff;white-space:nowrap;opacity:0;
      font:600 var(--s)/1 "Yu Gothic UI","Meiryo","Segoe UI Symbol",system-ui,sans-serif;
@@ -114,7 +120,7 @@ code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:4px}
 #hint{position:fixed;left:50%;bottom:104px;transform:translateX(-50%);z-index:11;font:12px system-ui;
       color:#fff;background:rgba(242,163,58,.85);padding:4px 12px;border-radius:999px}
 
-/* ---- activity: log, profile, rig */
+/* ---- activity: log, rig */
 #activity{position:fixed;left:14px;bottom:14px;z-index:13;width:min(340px,calc(100vw - 28px));max-height:52vh;
           overflow:auto;padding:8px 12px;border-radius:18px;background:var(--pill);color:var(--ink);
           border:1px solid rgba(255,255,255,.9);box-shadow:var(--shadow);font:12px system-ui;
@@ -125,7 +131,6 @@ code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:4px}
 #activity details{margin-top:8px;border-top:1px solid var(--line);padding-top:6px}
 #log{margin-top:6px;display:grid;gap:3px;line-height:1.5;color:#4a515c}
 #log .l.err{color:#d63a31}  #log .l.ok{color:#1c7a3c}  #log .l.her{color:#2b2f36}  #log .l.you{color:#2563eb}
-#profile{white-space:pre-wrap;font:11px ui-monospace,Consolas,monospace;color:#4a515c;margin:6px 0 0}
 #rig h4{margin:10px 0 4px;font:700 10.5px system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--sub)}
 #rig .row{display:flex;gap:4px;flex-wrap:wrap}
 #rig button{font:12px system-ui;padding:4px 9px;background:#fff;color:var(--ink);border:1px solid #d9dde4;
@@ -157,7 +162,7 @@ body.study #subs{display:none!important}
            overflow-anchor:none;scrollbar-width:thin;scrollbar-color:rgba(20,30,50,.18) transparent}
 #chat-list::-webkit-scrollbar{width:8px}
 #chat-list::-webkit-scrollbar-thumb{background:rgba(20,30,50,.18);border-radius:999px}
-/* One bubble per sentence (user, 2026-09-13). Squircles on frosted glass, like the rest of the UI. */
+/* One bubble per sentence (user, 2026-09-12). Squircles on frosted glass, like the rest of the UI. */
 .msg{max-width:88%;padding:11px 16px;border-radius:22px;word-break:break-word;
      font:400 20px/2.0 var(--jp);font-feature-settings:"palt" 1;letter-spacing:.01em;
      box-shadow:0 3px 12px rgba(16,24,40,.10)}

@@ -26,6 +26,9 @@ class SpokenChunk:
     chunk: Chunk
     synth_ms: float
     queued_at: float
+    #: When playback started, as close as this side can observe it: the local stream has just
+    #: been handed the samples, or the browser has just been sent them (the page does not report
+    #: back, so the WebSocket hop and the decode are not in it — tens of ms, not hundreds).
     played_at: float | None = None
     error: str = ""
 
@@ -42,14 +45,23 @@ class SpeechQueue:
     #: async (Speech) -> seconds of audio.
     sink: object = None
     on_event: Callable[[str, SpokenChunk], None] | None = None
+    #: `played_at` of the first sentence played since the last `resume()` — the turn's true
+    #: voice-to-voice moment (spec §10). None until something has started playing this turn.
+    first_play_at: float | None = field(default=None, init=False)
     _player: audio_mod.Player | None = field(default=None, init=False, repr=False)
     _queue: asyncio.Queue | None = field(default=None, init=False)
     _task: asyncio.Task | None = field(default=None, init=False)
     _cancelled: bool = field(default=False, init=False)
+    #: Set by `cancel()`. The sink path holds the queue for a sentence's duration by waiting on
+    #: this, so a barge-in wakes it at once instead of letting it sleep through the cut sentence
+    #: — which delayed the next turn's first audio by up to a whole sentence (2026-09-12).
+    _interrupt: asyncio.Event | None = field(default=None, init=False, repr=False)
 
     async def start(self) -> None:
         self._queue = asyncio.Queue()
+        self._interrupt = asyncio.Event()
         self._cancelled = False
+        self.first_play_at = None
         # One output stream for the session: a stream opened per sentence drops its own first
         # ~100 ms while starting, which clipped every opening syllable (fixed 2026-09-09).
         if self.sink is not None:
@@ -102,12 +114,17 @@ class SpeechQueue:
         tutor for the rest of the session with no error anywhere (2026-09-10).
         """
         self._cancelled = False
+        self.first_play_at = None
+        if self._interrupt is not None:
+            self._interrupt.clear()
 
     def cancel(self) -> None:
         """Barge-in: stop the current sentence and drop the rest. Latches until resume()."""
         self._cancelled = True
         if self._player is not None:
             self._player.cancel()
+        if self._interrupt is not None:
+            self._interrupt.set()         # wake the sink path out of the cut sentence, now
         if self._queue is not None:
             while not self._queue.empty():
                 try:
@@ -138,16 +155,17 @@ class SpeechQueue:
                 if self._cancelled:
                     pass
                 elif self.sink is not None:
-                    record.played_at = time.monotonic()
-                    self._emit("playing", record)
                     seconds = await self.sink(speech)
+                    # Stamped AFTER the hand-over: the audio has left for the page, so this is
+                    # when it starts playing there, give or take the hop — not when we decided
+                    # to send it, which could be a whole autoplay wait earlier.
+                    self._started(record)
                     # The browser is playing it, so hold the queue for as long as that takes.
                     # Without this every sentence would be dispatched at once and the tutor would
-                    # talk over herself; cancellation during the wait is barge-in working.
-                    await asyncio.sleep(max(0.0, seconds))
+                    # talk over herself. The hold ends early on cancel(): barge-in working.
+                    await self._hold(max(0.0, float(seconds or 0.0)))
                 elif self._player is not None:
-                    record.played_at = time.monotonic()
-                    self._emit("playing", record)
+                    self._started(record)
                     await asyncio.to_thread(self._player.play, speech.wav)
             except Exception as exc:  # noqa: BLE001 - PortAudioError is neither of the old two,
                 # and one sentence that cannot play must not end playback for the session.
@@ -155,6 +173,23 @@ class SpeechQueue:
                 self._emit("error", record)
             finally:
                 self._queue.task_done()
+
+    async def _hold(self, seconds: float) -> None:
+        """Wait out a sentence playing elsewhere — or return the moment `cancel()` is called."""
+        if seconds <= 0.0:
+            return
+        if self._interrupt is None or self._interrupt.is_set():
+            return
+        try:
+            await asyncio.wait_for(self._interrupt.wait(), timeout=seconds)
+        except asyncio.TimeoutError:
+            pass                          # the sentence played to its end
+
+    def _started(self, record: SpokenChunk) -> None:
+        record.played_at = time.monotonic()
+        if self.first_play_at is None:
+            self.first_play_at = record.played_at
+        self._emit("playing", record)
 
     def _emit(self, kind: str, record: SpokenChunk) -> None:
         if self.on_event is not None:
