@@ -217,7 +217,7 @@ masks the gap — **fillers are masking, not budget compliance**; true first-con
 logged separately. Any turn over 5.0 s logs a warning with the full stage breakdown, and
 rolling p50/p90 go into the session log.
 
-### VRAM: 8–10 GB cap on a 16 GB RTX 4090 mobile
+### VRAM: 8–10 GB cap on a 16 GB RTX-generation card
 
 | Component                                  | Allocation  |
 |--------------------------------------------|-------------|
@@ -238,7 +238,7 @@ rolling p50/p90 go into the session log.
 
 ## Getting started
 
-**Target machine:** single laptop, RTX 4090 mobile (16 GB VRAM), Linux or Windows/WSL2.
+**Target machine:** single laptop with an NVIDIA RTX-generation GPU (16 GB VRAM), Linux or Windows/WSL2.
 
 ### Which machines this runs on
 

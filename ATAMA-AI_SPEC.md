@@ -41,7 +41,7 @@ Everything in §5 and ADR-021 is the detailed form of this rule. If any other se
 
 A desktop web app where the user has real-time spoken Japanese conversations with a 3D avatar tutor. The brain is Claude Code running headless (`claude -p`, subscription auth — NOT the API). The tutor knows the user's exact study state from WaniKani and Bunpro and adapts vocabulary/grammar accordingly. TTS is VOICEVOX (standard Tokyo-accent Japanese). The avatar is a Ready Player Me / Avaturn GLB rendered with the TalkingHead library, lip-synced from VOICEVOX mora timings.
 
-Target machine: single laptop, RTX 4090 mobile (16 GB VRAM), Linux or Windows/WSL2. Everything runs locally except Claude inference.
+Target machine: single laptop with an NVIDIA RTX-generation GPU of 16 GB, Linux or Windows/WSL2. Everything runs locally except Claude inference.
 
 **Two hard, non-negotiable performance requirements (details in §10/§10b):** voice→voice latency ≤ 5.0 s at p90 (relaxed from 3.0 s by the user on 2026-09-10: answer quality over the last seconds, ADR-033), and total GPU memory use within an 8–10 GB budget. Every design decision must be checked against these; both are instrumented and enforced in milestone acceptance criteria.
 
@@ -658,7 +658,7 @@ Engineering this budget is a first-class requirement, not an afterthought:
 - If the first sentence hasn't closed by 1.2 s of streaming, emit a short filler (うーん、そうですね…) from a pre-synthesized filler pool while generation continues. Fillers count as masking, not as meeting the budget — log true first-content latency separately.
 - `--profile` flag / debug overlay shows last-turn stage timings; log a warning with full breakdown whenever a turn exceeds 5.0 s (`LATENCY_WARN_S`), and track rolling p50/p90 in the session log. M3 acceptance includes: p90 ≤ 5.0 s over a 20-turn conversation, measured with `python -m backend.tools.latency_run`.
 
-## 10b. VRAM BUDGET — HARD CAP: 8–10 GB on the RTX 4090 mobile (16 GB card)
+## 10b. VRAM BUDGET — HARD CAP: 8–10 GB on a 16 GB RTX-generation card
 
 | component | allocation |
 |---|---|
@@ -769,4 +769,4 @@ atama-ai/
 
 `make doctor` reports which topology it detected and checks the WSL2-specific items above when applicable.
 
-**Native Windows (the user's actual setup, discovered 2026-09-09):** Python 3.13 (Microsoft Store build), Node 22, Docker Desktop, RTX 4090 Laptop. M0/M1 run unchanged. Two Windows-specific rules, both verified live: (1) the **Store Python virtualises `%LOCALAPPDATA%`** — directories it creates there are invisible to cmd.exe and to `claude`; the claude cwd therefore defaults to `~/.atama-ai/claude-cwd`, and no path shared with another process may live under AppData; (2) **spawn `claude` without a shell** (`shutil.which("claude")` → `claude.CMD`, executed directly). Whether the Store build can host faster-whisper + CUDA is decided at M2; switching to a python.org/uv-managed CPython is the expected outcome and is not a spec change.
+**Native Windows (the user's actual setup, discovered 2026-09-09):** Python 3.13 (Microsoft Store build), Node 22, Docker Desktop, a 16 GB RTX-generation laptop GPU. M0/M1 run unchanged. Two Windows-specific rules, both verified live: (1) the **Store Python virtualises `%LOCALAPPDATA%`** — directories it creates there are invisible to cmd.exe and to `claude`; the claude cwd therefore defaults to `~/.atama-ai/claude-cwd`, and no path shared with another process may live under AppData; (2) **spawn `claude` without a shell** (`shutil.which("claude")` → `claude.CMD`, executed directly). Whether the Store build can host faster-whisper + CUDA is decided at M2; switching to a python.org/uv-managed CPython is the expected outcome and is not a spec change.

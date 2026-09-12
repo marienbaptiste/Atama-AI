@@ -251,7 +251,7 @@ engine upgrade.
 - **mcp SDK:** installed `mcp` **2.2.0** — `FastMCP` is gone; `from mcp.server.mcpserver import
   MCPServer`, `@server.tool(name=…)`, `server.run("stdio")`, `await server.call_tool(name, args)`.
 - **Platform:** the user's machine is **native Windows 11** (Python 3.13 Store build, Node 22,
-  Docker 29, RTX 4090 Laptop 16 GB), not WSL2. Everything so far is platform-neutral; §15's WSL2
+  Docker 29, a 16 GB RTX-generation laptop GPU), not WSL2. Everything so far is platform-neutral; §15's WSL2
   assumption is revisited at M2 (CUDA for faster-whisper on native Windows).
 - **Microsoft Store Python virtualises `%LOCALAPPDATA%` (MSIX).** A directory the venv's
   Python created at `%LOCALAPPDATA%\atama-ai\` physically landed in

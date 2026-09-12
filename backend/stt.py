@@ -3,7 +3,8 @@
 Local on purpose: a cloud round-trip does not fit the voice->voice budget, and the student's voice never
 leaves the machine.
 
-Verified 2026-09-09 on the target box (RTX 4090 mobile, CTranslate2 4.8.2, faster-whisper 1.2.1):
+Verified 2026-09-09 on the target box (16 GB RTX-generation laptop GPU, CTranslate2 4.8.2,
+faster-whisper 1.2.1):
   * `large-v3` @ `int8_float16` on CUDA uses **2 169 MiB** — comfortably under ADR-004's 3.5 GB
     estimate and its 4.5 GB fallback threshold, so `medium` is not needed.
   * CTranslate2 does NOT bundle the CUDA runtime. Without cuBLAS on the DLL search path,
@@ -28,6 +29,7 @@ SAMPLE_RATE = 16000
 DATA_DIR = Path(__file__).parent / "data"
 BLOCKLIST_FILE = DATA_DIR / "hallucination_blocklist.txt"
 #: Below this RMS the audio is effectively silence, so a confident-sounding transcript is a lie.
+#: (Defaults here; the live values come from config.py — STT_QUIET_RMS and friends, spec §11.)
 QUIET_RMS = 0.012
 #: faster-whisper's own confidence signals (spec §9).
 MIN_AVG_LOGPROB = -1.0
@@ -45,7 +47,10 @@ MAX_NO_SPEECH_PROB = 0.6
 #: or the transcript is also weakly predicted. The blocklist rule already works this way, for the
 #: same reason: the signal alone is not enough.
 CORROBORATING_AVG_LOGPROB = -0.7
-_TRAILING = "。．.！!？?、,・…　 \t\r\n"
+#: Everything `normalise` drops: whitespace and punctuation, anywhere in the string, so the
+#: blocklist compares words only. Whisper decorates its hallucinations freely (「…。」, a stray
+#: comma, full-width spaces) and each decoration used to be a new phrase to list.
+_PUNCTUATION = re.compile(r"[\s。．.！!？?、,・…‥「」『』（）()\[\]【】〜~\-—–ー・:：;；\"'“”‘’]+")
 
 
 def enable_cuda_libraries() -> list[str]:
@@ -79,8 +84,33 @@ def load_blocklist(path: Path = BLOCKLIST_FILE) -> set[str]:
 
 
 def normalise(text: str) -> str:
-    """Strip whitespace and trailing punctuation so 「ありがとうございました。」 matches its entry."""
-    return re.sub(r"\s+", "", str(text or "")).strip(_TRAILING)
+    """Words only: whitespace and punctuation removed, so 「ありがとう ございました。」 matches its
+    entry and so does the same phrase with a comma in it."""
+    return _PUNCTUATION.sub("", str(text or ""))
+
+
+def blocklisted_phrases(text: str, blocklist: set[str]) -> int:
+    """How many blocklisted phrases, laid end to end, make up ALL of `text`. 0 when they do not.
+
+    Whisper's hallucinations come in repeats — 「ご視聴ありがとうございましたご視聴ありがとうご
+    ざいました」 on a long stretch of noise — and in pairs (「ご視聴ありがとうございました。チャン
+    ネル登録お願いします」). An exact match caught neither. Greedy, longest phrase first: the
+    list is small and nothing in it is a prefix of something a student would then continue.
+    """
+    rest = normalise(text)
+    if not rest or not blocklist:
+        return 0
+    phrases = sorted((ph for ph in blocklist if ph), key=len, reverse=True)
+    count = 0
+    while rest:
+        for ph in phrases:
+            if rest.startswith(ph):
+                rest = rest[len(ph):]
+                count += 1
+                break
+        else:
+            return 0
+    return count
 
 
 def rms(audio: np.ndarray) -> float:
@@ -112,13 +142,23 @@ class SpeechToText:
     language: str = "ja"
     beam_size: int = 5
     blocklist: set[str] = field(default_factory=load_blocklist)
+    #: The filter's thresholds (spec §9; tunable through config.py, spec §11). The rationale for
+    #: each default sits on the module constants above.
+    quiet_rms: float = QUIET_RMS
+    min_avg_logprob: float = MIN_AVG_LOGPROB
+    max_no_speech_prob: float = MAX_NO_SPEECH_PROB
+    corroborating_avg_logprob: float = CORROBORATING_AVG_LOGPROB
     _model: object | None = field(default=None, init=False, repr=False)
     load_ms: float = field(default=0.0, init=False)
     warmup_ms: float = field(default=0.0, init=False)
 
     @classmethod
     def from_config(cls, cfg) -> "SpeechToText":
-        return cls(model_name=str(cfg.WHISPER_MODEL), compute_type=str(cfg.WHISPER_COMPUTE_TYPE))
+        return cls(model_name=str(cfg.WHISPER_MODEL), compute_type=str(cfg.WHISPER_COMPUTE_TYPE),
+                   quiet_rms=float(cfg.STT_QUIET_RMS),
+                   min_avg_logprob=float(cfg.STT_MIN_AVG_LOGPROB),
+                   max_no_speech_prob=float(cfg.STT_MAX_NO_SPEECH_PROB),
+                   corroborating_avg_logprob=float(cfg.STT_CORROBORATING_AVG_LOGPROB))
 
     def load(self) -> None:
         """Load the model and warm it, so the first real turn is not slow (spec §9)."""
@@ -151,16 +191,19 @@ class SpeechToText:
         no_speech = max(s.no_speech_prob for s in segments)
         return text, avg_logprob, no_speech
 
-    def listen(self, audio: np.ndarray, quiet_rms: float = QUIET_RMS) -> Transcript:
+    def listen(self, audio: np.ndarray, quiet_rms: float | None = None) -> Transcript:
         """Transcribe one utterance, discarding what the model clearly invented.
 
-        `quiet_rms` is what near-silence means for the microphone in use. The fixed QUIET_RMS
-        assumes a loud one: on a headset whose speech arrives at rms 0.003-0.004, every sentence
-        counted as "quiet", so a routine no_speech_prob of 0.67 threw real answers away
-        (2026-09-10). The voice loop passes a level measured from the room itself.
+        `quiet_rms` is what near-silence means for the microphone in use (default: the configured
+        STT_QUIET_RMS). The fixed level assumes a loud microphone: on a headset whose speech
+        arrives at rms 0.003-0.004, every sentence counted as "quiet", so a routine
+        no_speech_prob of 0.67 threw real answers away (2026-09-10). The voice loop passes a level
+        measured from the room itself.
         """
         if not self.ready:
             raise RuntimeError("SpeechToText.load() was never called")
+        if quiet_rms is None:
+            quiet_rms = self.quiet_rms
         started = time.monotonic()
         level = rms(audio)
         text, avg_logprob, no_speech = self._transcribe(np.asarray(audio, dtype=np.float32))
@@ -170,13 +213,19 @@ class SpeechToText:
 
         if not text:
             return self._reject(result, "empty")
-        if normalise(text) in self.blocklist and level < quiet_rms:
+        blocked = blocklisted_phrases(text, self.blocklist)
+        if blocked >= 2:
+            # Two closing captions back to back is nobody's sentence: whatever the level, this is
+            # the model looping on noise.
+            return self._reject(result, f"{blocked} blocklisted phrases and nothing else")
+        if blocked == 1 and (level < quiet_rms or avg_logprob < self.corroborating_avg_logprob):
             # The phrase alone is not enough: a student really can say ありがとうございました.
-            return self._reject(result, "blocklisted phrase on near-silent audio")
-        if no_speech > MAX_NO_SPEECH_PROB and (level < quiet_rms or avg_logprob < CORROBORATING_AVG_LOGPROB):
+            why = "near-silent audio" if level < quiet_rms else f"avg_logprob {avg_logprob:.2f}"
+            return self._reject(result, f"blocklisted phrase on {why}")
+        if no_speech > self.max_no_speech_prob and (level < quiet_rms or avg_logprob < self.corroborating_avg_logprob):
             why = "quiet audio" if level < quiet_rms else f"avg_logprob {avg_logprob:.2f}"
             return self._reject(result, f"no_speech_prob {no_speech:.2f} + {why}")
-        if avg_logprob < MIN_AVG_LOGPROB:
+        if avg_logprob < self.min_avg_logprob:
             return self._reject(result, f"avg_logprob {avg_logprob:.2f}")
         return result
 

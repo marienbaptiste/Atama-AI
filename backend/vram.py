@@ -1,6 +1,6 @@
 """GPU memory, as nvidia-smi reports it (spec §10b, ROADMAP subsystem 11).
 
-Verified 2026-09-10 on the target box (RTX 4090 Laptop GPU, Windows):
+Verified 2026-09-10 on the target box (16 GB RTX-generation laptop GPU, Windows):
 
     nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits
     1482, 16376
