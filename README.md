@@ -17,11 +17,11 @@ database, no accounts — one user, local files. **It never writes to your SRS a
 > but `api.wanikani.com` / `api.bunpro.jp` — origins are constants, not settings. There is no
 > bypass. Details: spec §0, ADR-021, ADR-023.
 
-> **Status: specification stage.** [ATAMA-AI_SPEC.md](ATAMA-AI_SPEC.md) is the authoritative
-> build document; no code has landed yet. The setup and usage sections below describe the
-> target system as specified and become live as milestones **M0–M5** complete. See
-> [ROADMAP.md](ROADMAP.md) for how each subsystem gets tested, validated and integrated, and
-> [ADR.md](ADR.md) for why the stack is pinned the way it is.
+> **Status: M3, the page.** M0–M2 are built (M2 declared done by the user, ADR-034) and M4's code
+> is complete; you talk to the Vite + TypeScript page in `frontend/`. What is *not* done is every
+> gate that needs a live session — barge-in timing, the acceptance conversation, VRAM — listed in
+> [ROADMAP.md](ROADMAP.md). [ATAMA-AI_SPEC.md](ATAMA-AI_SPEC.md) remains the authoritative build
+> document, and [ADR.md](ADR.md) says why the stack is pinned the way it is.
 
 ---
 
@@ -93,9 +93,9 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
 │   translate · hint               │       │  ├─ STT (faster-whisper)     │
 │ status bar · settings · SPACE    │       │  ├─ Brain → claude -p        │
 └──────────────────────────────────┘       │  ├─ SentenceChunker (+ tags) │
-  src/protocol.gen.ts is generated         │  ├─ Annotator (planned):     │
-  from backend/models.py (gate M3a)        │  │   dictionary, on-click    │
-                                           │  │   explain via claude -p   │
+  src/protocol.gen.ts is generated         │  ├─ Annotator: furigana,     │
+  from backend/models.py (gate M3a)        │  │   cached explain via      │
+                                           │  │   claude -p (haiku)       │
         ┌─────────────┐                    │  ├─ TTS client → VOICEVOX    │
         │ VOICEVOX    │◄──HTTP─────────────┤  ├─ SRS fetcher (WK/Bunpro)  │
         │ (Docker)    │  :50021            │  ├─ Memory + rotation        │
@@ -122,9 +122,10 @@ and the conversation runs on the right as a chat. Grammar points she uses show i
 the **lightbulb** lights up when she wants you to use a particular form or word — click it to see
 which. Kanji carry **furigana** (Settings → Display: all, only the ones you have not reached Guru
 on, or none). When you use something you have been learning **correctly**, she says so and the
-word drifts up behind her in gold. **Coming next:** click a red point for the rule (English or Japanese), a translate icon on
-each of her sentences, and word cards with readings and meanings. News comes from SearxNG plus Yahoo!
-JAPAN headline feeds, interleaved so no single source fills the answer.
+word drifts up behind her in gold. Click a red point for the rule — in English or Japanese
+(Settings → Display) — or the 訳 button on any of her sentences for its English; each answer
+is written once and kept, so the second time is instant. **Coming next:** word cards with
+readings and meanings.
 
 | Service         | Port     | Bound to      |
 |-----------------|----------|---------------|
@@ -261,7 +262,8 @@ make stop                     # stop everything (containers included)
 **On Windows there is no `make`.** Use the wrappers, which do exactly the same thing:
 
 ```powershell
-.un                          # start everything and open the avatar
+.
+un                          # start everything and open the avatar
 .\stop                         # stop everything
 ```
 

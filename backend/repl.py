@@ -29,6 +29,7 @@ from backend import usage as usage_api
 from backend import model_tiers
 from backend import session as session_api
 from backend import annotate as annotate_api
+from backend import explain as explain_api
 from backend.chunker import SentenceChunker
 from backend.brain import (BrainError, Compacting, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome,
                            TurnComplete)
@@ -79,6 +80,8 @@ async def run(args: argparse.Namespace) -> int:
     profile_text = profile_api.render(student)
     # Furigana for the chat (spec §8b): a local tokenizer, and which kanji WaniKani says are passed.
     annotator = annotate_api.Annotator(known_kanji=student.wanikani.known_kanji if student.wanikani else ())
+    # Explanations and translations, only when the student clicks one (spec §8b, ADR-036).
+    explainer = explain_api.Explainer(cfg)
 
     # --- memory (spec §6b, ADR-031): catch up on past sessions, then read once --------------
     # Summarising happens HERE, at launch, for any session never summarised — not on exit, which
@@ -132,6 +135,7 @@ async def run(args: argparse.Namespace) -> int:
         from backend import app as web
         hub = web.Hub()
         server_task, url = await web.serve(hub, cfg, registry)   # status chips follow the registry
+        hub.explain = explainer.explain
         if await asyncio.to_thread(annotator.warm):
             hub.readings = annotator.readings
         else:
@@ -301,6 +305,7 @@ async def run(args: argparse.Namespace) -> int:
         finally:
             if catchup is not None:
                 catchup.cancel()
+            await explainer.aclose()
             if voice is not None:
                 await voice.aclose()
             await brain.aclose()
@@ -332,6 +337,7 @@ async def run(args: argparse.Namespace) -> int:
     finally:
         if catchup is not None:
             catchup.cancel()
+        await explainer.aclose()
         if voice is not None:
             await voice.aclose()
         await brain.aclose()

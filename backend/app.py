@@ -75,6 +75,11 @@ class Hub:
         #: then drops a sentence of an interrupted turn however late it arrives — without this
         #: every sentence said turn 0 and nothing could tell stale audio from fresh.
         self.epoch = 0
+        #: (kind, text, context, lang) -> (answer, error): a click on a grammar point or a
+        #: translate icon (backend/explain.py). None until the REPL wires it.
+        self.explain: Callable[[str, str, str, str], Any] | None = None
+        #: Background jobs started for a page; kept referenced so none is collected mid-flight.
+        self._jobs: set[asyncio.Task] = set()
         #: text -> furigana for the chat (backend/annotate.py `Annotator.readings`), or None.
         self.readings: Callable[[str], list[dict[str, Any]]] | None = None
 
@@ -215,6 +220,21 @@ class Hub:
         echo = await asyncio.to_thread(settings_view.snapshot)
         await self.send(models.Settings(**echo).model_dump())
 
+    def spawn(self, coro) -> None:
+        """Run a job for one page without blocking the socket loop — an explanation takes seconds."""
+        task = asyncio.get_running_loop().create_task(coro)
+        self._jobs.add(task)
+        task.add_done_callback(self._jobs.discard)
+
+    async def answer(self, ws: WebSocket, ask: models.Explain) -> None:
+        """One click's explanation or translation (spec §8b). The lesson carries on meanwhile, and
+        a failure comes back as a message rather than a spinner that never stops."""
+        answer, error = "", "explanations are not available in this session"
+        if self.explain is not None:
+            answer, error = await self.explain(ask.kind, ask.text, ask.context, ask.lang)
+        await self.send(models.Explanation(kind=ask.kind, text=ask.text, answer=answer,
+                                           error=error).model_dump(), to={ws})
+
     async def bargein(self) -> None:
         """She was interrupted (spec §8): every page stops now and drops what is left of this
         turn. Closes the epoch, so whatever she says next is never mistaken for it. Without this
@@ -256,6 +276,8 @@ def build(hub: Hub) -> Starlette:
                         hub.mark_ready(ws)
                     elif isinstance(message, models.Control) and hub.on_control is not None:
                         hub.on_control(message.action)
+                    elif isinstance(message, models.Explain):
+                        hub.spawn(hub.answer(ws, message))
                     elif isinstance(message, models.SettingsUpdate):
                         # A file write, off the event loop: a turn in flight must not wait on it.
                         echo = await asyncio.to_thread(settings_view.apply, message.values)

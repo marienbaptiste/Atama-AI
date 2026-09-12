@@ -36,6 +36,7 @@ SERVER_SAMPLES = {
     "mic_level": {"level": 0.012, "speech": 0.9},
     "meters": {"context_tokens": 6204, "context_window": 200000, "month_turns": 12},
     "timing": {"stt_ms": 400.0, "first_audio_ms": 3100.0, "p90_ms": 4800.0, "turns": 9},
+    "explanation": {"kind": "grammar", "text": "〜たら", "answer": "A condition.", "error": ""},
     "error": {"message": "unrecognised message", "fatal": False},
 }
 
@@ -44,6 +45,7 @@ CLIENT_SAMPLES = {
     "control": {"action": "new_topic"},
     "settings": {"values": {"SUBTITLES": "off"}},
     "settings_test": {"service": "voicevox"},
+    "explain": {"kind": "grammar", "text": "〜たら", "context": "雨が降ったら。", "lang": "ja"},
 }
 
 

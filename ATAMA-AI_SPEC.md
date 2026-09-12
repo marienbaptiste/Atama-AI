@@ -57,9 +57,9 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
 │   translate · hint               │       │  ├─ STT (faster-whisper)     │
 │ status bar · settings · SPACE    │       │  ├─ Brain → claude -p        │
 └──────────────────────────────────┘       │  ├─ SentenceChunker (+ tags) │
-  src/protocol.gen.ts is generated         │  ├─ Annotator (planned):     │
-  from backend/models.py (gate M3a)        │  │   dictionary, on-click    │
-                                           │  │   explain via claude -p   │
+  src/protocol.gen.ts is generated         │  ├─ Annotator: furigana,     │
+  from backend/models.py (gate M3a)        │  │   cached explain via      │
+                                           │  │   claude -p (haiku)       │
         ┌─────────────┐                    │  ├─ TTS client → VOICEVOX    │
         │ VOICEVOX    │◄──HTTP─────────────┤  ├─ SRS fetcher (WK/Bunpro)  │
         │ (Docker)    │  :50021            │  ├─ Memory + rotation        │
@@ -460,7 +460,7 @@ Capping it is cheaper than rotating more often.
 - Mic capture via AudioWorklet at 16 kHz mono PCM16 (NOT MediaRecorder/opus — we want raw frames for server VAD).
 - **DON'T** add build complexity: no React, no state library. One page, a few modules.
 
-## 8b. STUDY PANEL (ADR-036 — user request 2026-09-11. Built 2026-09-12: the layout, the chat, the tutor's marks, red grammar, the hint, furigana, the word you used floating behind her. Not yet: explanations on click, translation, word cards)
+## 8b. STUDY PANEL (ADR-036 — user request 2026-09-11. Built 2026-09-12: the layout, the chat, the tutor's marks, red grammar, the hint, furigana, the word you used floating behind her. Explanations and translations on click, 2026-09-13. Not yet: word cards)
 
 - **Layout.** The avatar takes the left of the page; the conversation runs on the right as a
   message thread — her bubbles on one side, the student's on the other, newest at the bottom,

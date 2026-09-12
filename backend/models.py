@@ -71,6 +71,20 @@ class SettingsUpdate(_Msg):
     values: dict[str, Any]
 
 
+class Explain(_Msg):
+    """The student clicked something and wants it explained (spec §8b, ADR-036): a red grammar
+    point, or a sentence's translate icon. Nothing is generated until this arrives."""
+
+    type: Literal["explain"] = "explain"
+    kind: Literal["grammar", "sentence"]
+    #: The grammar point, or the sentence to translate.
+    text: str
+    #: For a grammar point: the sentence it was used in, so the answer is about this use.
+    context: str = ""
+    #: Explanation language (EXPLAIN_LANGUAGE); a translation is always English.
+    lang: Literal["en", "ja"] = "en"
+
+
 class SettingsTest(_Msg):
     """Run one service's real check and report the result through `service_status` (§5b)."""
 
@@ -266,6 +280,18 @@ class Timing(_Msg):
     turns: int = 0
 
 
+class Explanation(_Msg):
+    """The answer to one `explain`, or why there is none. Cached on the orchestrator, so asking
+    the same thing twice costs nothing."""
+
+    type: Literal["explanation"] = "explanation"
+    kind: Literal["grammar", "sentence"]
+    #: Echo of what was asked, so the page can match the answer to what the student clicked.
+    text: str
+    answer: str = ""
+    error: str = ""
+
+
 class Error(_Msg):
     """A problem the user should see. An unknown client message produces one of these rather
     than an exception — a malformed frame must not take the socket down."""
@@ -277,13 +303,13 @@ class Error(_Msg):
 
 # ------------------------------------------------------------------------ unions
 ClientMessage = Annotated[
-    Union[AudioChunk, Control, SettingsUpdate, SettingsTest],
+    Union[AudioChunk, Control, SettingsUpdate, SettingsTest, Explain],
     Field(discriminator="type"),
 ]
 
 ServerMessage = Annotated[
     Union[State, SttPartial, SttFinal, AssistantText, Speak, Emotion, BargeIn,
-          SrsProfile, ServiceStatus, Settings, MicLevel, Meters, Timing, Error],
+          SrsProfile, ServiceStatus, Settings, MicLevel, Meters, Timing, Explanation, Error],
     Field(discriminator="type"),
 ]
 

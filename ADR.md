@@ -1328,7 +1328,9 @@ derive each client from it instead of emitting TypeScript directly.
 **Status:** Accepted by the user (2026-09-11). Partly built 2026-09-12: the chat beside the tutor,
 the tutor's inline marks, red grammar, the hint (point 1), and furigana from local data — the
 tokenizer and the student's WaniKani kanji progress (point 3's readings, point 4's `FURIGANA` and
-`STUDY_PANEL`). Explanations and translations on click (point 2) and word cards (the rest of
+`STUDY_PANEL`). Explanations and translations on click (point 2) followed on 2026-09-13:
+`backend/explain.py`, one cached answer per grammar point and language, and per sentence. Word
+cards (the rest of
 point 3) are not built yet. Spec §8b.
 
 **Context.** User request: the tutor on the left, the conversation on the right like a messaging

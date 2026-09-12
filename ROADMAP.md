@@ -1194,6 +1194,18 @@ session (the one she greets with), the rest are caught up by a background task o
 talking, each reported as it goes, and an older catch-up can no longer overwrite a newer brief
 (`test_memory.py`). The prompt's ceiling went 2550 → 2650 for the new rule.
 
+**Status 2026-09-13 — explanations and translations on click are built.** `backend/explain.py`:
+a click sends `explain`, one worker (`claude -p`, haiku tier, no tools, §4 rules, never the tutor's
+session) answers, and every answer is cached on disk under `.cache/explain/` per grammar point and
+language, and per sentence — the second click is free. `EXPLAIN_LANGUAGE` (en | ja) chooses the
+language of a grammar explanation; a sentence translation is always English. The page shows the
+rule in the grammar card and the English under the sentence, from the 訳 button on each of her
+bubbles. Failures come back as a message, never a spinner. Tests: `test_explain.py` (asked once,
+cached, language in the key, empty answers not cached, cache survives a restart) and the protocol
+samples. Checked in real-time headless Chrome. **Not validated live.** Chat polish the same day
+(user): one bubble per sentence, Noto Sans JP with the OS fallbacks, and the panel restyled to the
+console-home look.
+
 ## Next session — plan for 2026-09-13 (set 2026-09-12)
 
 **1. One real lesson on the new page, first.** Refresh study data at the start (Settings → Account)

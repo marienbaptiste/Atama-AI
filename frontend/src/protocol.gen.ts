@@ -2,8 +2,8 @@
 // backend/tests/test_models.py fails while this file is out of date. After changing a message:
 //   .venv/Scripts/python -m backend.tools.gen_protocol
 
-export const CLIENT_TYPES = ["audio_chunk", "control", "settings", "settings_test"] as const;
-export const SERVER_TYPES = ["state", "stt_partial", "stt_final", "assistant_text", "speak", "emotion", "bargein", "srs_profile", "service_status", "settings", "mic_level", "meters", "timing", "error"] as const;
+export const CLIENT_TYPES = ["audio_chunk", "control", "settings", "settings_test", "explain"] as const;
+export const SERVER_TYPES = ["state", "stt_partial", "stt_final", "assistant_text", "speak", "emotion", "bargein", "srs_profile", "service_status", "settings", "mic_level", "meters", "timing", "explanation", "error"] as const;
 export const RESERVED_TYPES = ["stt_partial"] as const;
 export type ClientType = (typeof CLIENT_TYPES)[number];
 export type ServerType = (typeof SERVER_TYPES)[number];
@@ -48,6 +48,15 @@ export interface SettingsUpdateMsg {
 export interface SettingsTestMsg {
   type: "settings_test";
   service: "wanikani" | "bunpro" | "bunpro_mcp" | "brain" | "search" | "voicevox" | "stt";
+}
+
+/** The student clicked something and wants it explained (spec §8b, ADR-036): a red grammar point, or a sentence's translate icon. Nothing is generated until this arrives. */
+export interface ExplainMsg {
+  type: "explain";
+  kind: "grammar" | "sentence";
+  text: string;
+  context?: string;
+  lang?: "en" | "ja";
 }
 
 // ------------------------------------------------------------------ server -> client
@@ -165,6 +174,15 @@ export interface TimingMsg {
   turns: number;
 }
 
+/** The answer to one `explain`, or why there is none. Cached on the orchestrator, so asking the same thing twice costs nothing. */
+export interface ExplanationMsg {
+  type: "explanation";
+  kind: "grammar" | "sentence";
+  text: string;
+  answer: string;
+  error: string;
+}
+
 /** A problem the user should see. An unknown client message produces one of these rather than an exception — a malformed frame must not take the socket down. */
 export interface ErrorMsg {
   type: "error";
@@ -172,5 +190,5 @@ export interface ErrorMsg {
   fatal: boolean;
 }
 
-export type ClientMessage = AudioChunkMsg | ControlMsg | SettingsUpdateMsg | SettingsTestMsg;
-export type ServerMessage = StateMsg | SttPartialMsg | SttFinalMsg | AssistantTextMsg | SpeakMsg | EmotionMsg | BargeInMsg | SrsProfileMsg | ServiceStatusMsg | SettingsMsg | MicLevelMsg | MetersMsg | TimingMsg | ErrorMsg;
+export type ClientMessage = AudioChunkMsg | ControlMsg | SettingsUpdateMsg | SettingsTestMsg | ExplainMsg;
+export type ServerMessage = StateMsg | SttPartialMsg | SttFinalMsg | AssistantTextMsg | SpeakMsg | EmotionMsg | BargeInMsg | SrsProfileMsg | ServiceStatusMsg | SettingsMsg | MicLevelMsg | MetersMsg | TimingMsg | ExplanationMsg | ErrorMsg;

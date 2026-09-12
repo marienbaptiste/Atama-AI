@@ -83,6 +83,7 @@ SCHEMA: tuple[Setting, ...] = (
     # Display
     Setting("TUTOR_PERSONA", "minami", str, "voice", "Which tutor: a name in prompts/ (tanaka, hayashi, minami, mori) or a path. The persona declares its own voice AND its avatar, so this one setting switches character, voice and face together (ADR-026/030). Default is minami because she is the one with a shipped avatar"),
     Setting("SUBTITLES", "jp", str, "display", "jp | off"),
+    Setting("EXPLAIN_LANGUAGE", "en", str, "display", "Language for a grammar explanation when you click a red point: en | ja. A sentence translation is always English"),
     Setting("FURIGANA", "unknown", str, "display", "Furigana over kanji in the chat: all | unknown (only kanji you have not yet reached Guru on in WaniKani - the default) | off"),
     Setting("STUDY_PANEL", True, bool, "display", "The conversation as a chat beside the tutor: her grammar points in red, and a hint of what she wants you to use (ADR-036). Off = the tutor full-width, with subtitles"),
     Setting("AUDIO_INPUT_DEVICE", "", str, "audio", "Microphone, by name. Empty = system default. If it is unplugged, or not there at launch, the app uses the system default and switches back when it returns (spec §9)"),
@@ -92,6 +93,7 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("SETTINGS_FILE", "settings.json", str, "advanced", "Config store (git-ignored, 0600)"),
     Setting("LOG_DIR", "logs", str, "advanced", "Session logs"),
     Setting("MEMORY_ENABLED", True, bool, "model", "Cross-session memory (spec §6b): the tutor remembers last session, avoids recently discussed topics, and keeps notes about you in an editable file outside the repo"),
+    Setting("EXPLAIN_MODEL", "haiku", str, "model", "Model that answers a click on a grammar point or a translate icon (spec §8b). Cheap on purpose: it runs off the conversation path and every answer is cached"),
     Setting("MEMORY_SUMMARY_MODEL", "haiku", str, "model", "Model that summarises each past session at the next launch. Cheap on purpose: it runs once per session over a short excerpt, never on the conversation path"),
     Setting("CACHE_DIR", ".cache", str, "advanced", "Generated/personal files"),
     Setting("SRS_CACHE_TTL_S", 3600, int, "advanced", "SRS disk cache TTL"),

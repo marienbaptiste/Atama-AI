@@ -57,19 +57,27 @@ const FOLLOW_PX = 80;
 
 interface Line { el: HTMLElement; text: string; grammar: readonly GrammarSpan[]; readings: readonly Reading[] }
 
+/** The translate icon on her bubbles (spec §8b): 訳 = "translation". */
+const TRANSLATE = "訳";
+
 export class Chat {
   private furigana: Furigana = "unknown";
   /** Every line shown, so a change of the furigana setting re-reads the conversation so far. */
   private lines: Line[] = [];
 
   constructor(private readonly list: HTMLElement,
-              private readonly onPoint: (point: string, mark: HTMLElement) => void) {
+              private readonly onPoint: (point: string, mark: HTMLElement) => void,
+              private readonly onTranslate: (sentence: string) => void = () => {}) {
     const open = (target: EventTarget | null) => {
       const mark = (target as HTMLElement | null)?.closest?.<HTMLElement>("mark.gp");
       if (mark) this.onPoint(mark.dataset.point || "", mark);
       return !!mark;
     };
-    list.addEventListener("click", e => { if (open(e.target)) e.stopPropagation(); });
+    list.addEventListener("click", e => {
+      const button = (e.target as HTMLElement | null)?.closest?.<HTMLButtonElement>("button.tr");
+      if (button) { e.stopPropagation(); this.translate(button); return; }
+      if (open(e.target)) e.stopPropagation();
+    });
     list.addEventListener("keydown", e => { if (e.key === "Enter" && open(e.target)) e.preventDefault(); });
   }
 
@@ -81,9 +89,56 @@ export class Chat {
     for (const line of this.lines) line.el.innerHTML = this.html(line);
   }
 
-  /** Her sentence, as its audio starts — one bubble each (user, 2026-09-13). */
+  /** Her sentence, as its audio starts — one bubble each (user, 2026-09-13), with the icon that
+   *  asks for its English. Nothing is translated until it is clicked (ADR-036). */
   her(msg: SpeakMsg): void {
-    this.show(this.bubble("her"), msg.text, msg.grammar, msg.readings);
+    const body = this.bubble("her");
+    this.show(body, msg.text, msg.grammar, msg.readings);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tr";
+    button.title = "Translate this sentence";
+    button.textContent = TRANSLATE;
+    body.parentElement!.appendChild(button);
+  }
+
+  /** The plain sentence an element sits in — not what is on screen, which carries furigana. */
+  sentenceOf(el: HTMLElement): string {
+    // From inside the sentence (a grammar mark) or from beside it (the translate button, which is
+    // the bubble's child, not the body's — it returned nothing at first try, 2026-09-13).
+    const body = el.closest<HTMLElement>(".body")
+      ?? el.closest<HTMLElement>(".msg")?.querySelector<HTMLElement>(".body")
+      ?? null;
+    return this.lines.find(line => line.el === body)?.text ?? "";
+  }
+
+  /** The answer to one translate click, or why there is none. */
+  setTranslation(sentence: string, answer: string, error = ""): void {
+    for (const line of this.lines) {
+      if (line.text !== sentence) continue;
+      const en = line.el.parentElement?.querySelector<HTMLElement>(".en");
+      if (!en) continue;
+      en.textContent = answer || error || "no answer";
+      en.classList.toggle("bad", !answer);
+    }
+  }
+
+  private translate(button: HTMLButtonElement): void {
+    const bubble = button.parentElement!;
+    const shown = bubble.querySelector<HTMLElement>(".en");
+    if (shown) {                                    // clicking again puts it away, and back
+      shown.hidden = !shown.hidden;
+      button.classList.toggle("on", !shown.hidden);
+      return;
+    }
+    const sentence = this.sentenceOf(button);
+    if (!sentence) return;
+    const en = document.createElement("div");
+    en.className = "en";
+    en.textContent = "…";
+    bubble.insertBefore(en, button);
+    button.classList.add("on");
+    this.onTranslate(sentence);
   }
 
   /** What you said, once heard — or, faded, what was heard and not sent. */

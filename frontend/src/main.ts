@@ -5,7 +5,7 @@ import "./style.css";
 import { Avatar, type CastEntry } from "./avatar";
 import { Chat } from "./chat";
 import { Talk } from "./mic";
-import type { ServiceStatusMsg, SettingsMsg, SpeakMsg, TimingMsg } from "./protocol.gen";
+import type { ExplanationMsg, ServiceStatusMsg, SettingsMsg, SpeakMsg, TimingMsg } from "./protocol.gen";
 import { Backchannel } from "./rig";
 import { loadSamples, mountRigPanel } from "./rigpanel";
 import * as settings from "./settings";
@@ -33,7 +33,10 @@ let persona = "";
 //: What she has asked the student to use (a `[target:]` mark, ADR-036) — the hint. Cleared when
 //: the student answers, i.e. when her next turn starts.
 let goal = "";
-const chat = new Chat($("chat-list"), (point, mark) => showPoint(point, mark));
+const chat = new Chat($("chat-list"), (point, mark) => showPoint(point, mark),
+                      sentence => askExplain("sentence", sentence));
+//: EXPLAIN_LANGUAGE: the language a grammar explanation comes back in (a translation is English).
+let explainLang: "en" | "ja" = "en";
 
 const avatarReady: Promise<Avatar> = Avatar.create($("stage"), onSentence);
 avatarReady.then(a => { avatar = a; mountRigPanel(a); },
@@ -80,6 +83,7 @@ const handlers: Handlers = {
   settings: m => onSettings(m),
   mic_level: m => onLevel(m.level, m.speech),
   meters: m => status.onMeters(m, Number(settings.values().VRAM_WARN_GB) || 10),
+  explanation: m => onExplanation(m),
   timing: m => showTiming(m),
   error: m => log(esc(m.message), "err"),
 };
@@ -133,6 +137,7 @@ function onSettings(m: SettingsMsg): void {
   document.body.classList.toggle("study", study);
   setSubtitles(study ? "off" : v.SUBTITLES);
   chat.setFurigana(String(v.FURIGANA ?? "unknown"));
+  explainLang = v.EXPLAIN_LANGUAGE === "ja" ? "ja" : "en";
   mode = String(v.TURN_MODE || "ptt");
   talk.render();
   headphonesHint();
@@ -174,9 +179,28 @@ $("goal").onclick = e => {
   $("goal").blur();                                 // or the next SPACE would press it
 };
 
+function askExplain(kind: "grammar" | "sentence", text: string, context = ""): void {
+  if (!link.send({ type: "explain", kind, text, context, lang: explainLang })) {
+    log("not connected — nothing to ask", "err");
+  }
+}
+
 function showPoint(point: string, mark: HTMLElement): void {
-  showPop($("gp-pop"), mark, `<small>Grammar point</small><b>${esc(point)}</b>`
-    + "<p>The rule itself, in English or Japanese, comes with the next update.</p>");
+  const pop = $("gp-pop");
+  pop.dataset.point = point;
+  showPop(pop, mark, `<small>Grammar point</small><b>${esc(point)}</b>`
+    + '<p class="wait">Looking it up…</p>');
+  askExplain("grammar", point, chat.sentenceOf(mark));   // the sentence she used it in
+}
+
+/** The answer to a click: into the open grammar card, or under the sentence it translates. */
+function onExplanation(m: ExplanationMsg): void {
+  if (m.kind === "sentence") { chat.setTranslation(m.text, m.answer, m.error); return; }
+  const pop = $("gp-pop");
+  const line = pop.querySelector("p");
+  if (pop.hidden || pop.dataset.point !== m.text || !line) return;
+  line.textContent = m.answer || m.error || "no answer";
+  line.className = m.answer ? "" : "bad";
 }
 
 /** A small card beside what was clicked: above it if there is room, else below; on screen. */
