@@ -1,5 +1,5 @@
-/** The conversation beside the tutor (spec §8b, ADR-036): her sentences join her bubble as each
- *  starts playing, yours appear once heard, and the grammar she used is marked in red. */
+/** The conversation beside the tutor (spec §8b, ADR-036): each of her sentences becomes its own
+ *  bubble as its audio starts, yours appear once heard, and the grammar she used is in red. */
 import type { GrammarSpan, Reading, SpeakMsg } from "./protocol.gen";
 import { esc } from "./ui";
 
@@ -58,8 +58,6 @@ const FOLLOW_PX = 80;
 interface Line { el: HTMLElement; text: string; grammar: readonly GrammarSpan[]; readings: readonly Reading[] }
 
 export class Chat {
-  private herTurn = -1;
-  private herBody: HTMLElement | null = null;
   private furigana: Furigana = "unknown";
   /** Every line shown, so a change of the furigana setting re-reads the conversation so far. */
   private lines: Line[] = [];
@@ -83,21 +81,13 @@ export class Chat {
     for (const line of this.lines) line.el.innerHTML = this.html(line);
   }
 
-  /** Her sentence, as its audio starts. The sentences of one turn share one bubble. */
+  /** Her sentence, as its audio starts — one bubble each (user, 2026-09-13). */
   her(msg: SpeakMsg): void {
-    if (!this.herBody || msg.turn !== this.herTurn) {
-      this.herBody = this.bubble("her");
-      this.herTurn = msg.turn;
-    }
-    const sentence = document.createElement("span");
-    sentence.className = "s";
-    this.show(sentence, msg.text, msg.grammar, msg.readings);
-    this.append(() => this.herBody!.appendChild(sentence));
+    this.show(this.bubble("her"), msg.text, msg.grammar, msg.readings);
   }
 
   /** What you said, once heard — or, faded, what was heard and not sent. */
   you(text: string, accepted: boolean, reason = "", readings: readonly Reading[] = []): void {
-    this.herBody = null;                            // her next sentence opens a new bubble
     const body = this.bubble(accepted ? "you" : "you dropped");
     this.show(body, text || "…", [], readings);
     if (!accepted) body.parentElement!.title = `Not sent to your tutor: ${reason}`;
