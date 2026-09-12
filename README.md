@@ -235,6 +235,24 @@ rolling p50/p90 go into the session log.
 
 **Target machine:** single laptop, RTX 4090 mobile (16 GB VRAM), Linux or Windows/WSL2.
 
+### Which machines this runs on
+
+**It needs an NVIDIA GPU with CUDA.** Speech recognition is faster-whisper (CTranslate2) with
+`device="cuda"`, and the 5 s voice→voice budget is written around a warm GPU model. Everything
+else in the stack is portable — VOICEVOX is the CPU Docker image, the VAD and the avatar are CPU
+and WebGL, the `claude` CLI runs anywhere.
+
+| | |
+|---|---|
+| **Windows 10/11 + NVIDIA** | Supported; this is the machine it is developed on. Launch with the `run` and `stop` scripts in the repo root. |
+| **Windows + WSL2 + NVIDIA** | Supported — see [Windows + WSL2](#windows--wsl2). The backend lives on the WSL2 side. |
+| **Linux + NVIDIA** | Supported, and the reference topology in the spec (§15): everything on the host, `make run`. Nothing in the code is Windows-only; `run.cmd`/`stop.cmd` are convenience wrappers around `python -m backend.tools.up` / `down`. |
+| **macOS, or any machine without an NVIDIA GPU** | **Not supported today.** CTranslate2 has no Metal backend, and the STT device is not configurable — it would have to fall back to CPU, which the latency budget does not survive at `large-v3`. |
+
+Making it work on a Mac is a real possibility rather than a promise: it needs a second STT
+backend (whisper.cpp or MLX Whisper on Apple Silicon), `WHISPER_DEVICE` as a setting, and the
+latency gate re-measured — the rest of the stack already runs there.
+
 ### Prerequisites
 
 - Python 3.11+
@@ -296,9 +314,11 @@ Its message types are **generated** from `backend/models.py`: after changing a m
 fails while any server message has no handler on the page. If the launcher cannot build the page
 and there is no earlier build, it stops and says why instead of opening an empty tab.
 
-Then open `http://localhost:5173`. On first run the app opens on its **settings page**: paste
-your tokens, press each **Test** button, and the conversation view unlocks once Claude tests
-green. No `.env` needed.
+Then open `http://localhost:5173`. On a first run with nothing configured the page shows a
+**Connect your study data** card — one button opens Settings → Account, where you paste your
+read-only WaniKani and Bunpro keys. There is no `.env` and nothing to create by hand. You can
+also skip it: the lesson runs without keys, the tutor simply teaches as if you were starting
+from scratch, and the launch says so.
 
 Allow mic access, and start talking.
 
@@ -394,11 +414,17 @@ a frosted panel generated from `config.py`: every key, grouped, typed, with its 
 Tabs: Account, Brain, Voice, Sound, Display, Advanced. Save writes `settings.json`. The
 **microphone and output pickers list what is plugged in right now** (the list refreshes as you
 plug and unplug) and apply at once; everything else applies the next time you launch. Live apply
-of the rest, and the Test buttons below, are not built yet. A key also set in `.env` or an
-`ATAMA_*` variable shows **set in .env** and is locked, because those override `settings.json`
-and a value saved here would be silently ignored — `python -m backend.tools.migrate_env` moves
-the non-secret ones out of `.env` for you (it backs `.env` up first; `--dry-run` to preview).
-`HOST` is never editable from the page (ADR-017).
+of the rest, and the Test buttons below, are not built yet. A key set in an `ATAMA_*`
+environment variable shows **set in environment** and is locked, because that overrides
+`settings.json` and a value saved here would be silently ignored. `HOST` is never editable from
+the page (ADR-017).
+
+**`.env` is gone** (2026-09-12). It used to be read between `settings.json` and the environment,
+which made it a trap: a key set there could not be changed from the panel. The app does not read
+it at all now — if you have one, the launch tells you, and
+`python -m backend.tools.migrate_env` imports it into `settings.json` in one go, tokens included
+(it backs the file up first; `--dry-run` to preview). The `.env` at the repo root exists only for
+docker compose's `SEARXNG_SECRET`.
 
 **Unplugging is fine.** No microphone at launch, a headset pulled out mid-lesson, a chosen
 device that is missing: the app keeps running on the system default and switches back when the
@@ -421,9 +447,8 @@ Secrets never come back to the browser: once stored, the page only ever sees `{s
 hint: "…abcd"}`.
 
 **Environment variables** are an optional override layer for automation
-(defaults → `settings.json` → env). [.env.example](.env.example) lists every key with its
-default — it doubles as the settings inventory, and a test keeps it, `config.py` and the
-settings page in sync.
+(defaults → `settings.json` → `ATAMA_*`). `backend/config.py` is the complete inventory: every
+key with its type, default, group and description, and the settings page is generated from it.
 
 ---
 
@@ -644,7 +669,7 @@ atama-ai/
 ├─ logs/                # git-ignored
 ├─ settings.json        # git-ignored, mode 0600 — written by the settings page
 ├─ docker-compose.yml   # voicevox only, published on 127.0.0.1
-├─ mcp.json.template  .env.example  .gitignore  Makefile
+├─ mcp.json.template  .gitignore  Makefile        (.env: docker compose only)
 ├─ README.md  ROADMAP.md  ADR.md  CLAUDE.md  ATAMA-AI_SPEC.md
 ```
 
@@ -676,7 +701,7 @@ validation and integration plan behind these lives in [ROADMAP.md](ROADMAP.md).
 | **M2** | Ears & mouth (no avatar)                    | Mic → VAD → Whisper → M1 → VOICEVOX → playback; emotion → voice live; latency + VRAM instrumentation                        | Viseme golden tests; hallucination filter; five emotions audibly distinct; VAD gating test                                                     |
 | **M3** | Face                                        | Full frontend: TalkingHead, lip-sync, emotions (face + voice), listening reactions, status bar, settings drawer, barge-in    | 10 turns on headphones, barge-in < 300 ms; **10 turns on speakers, zero self-interruptions**; 4 emotions distinct; **p90 ≤ 5.0 s**; VRAM ≤ 10 GB |
 | **M4** | Sensei brain                                | Prompt tuning, Bunpro MCP (read tools only), status chips on real signals, resync                                            | ≥ 3 recent unlocks used in 5 minutes; Bunpro absent → `disabled`; broken → `failed`, conversation unaffected; WK offline → `stale`             |
-| **M5** | Polish                                      | Full settings page, session summary, `--profile` overlay, fresh-machine docs (Linux + WSL2), `make check-secrets`            | Clone → first conversation **without creating a `.env`**; redaction and read-only tests green                                                 |
+| **M5** | Polish                                      | Full settings page, session summary, `--profile` overlay, fresh-machine docs (Linux + WSL2), `make check-secrets`            | Clone → first conversation **without any `.env`**; redaction and read-only tests green                                                 |
 
 ---
 
@@ -718,7 +743,7 @@ The rules that shape this codebase. Most were expensive to learn; they are docum
 - **Don't** substitute the Anthropic API/SDK for the CLI subprocess. Subscription auth is a
   hard requirement.
 - **Don't** bind anything to `0.0.0.0`. Loopback only.
-- **Don't** require a `.env`; **don't** send a stored secret back to the browser.
+- **Don't** read a `.env`; **don't** send a stored secret back to the browser.
 - **Don't** swap pinned stack pieces (React, cloud TTS, cloud STT, GPU VOICEVOX) without asking.
 - **Don't** fabricate CLI flags, endpoint schemas, or library signatures. Verify against
   `claude --help`, VOICEVOX's live `/docs` OpenAPI, and the TalkingHead README — then pin the
@@ -909,4 +934,3 @@ here under the BSD terms. Nothing is sent anywhere: the readings are computed on
 | [ROADMAP.md](ROADMAP.md)             | Per-subsystem test → validate → integrate plan, gates, verification spikes and their findings. |
 | [ADR.md](ADR.md)                     | Architecture decision record: why each pinned choice was made, and what would reverse it. |
 | [CLAUDE.md](CLAUDE.md)               | Instructions for Claude Code sessions: which document to consult for what.        |
-| [.env.example](.env.example)         | The complete settings inventory; optional env-override reference.                 |

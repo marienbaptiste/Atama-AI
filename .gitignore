@@ -1,7 +1,6 @@
 # ---- secrets (never commit) ----
 .env
 .env.*
-!.env.example
 # the settings-page store (mode 0600); holds tokens
 settings.json
 # generated from mcp.json.template + settings at startup; contains credentials

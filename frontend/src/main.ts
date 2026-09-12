@@ -144,7 +144,33 @@ function onSettings(m: SettingsMsg): void {
   headphonesHint();
   const tutor = String(v.TUTOR_PERSONA || "");
   if (tutor && tutor !== persona && cast.some(c => c.id === tutor)) void showPersona(tutor);
+  setupCard();
 }
+
+//: First run (user, 2026-09-12): nothing is configured, and the tutor would quietly teach as if
+//: you were an early beginner. What is missing comes from the schema the server sent — secrets
+//: arrive only as {set, hint} (ADR-022) — because this page may not name the study services
+//: (spec §0). Dismissed once, it stays dismissed; the Services chip still shows the gap.
+const SETUP_KEY = "atama.setup.dismissed";
+
+function setupCard(): void {
+  let dismissed = false;
+  try { dismissed = localStorage.getItem(SETUP_KEY) === "1"; } catch { /* private window */ }
+  const show = settings.nothingConfigured() && !dismissed;
+  $("setup").hidden = !show;
+  if (!show) return;
+  $("setup-why").textContent =
+    `${APP_NAME} teaches from your own reviews — your level, your leeches, the grammar you keep `
+    + "forgetting. Without a sign-in the lesson still works, but as if you were starting from "
+    + "scratch. It takes a minute: " + settings.unsetSecrets().join(", ") + ".";
+}
+
+$("setup-go").onclick = () => { $("setup").hidden = true; settings.openSettings(true, "account"); };
+$("setup-skip").onclick = () => {
+  $("setup").hidden = true;
+  try { localStorage.setItem(SETUP_KEY, "1"); } catch { /* private window */ }
+  log("no study data yet — add your keys any time in Settings → Account", "err");
+};
 
 function onLevel(level: number, speech: number): void {
   status.micLevel(level);

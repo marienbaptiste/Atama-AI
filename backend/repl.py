@@ -58,6 +58,35 @@ def _emotion_tag(emotion: str) -> str:
     return f"[{emotion}]".ljust(11) if emotion else " " * 11
 
 
+def _first_run_notes(cfg, args) -> None:
+    """What a student with nothing configured needs to be told, once, at the top of the launch.
+
+    The settings page is the interface (ADR-022), so this points at it rather than at a file —
+    and says what actually happens meanwhile, because a tutor that teaches blind without saying
+    so is the confusing failure. A leftover `.env` is reported too: it is no longer read, and a
+    key sitting in it that used to work would otherwise vanish silently (2026-09-12).
+    """
+    if stale := config.stale_dotenv():
+        print(f"{BOLD}.env is no longer read{RESET} - atama-AI is configured in the settings page "
+              f"now.\n  {len(stale)} key(s) are still in it: {', '.join(stale)}."
+              f"\n  Import them once with: python -m backend.tools.migrate_env")
+    if args.no_srs:
+        return
+    missing = [name for name, value in (("WaniKani", cfg.WANIKANI_TOKEN),
+                                        ("Bunpro", cfg.BUNPRO_API_TOKEN)) if not str(value).strip()]
+    if not missing:
+        return
+    where = "the settings page (it opens with the tutor) > Account"
+    if len(missing) == 2:
+        print(f"{BOLD}No study data yet.{RESET} Add your read-only API keys in {where}, and the "
+              f"lesson is built from your own reviews.\n  Until then the tutor teaches as if you "
+              f"were an early beginner, which works but is not the point.\n  Offline on purpose? "
+              f"Start with --no-srs and this goes away.")
+    else:
+        print(f"{DIM}{missing[0]} is not connected - add its key in {where} for the rest of the "
+              f"picture.{RESET}")
+
+
 async def run(args: argparse.Namespace) -> int:
     cfg = config.load()
     for secret in cfg.secrets().values():
@@ -65,6 +94,7 @@ async def run(args: argparse.Namespace) -> int:
 
     # --- launch: SRS snapshot -> student profile (spec §5, ADR-024) -------------
     print(f"{BOLD}atama-AI · M1 text REPL{RESET}")
+    _first_run_notes(cfg, args)
     if args.no_srs:
         student = profile_api.StudentProfile()
         print(f"{DIM}SRS skipped (--no-srs){RESET}")

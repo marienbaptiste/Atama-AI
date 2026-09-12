@@ -600,9 +600,11 @@ writing, in this file.
 
 ---
 
-## ADR-022 — Configuration lives in a settings interface; `.env` is an optional override
+## ADR-022 — Configuration lives in a settings interface; `.env` is gone
 
-**Status:** Accepted (2026-09-09) — user directive
+**Status:** Accepted (2026-09-09) — user directive; **amended 2026-09-12** — `.env` is no longer
+read at all, and a first run with nothing configured is a supported, explained state (see
+*Amendment* at the end).
 
 **Context.** The original spec put every secret and tunable in `.env`. That is the developer's
 convention, not the user's: it means editing a hidden dotfile to change a voice speed or paste a
@@ -634,6 +636,33 @@ redaction test (spec §11) extends to `settings` echoes.
 without touching this decision.
 
 ---
+
+**Amendment (2026-09-12, user directive).** *"I believe we don't need the .env anymore with the
+settings, we should just warn the user to add the api keys."*
+
+The optional override layer had become the trap the ADR set out to remove. `.env` was read after
+`settings.json`, so a key left in it could not be changed from the panel — the panel could only
+grey it out and explain why. Two places to look, one of them invisible, for a single-user app
+whose whole point was that configuration has a face.
+
+*Decision.* `config.load()` no longer reads `.env`; resolution is defaults → `settings.json` →
+`ATAMA_*` (kept for automation and tests, and outside our namespace by design). `config.py`'s
+schema is the only inventory, so `.env.example` is deleted along with the test that kept the two
+in step; a test now asserts every key is presentable in the panel instead.
+`backend.tools.migrate_env` imports an old file in one command and now moves the **tokens** too —
+they were left behind before as the user's call, and with nothing reading `.env` that choice would
+simply lose them; `settings.json` is git-ignored and written 0600. `config.stale_dotenv()` reports
+what is left and the launch prints the one command to fix it. Docker Compose keeps its own `.env`
+for `SEARXNG_SECRET`: that is compose's mechanism, and the file at the repo root exists only for it.
+
+*And the empty state is a feature.* With no keys the launch says what is missing, where to add it,
+what happens meanwhile (the tutor teaches as if the student were an early beginner) and how to be
+deliberately offline (`--no-srs`); the page shows a first-run card built from the schema's unset
+secrets — it names no service, because the read-only gate forbids the page naming them (spec §0) —
+with one button that opens Account and one that dismisses it for good.
+
+*Cost.* An automation that set app keys in `.env` breaks until it uses `ATAMA_*` or the migration.
+That is the point: one place to configure, and it has a face.
 
 ## ADR-023 — Bunpro MCP server is written in-repo; credential is the Settings→API token only
 

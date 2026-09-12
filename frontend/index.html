@@ -86,6 +86,17 @@
 <div id="live" data-tone="">not connected</div>
 <div id="hint" hidden></div>
 
+<!-- first run: no study keys yet. The tutor works without them, but blind (spec §5, ADR-022). -->
+<div id="setup" hidden role="dialog" aria-label="Set up your study data">
+  <b>Connect your study data</b>
+  <p id="setup-why"></p>
+  <div class="row">
+    <button id="setup-go" class="go">Add your keys</button>
+    <button id="setup-skip">Not now</button>
+  </div>
+  <small>Keys are stored on this machine only, in settings.json, and are never read back to this page.</small>
+</div>
+
 <!-- activity: the log, her view of you, and the rig tools, all collapsible -->
 <details id="activity">
   <summary>Activity</summary>

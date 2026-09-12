@@ -1,7 +1,7 @@
 """Settings panel backend (spec §11, ADR-022). Hermetic: a temp settings.json, a fake environment.
 
-`.env` is read from the real repo root by config.py, so every test here passes an explicit
-`environ` and stubs the dotenv read — a developer's own .env must not decide a test's outcome.
+Every test passes an explicit `environ`: a developer's own `ATAMA_*` variables must not decide a
+test's outcome. (`.env` is not read at all any more — ADR-022 amendment, 2026-09-12.)
 """
 from __future__ import annotations
 
@@ -69,12 +69,19 @@ def test_host_can_never_be_changed_from_the_page(store):
     assert "HOST" in echo["errors"] and echo["values"]["HOST"] == "127.0.0.1"
 
 
-def test_a_key_pinned_by_the_environment_is_refused_not_silently_lost(store, monkeypatch):
-    monkeypatch.setattr(config, "read_dotenv", lambda path: {"CLAUDE_MODEL": "opus", "PORT": ""})
-    env = {"ATAMA_TURN_MODE": "vad"}
-    assert sv.pinned(env) == {"CLAUDE_MODEL": ".env", "TURN_MODE": "environment"}
+def test_a_key_pinned_by_the_environment_is_refused_not_silently_lost(store):
+    env = {"ATAMA_CLAUDE_MODEL": "opus", "ATAMA_PORT": "", "ATAMA_TURN_MODE": "vad"}
+    assert sv.pinned(env) == {"CLAUDE_MODEL": "environment", "TURN_MODE": "environment"}
     echo = sv.apply({"CLAUDE_MODEL": "haiku", "PORT": 8001}, environ=env)
     assert "CLAUDE_MODEL" in echo["errors"] and echo["saved"] == ["PORT"]
+
+
+def test_a_leftover_dotenv_pins_nothing(store, tmp_path, monkeypatch):
+    """It used to lock the panel out of a key. Nothing reads it now, so nothing is locked."""
+    (tmp_path / ".env").write_text("CLAUDE_MODEL=opus", encoding="utf-8")
+    monkeypatch.setattr(config, "REPO_ROOT", tmp_path)
+    assert sv.pinned({}) == {}
+    assert sv.apply({"CLAUDE_MODEL": "haiku"}, environ={})["saved"] == ["CLAUDE_MODEL"]
 
 
 def test_a_masked_echo_sent_back_is_rejected_not_stored(store):

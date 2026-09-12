@@ -41,7 +41,8 @@ Run the tutor: `.venv/Scripts/python -m backend.repl` (`--refresh` to re-sync SR
 offline, `--speak` for the tutor voice, `--listen` for the mic — `--listen` implies `--speak`).
 
 **Also built ahead of its milestone, by user directive:** the browser avatar with push-to-talk
-over a WebSocket (`backend/app.py`, `.un`), and the memory half of §6b (`backend/memory.py` —
+over a WebSocket (`backend/app.py`, `.
+un`), and the memory half of §6b (`backend/memory.py` —
 turn log, brief, recent topics, editable student notes, summarised at the next launch). Rotation
 (ADR-032) is built and on by default at 0.7 of the reported window, adaptive to the provider's own
 compactions; its gate (M4c, live) is not met. Neither closes an M3 or M4 gate.
@@ -61,7 +62,6 @@ Everything else in the V0 table is Done — check the table in `ROADMAP.md`, not
 | **[ROADMAP.md](ROADMAP.md)** | *How* to build and prove each subsystem: verification spikes (V0, with the findings log), per-subsystem tests, validation steps, integration order, gates, standing regression suite. | Whenever you are about to start, test, or claim completion of a subsystem or milestone. |
 | **[ADR.md](ADR.md)** | *Why* each pinned choice was made, its cost, and what would reverse it. ADR-016 (subprocess isolation), ADR-021 (read-only SRS) and ADR-022 (settings interface) are user directives. | Before proposing any change to the stack or architecture, and whenever a decision looks arbitrary or wrong. |
 | **[README.md](README.md)** | The user-facing description: setup, login, config, troubleshooting. | When you change setup, config surface, ports, commands, protocol, or milestone status — then update it. |
-| **[.env.example](.env.example)** | The complete inventory of configuration keys with defaults. The settings page and `config.py` must list the same keys. | When adding or renaming any config key. |
 | **`prompts/tutor.md`** | Sensei's personality, teaching behaviour, emotion-tag usage and voice-output rules. | When tutor behaviour is the topic. Never move this content into Python (ADR-012). |
 | **`backend/constants.py`** | Verified external-interface findings, dated. | Before calling any external interface. If it is not pinned there, verify it first (ADR-015). |
 
@@ -88,7 +88,8 @@ Everything else in the V0 table is Done — check the table in `ROADMAP.md`, not
 2. **Check the gate.** A milestone is not done because the code runs; it is done when its gate in
    `ROADMAP.md` is met. Report gate status honestly, including failures and skipped steps.
 3. **Update the docs you invalidated.** Changed a port, a command, a config key, or the WS
-   protocol → `README.md` and `.env.example`. Changed a decision → a new ADR entry plus a
+   protocol → `README.md` (`config.py`'s schema is the key inventory; there is no `.env`).
+   Changed a decision → a new ADR entry plus a
    `Superseded by` mark on the old one. Changed how something is built or proven → `ROADMAP.md`.
 
 ---
@@ -122,9 +123,11 @@ ready marker before the first turn; never `sleep` for it** (ROADMAP findings, 20
 
 **Never bind to `0.0.0.0`.** Loopback only, all three services (ADR-017).
 
-**Never require a `.env` and never send a stored secret back to the browser.** The settings
-page is the configuration interface; env vars are an optional override; secrets echo as
-`{set, hint}` (ADR-022).
+**Never read a `.env` and never send a stored secret back to the browser.** The settings page is
+the configuration interface and `config.py`'s schema is the whole key inventory; `ATAMA_*`
+environment variables are an optional override for automation; secrets echo as `{set, hint}`
+(ADR-022, amended 2026-09-12 — the app stopped reading `.env` entirely; the one at the repo root
+belongs to docker compose).
 
 **Never swap a pinned stack piece without asking** — no React, no cloud TTS, no cloud STT, no GPU
 VOICEVOX. Each is an ADR with reasoning; if you think one is wrong, propose superseding it.

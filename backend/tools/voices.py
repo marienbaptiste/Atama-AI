@@ -52,7 +52,7 @@ def print_catalogue(speakers: list[dict]) -> None:
     for s in speakers:
         styles = ", ".join(f"{st['name']}={st['id']}" for st in s.get("styles", []))
         print(f"  {s['name']:<20} {styles}")
-    print(f"\n{len(speakers)} speakers. Put an id in VOICEVOX_SPEAKER (.env or the settings page).")
+    print(f"\n{len(speakers)} speakers. Put an id in VOICEVOX_SPEAKER (the settings page).")
     print("Audition before committing:  python -m backend.tools.voices --audition <ids>")
 
 

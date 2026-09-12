@@ -1073,8 +1073,9 @@ configuration.
 
 ### 19. Settings store & interface — `backend/config.py` + `frontend/src/settings.ts` — **M0 (store) / M3 (drawer) / M5 (full page)**
 
-**Contract:** one schema drives `config.py`, `.env.example`, and the settings page. Resolution
-is defaults → `settings.json` → env. Secrets never return to the browser in full (ADR-022).
+**Contract:** one schema in `config.py` drives configuration and the settings page — it is the
+whole key inventory. Resolution is defaults → `settings.json` → `ATAMA_*`. There is no `.env`
+(ADR-022 amendment, 2026-09-12). Secrets never return to the browser in full (ADR-022).
 
 - **Test** — Resolution order (a key set in all three sources resolves to env; in two, to
   `settings.json`; in none, to the default). `settings.json` is written atomically and with mode
@@ -1288,6 +1289,19 @@ Sonnet 4.6. Run the 20-turn harness once there is a real lesson to measure.
 
 **Left for a deliberate session:** M3b (10 interruptions on headphones under 300 ms; 10 turns on
 speakers with zero self-interruptions), M3c (the 10-turn acceptance), M3e (VRAM ≤ 10 GB).
+
+**Status 2026-09-12 — `.env` is gone, and an empty install explains itself** (user). `config.load()`
+no longer reads it: defaults → `settings.json` → `ATAMA_*`, and `config.py`'s schema is the only
+inventory, so `.env.example` and the test that kept the two in step are deleted (a test now asserts
+every key is presentable in the panel). `migrate_env` imports an old file in one command and moves
+the tokens too — nothing reads them where they were. `config.stale_dotenv()` reports leftovers and
+the launch prints the fix. The panel's `pinned` now means the environment only. Onboarding: with no
+keys the launch says what is missing, where to add it, what happens meanwhile and how to be offline
+on purpose (`--no-srs`); the page shows a first-run card built from the schema's unset secrets —
+naming no service, because the read-only gate forbids it — with one button to Account and one that
+dismisses it for good. Tests: `test_config.py` (a leftover `.env` configures nothing, the bootstrap
+key is not reported), `test_settings_view.py` (a leftover `.env` pins nothing), `test_migrate_env.py`
+(the tokens move, the configuration comes out the same without the file).
 
 ## Integration order
 

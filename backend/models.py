@@ -228,7 +228,7 @@ class Settings(_Msg):
     #: The config schema the page is generated from (backend/settings_view.py). Not `schema`:
     #: that name shadows a pydantic BaseModel method.
     fields: list[dict[str, Any]] = []
-    #: Keys set in `.env` or the environment, which win over anything saved from the page.
+    #: Keys set in the environment (`ATAMA_*`), which win over anything saved from the page.
     pinned: dict[str, str] = {}
     #: In a reply to an update: which keys were written, and why the others were refused.
     saved: list[str] = []

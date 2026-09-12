@@ -1,4 +1,4 @@
-"""Config resolution, inventory sync with .env.example, secret masking (ADR-022)."""
+"""Config resolution, the dead .env, secret masking (ADR-022)."""
 from __future__ import annotations
 
 import json
@@ -10,10 +10,29 @@ from backend import config
 REPO = Path(__file__).resolve().parents[2]
 
 
-def test_env_example_lists_exactly_the_schema_keys():
-    text = (REPO / ".env.example").read_text(encoding="utf-8")
-    keys = set(re.findall(r"^([A-Z][A-Z0-9_]+)=", text, flags=re.M))
-    assert keys == set(config.KEYS), f"missing in .env.example: {set(config.KEYS) - keys}; extra: {keys - set(config.KEYS)}"
+def test_every_setting_is_presentable_in_the_panel():
+    """config.py is the only inventory now that .env.example is gone (ADR-022 amendment): every
+    key needs the group and description the settings page renders it from."""
+    for s in config.SCHEMA:
+        assert s.group and s.description, f"{s.key} would appear in the panel unexplained"
+    assert len(set(config.KEYS)) == len(config.KEYS)
+
+
+def test_a_leftover_dotenv_no_longer_configures_anything(tmp_path, monkeypatch):
+    """The trap this removed: a key in .env that the settings page could not change."""
+    env = tmp_path / ".env"
+    env.write_text("PORT=9999\nWANIKANI_TOKEN=abc123\n", encoding="utf-8")
+    monkeypatch.setattr(config, "REPO_ROOT", tmp_path)
+    cfg = config.load(tmp_path / "s.json")
+    assert cfg.PORT != 9999 and not str(cfg.WANIKANI_TOKEN)
+    assert config.stale_dotenv() == ["PORT", "WANIKANI_TOKEN"]          # reported, not read
+
+
+def test_the_bootstrap_key_in_a_dotenv_is_not_reported_as_stale(tmp_path, monkeypatch):
+    """SETTINGS_FILE says where settings.json is, so it never moved into it."""
+    (tmp_path / ".env").write_text("SETTINGS_FILE=settings.json\n", encoding="utf-8")
+    monkeypatch.setattr(config, "REPO_ROOT", tmp_path)
+    assert config.stale_dotenv() == []
 
 
 def test_resolution_order(tmp_path):
@@ -34,10 +53,9 @@ def test_process_env_is_read_only_under_the_atama_prefix(monkeypatch):
     assert config.env_overrides() == {"CLAUDE_EFFORT": "low"}
 
 
-def test_bare_claude_env_var_does_not_leak_into_config(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAUDE_EFFORT", "max")
-    monkeypatch.setattr(config, "read_dotenv", lambda p: {})
-    assert config.load(tmp_path / "s.json").CLAUDE_EFFORT == "medium"
+def test_bare_claude_env_var_does_not_leak_into_config(tmp_path):
+    monkeypatch_free = config.load(tmp_path / "s.json", env={})
+    assert monkeypatch_free.CLAUDE_EFFORT == "medium"
 
 
 def test_dotenv_parser(tmp_path):

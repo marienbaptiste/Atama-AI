@@ -1,14 +1,18 @@
-"""Move settings out of `.env` into `settings.json`, so the settings panel can edit them.
+"""Move settings out of `.env` into `settings.json`, where the app now reads them.
 
     python -m backend.tools.migrate_env            # do it (backs .env up first)
     python -m backend.tools.migrate_env --dry-run  # say what would move, change nothing
 
-`.env` overrides `settings.json` (config.py resolution order), so every key set there is locked
-in the panel. This moves the ones that are not secrets. What stays in `.env`:
+**The app no longer reads `.env` at all** (user, 2026-09-12; ADR-022 amendment): the settings page
+is the interface, and a second file silently overriding it was a trap. So this moves everything
+the schema knows, **including the API tokens** — left behind they would simply stop working.
+`settings.json` is git-ignored and written 0600, which is where a credential belongs anyway.
+What stays in `.env`:
 
-* the tokens (secrets) — the panel can hold them too, but moving a credential is the user's call;
-* SETTINGS_FILE — it says where settings.json IS, so it cannot live inside it;
-* anything config.py does not read (SEARXNG_SECRET belongs to docker compose);
+* SETTINGS_FILE — it says where settings.json IS, so it cannot live inside it. Set
+  `ATAMA_SETTINGS_FILE` in the environment instead if you need it somewhere else;
+* anything config.py does not read — SEARXNG_SECRET belongs to docker compose, which has its own
+  `.env` mechanism and is the only reason the file still exists;
 * every comment.
 
 Keys with an empty value are dropped: an empty value overrides nothing (`config.load` skips it).
@@ -42,7 +46,7 @@ def plan(env_path: Path) -> tuple[dict[str, str], list[str], list[str]]:
     invalid: list[str] = []
     for key, raw in config.read_dotenv(env_path).items():
         s = by_key.get(key)
-        if s is None or s.secret or key in KEEP:
+        if s is None or key in KEEP:
             continue
         if raw == "":
             drop.append(key)
@@ -56,8 +60,11 @@ def plan(env_path: Path) -> tuple[dict[str, str], list[str], list[str]]:
     return move, drop, invalid
 
 
-def _effective(settings_path: Path, env_path: Path) -> dict[str, Any]:
-    env = {**config.read_dotenv(env_path), **config.env_overrides()}
+def _effective(settings_path: Path, env_path: Path | None) -> dict[str, Any]:
+    """What the app sees. With `env_path`, the OLD resolution that still read `.env` — which is
+    what the student had configured, and what the migration has to reproduce without it."""
+    env = config.env_overrides() if env_path is None else {**config.read_dotenv(env_path),
+                                                           **config.env_overrides()}
     return dict(config.load(settings_path, env=env)._values)
 
 
@@ -84,14 +91,16 @@ def migrate(env_path: Path, settings_path: Path, dry_run: bool = False) -> dict[
                 if not ((m := _ASSIGN.match(line)) and m.group(1) in gone)]
         note = (f"# {len(gone)} settings moved to settings.json on {stamp} by "
                 f"backend.tools.migrate_env (backup: {backup.name}).{nl}"
-                f"# Edit them in the app's settings panel. A key set here overrides the panel.{nl}")
+                f"# atama-AI does NOT read this file any more - edit everything in the settings"
+                f" panel.{nl}# What is left here belongs to docker compose (SEARXNG_SECRET).{nl}")
         fd, tmp = tempfile.mkstemp(prefix=".env-", dir=env_path.parent)
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
             f.write(note + nl.join(kept) + nl)
         os.replace(tmp, env_path)
-        after = _effective(settings_path, env_path)
+        after = _effective(settings_path, None)          # the new world: no .env at all
         if after != before:
-            changed = sorted(k for k in before if before[k] != after.get(k))
+            changed = sorted(k for k in before
+                             if before[k] != after.get(k) and k.upper() not in KEEP)
             raise RuntimeError(f"the effective configuration changed for {changed}; restored")
     except BaseException:
         shutil.copy2(backup, env_path)
@@ -120,7 +129,8 @@ def main(argv: list[str] | None = None) -> int:
               f"(they override nothing): {', '.join(report['dropped'])}")
     if report["invalid"]:
         print(f"left in .env because the value does not parse: {', '.join(report['invalid'])}")
-    print("kept in .env: tokens, SETTINGS_FILE, and keys config.py does not read (SEARXNG_SECRET)")
+    print("left in .env: SETTINGS_FILE and keys config.py does not read (SEARXNG_SECRET, for docker"
+          " compose). The app itself no longer reads the file.")
     if report["backup"]:
         print(f"backup: {report['backup']}")
     return 0

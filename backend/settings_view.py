@@ -6,9 +6,11 @@ browser and validates what comes back. Two rules it exists to enforce:
 * **A stored secret never returns to the browser.** Values go out through `Config.public_view`,
   where every secret is `{set, hint}`. An empty secret coming back means "leave it as it is" —
   the page never has the value, so it cannot send it back, and a blank box must not erase a token.
-* **The panel says when it cannot win.** `.env` and `ATAMA_*` variables override `settings.json`
-  (config.py resolution order). A value saved here for a key pinned there would be silently
-  ignored at the next launch, so those keys are reported as `pinned` and the page locks them.
+* **The panel says when it cannot win.** `ATAMA_*` variables override `settings.json` (config.py
+  resolution order). A value saved here for a key pinned there would be silently ignored at the
+  next launch, so those keys are reported as `pinned` and the page locks them. `.env` used to do
+  the same and no longer does: the app stopped reading it (ADR-022 amendment, 2026-09-12) exactly
+  because a file the panel could not edit was the wrong place for configuration.
 
 Keys in `LIVE` (the audio devices) apply to the running session the moment they are saved; the
 rest apply at the next launch (live application of the others is M3's runtime subset).
@@ -49,11 +51,8 @@ LIVE = frozenset({"AUDIO_INPUT_DEVICE", "AUDIO_OUTPUT_DEVICE", "TUTOR_PERSONA"})
 
 
 def pinned(environ: dict[str, str] | None = None) -> dict[str, str]:
-    """Keys whose value comes from `.env` or the process environment, and which one."""
-    out = {k: ".env" for k, v in config.read_dotenv(config.REPO_ROOT / ".env").items()
-           if k in config.KEYS and v != ""}
-    out.update({k: "environment" for k, v in config.env_overrides(environ).items() if v != ""})
-    return out
+    """Keys whose value comes from the process environment, which the panel cannot override."""
+    return {k: "environment" for k, v in config.env_overrides(environ).items() if v != ""}
 
 
 def schema() -> list[dict[str, Any]]:

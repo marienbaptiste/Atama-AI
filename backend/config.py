@@ -1,14 +1,21 @@
 """Configuration (spec §11, ADR-022).
 
-Resolution order: built-in defaults -> settings.json -> .env file -> ATAMA_-prefixed env vars.
-One schema drives config, the settings page, and .env.example (a test asserts they match).
+Resolution order: built-in defaults -> settings.json -> ATAMA_-prefixed env vars.
+One schema drives config and the settings page; there is no file to keep in step with them.
+
+**There is no `.env` any more** (user, 2026-09-12, ADR-022 amendment). The settings page is the
+place you configure this app, including the API keys, and a second half-remembered file that
+silently overrode it was a trap: a key set there could not be changed from the panel, and the
+panel had to explain why. A `.env` left over from before is NOT read; `stale_dotenv()` finds it
+and the launch says how to import it (`python -m backend.tools.migrate_env`). Docker Compose keeps
+its own `.env` for SEARXNG_SECRET — that is compose's mechanism, not ours.
+
 Secrets never leave the backend in full: use `hint()` for display.
 
 Why the prefix on the last layer: our keys are named after what they configure (CLAUDE_MODEL,
 CLAUDE_EFFORT...), and Claude Code exports variables of its own with those exact names — running
 the app from inside a Claude Code session picked up CLAUDE_EFFORT=high from the parent shell
-(found 2026-09-09). The `.env` file is ours and keeps bare names; the process environment, which
-we do not own, is read only under `ATAMA_`.
+(found 2026-09-09). The process environment, which we do not own, is read only under `ATAMA_`.
 """
 from __future__ import annotations
 
@@ -181,7 +188,11 @@ def hint(value: str) -> str:
 
 
 def read_dotenv(path: Path) -> dict[str, str]:
-    """Minimal .env parser: KEY=value lines, `#` comments, optional quotes. No expansion."""
+    """Minimal .env parser: KEY=value lines, `#` comments, optional quotes. No expansion.
+
+    Not part of configuration any more — it is how `migrate_env` imports an old file, and how the
+    launch notices one still lying around (see the module docstring).
+    """
     out: dict[str, str] = {}
     if not path.is_file():
         return out
@@ -204,6 +215,21 @@ def read_dotenv(path: Path) -> dict[str, str]:
 ENV_PREFIX = "ATAMA_"
 
 
+#: Keys that never moved into settings.json, so finding one in a `.env` is not a mistake:
+#: SETTINGS_FILE says where settings.json IS (use ATAMA_SETTINGS_FILE to point elsewhere now).
+DOTENV_BOOTSTRAP = frozenset({"SETTINGS_FILE"})
+
+
+def stale_dotenv(path: Path | None = None) -> list[str]:
+    """Keys of this app's schema still sitting in a `.env`, which nothing reads any more.
+
+    SEARXNG_SECRET and anything else compose owns is not ours, and the bootstrap keys above were
+    never settings.json's to hold; neither is reported.
+    """
+    found = read_dotenv(REPO_ROOT / ".env" if path is None else path)
+    return sorted(k for k in found if k in _BY_KEY and k not in DOTENV_BOOTSTRAP)
+
+
 def env_overrides(environ: dict[str, str] | None = None) -> dict[str, str]:
     """Process-environment overrides, read ONLY under `ATAMA_` (see module docstring)."""
     environ = os.environ if environ is None else environ
@@ -213,8 +239,9 @@ def env_overrides(environ: dict[str, str] | None = None) -> dict[str, str]:
 
 def load(settings_file: str | os.PathLike | None = None, env: dict[str, str] | None = None) -> Config:
     if env is None:
-        # defaults < settings.json < .env (bare names, our file) < ATAMA_* (not our namespace)
-        env = {**read_dotenv(REPO_ROOT / ".env"), **env_overrides()}
+        # defaults < settings.json < ATAMA_* (the process environment is not our namespace).
+        # A .env in the repo is deliberately NOT read: the settings page is the interface.
+        env = env_overrides()
     settings_path = Path(settings_file or env.get("SETTINGS_FILE") or _BY_KEY["SETTINGS_FILE"].default)
     if not settings_path.is_absolute():
         settings_path = REPO_ROOT / settings_path

@@ -195,6 +195,24 @@ export function onSettings(msg: SettingsMsg): void {
 }
 
 /** The Sound tab's meter: seeing the bar move is the fastest proof the right mic is live. */
+/** The sign-ins with nothing stored yet, by their label — for the first-run card in main.ts.
+ *
+ *  Read from the schema the server sent, never from a list of key names here: the page is not
+ *  allowed to name the study services or their tokens (the read-only gate, spec §0).
+ */
+export function unsetSecrets(): string[] {
+  const vals = values();
+  return ((SETTINGS?.fields as unknown as Field[]) || [])
+    .filter(f => f.secret && !(vals[f.key] as { set?: boolean } | undefined)?.set)
+    .map(f => f.label || human(f.key));
+}
+
+/** True when NOTHING has been configured: a genuine first run, not a half-filled account. */
+export function nothingConfigured(): boolean {
+  const secrets = ((SETTINGS?.fields as unknown as Field[]) || []).filter(f => f.secret);
+  return secrets.length > 0 && unsetSecrets().length === secrets.length;
+}
+
 export function showLevel(percent: number, speech: number): void {
   const bar = open ? document.getElementById("lvl") : null;
   if (!bar) return;
