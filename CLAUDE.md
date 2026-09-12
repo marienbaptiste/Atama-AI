@@ -53,7 +53,10 @@ over a WebSocket (`backend/app.py`, `.
 un`), and the memory half of §6b (`backend/memory.py` —
 turn log, brief, recent topics, editable student notes, summarised at the next launch). Rotation
 (ADR-032) is built and on by default at 0.7 of the reported window, adaptive to the provider's own
-compactions; its gate (M4c, live) is not met. Neither closes an M3 or M4 gate.
+compactions; its gate (M4c, live) is not met. Neither closes an M3 or M4 gate. Also by user request
+(2026-09-12): the study plan (`backend/study_plan.py`, spec §6c, ADR-038) — today's targets chosen
+from the unmastered items and rotated like an SRS, four openers in turn, zero model calls; its live
+check (targets visibly rotate after two correct uses, ROADMAP 23) is pending.
 
 No V0 spike is open. **V0.4** (TalkingHead: `speakAudio`, times in ms, the real mood names) was
 done 2026-09-10 and pinned in `constants.py`; the table said Open until 2026-09-11. **V0.12** was closed on 2026-09-11 without a one-off measurement: the compaction point is provider

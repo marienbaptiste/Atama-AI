@@ -4,6 +4,8 @@
 import "./style.css";
 import { Avatar, type CastEntry } from "./avatar";
 import { Chat } from "./chat";
+import { applyHistory, loadingCaption } from "./history";
+import { legendHtml, pointCardHtml, wordCardHtml } from "./levels";
 import { Talk } from "./mic";
 import type { ExplanationMsg, ServiceStatusMsg, SettingsMsg, SpeakMsg, TimingMsg, VocabSpan } from "./protocol.gen";
 import { Backchannel } from "./rig";
@@ -38,6 +40,8 @@ const chat = new Chat($("chat-list"), (point, mark) => showPoint(point, mark),
                       (word, mark) => showWord(word, mark));
 //: EXPLAIN_LANGUAGE: the language a grammar explanation comes back in (a translation is English).
 let explainLang: "en" | "ja" = "en";
+//: The level colours' key, in the panel's header (user, 2026-09-12).
+$("chat").querySelector("header")?.insertAdjacentHTML("beforeend", legendHtml());
 
 //: Never rejects: without TalkingHead she is a voice (avatar.ts), and the chat still fills.
 const avatarReady: Promise<Avatar> = Avatar.create($("stage"), onSentence);
@@ -48,7 +52,7 @@ avatarReady.then(a => { avatar = a; if (a.available) mountRigPanel(a); },
 function onSentence(msg: SpeakMsg, preview: boolean): void {
   subtitle(msg.text, "her");
   if (preview) return;                              // a rig-panel sample, not the conversation
-  hasSpoken = true;                                 // no more "still loading" for this session
+  spoken();                                         // no more "still loading" for this lesson
   chat.her(msg);
   if (msg.target) setGoal(msg.target);
   if (msg.used) {                                   // you used it, and she noticed
@@ -62,7 +66,7 @@ function onSentence(msg: SpeakMsg, preview: boolean): void {
 
 // ------------------------------------------------------------------ every server message
 const handlers: Handlers = {
-  state: m => onState(m.state, m.turn),
+  state: m => { if (m.spoken) spoken(); onState(m.state, m.turn); },
   stt_partial: () => { /* reserved: never sent (models.py SttPartial) */ },
   stt_final: m => {
     if (m.accepted) subtitle(m.text, "you");
@@ -83,6 +87,9 @@ const handlers: Handlers = {
     await a.loaded;                                 // her model is on stage, or she is a voice only
     await a.player.play(m);
   },
+  //: The lesson so far, for a page that (re)connects after it started: what was said, as it was
+  //: marked, without the audio. Her lines here count as spoken (2026-09-12).
+  history: m => { if (applyHistory(chat, m.lines)) spoken(); },
   bargein: async m => {
     (await avatarReady).stop(m.turn);
     bargedIn();
@@ -97,28 +104,22 @@ const handlers: Handlers = {
   error: m => log(esc(m.message), "err"),
 };
 
-//: What the chat says while she is still coming up (user, 2026-09-12). The chips already carry
-//: the detail; this turns the loudest of them into one sentence, because a blank panel during a
-//: 40-second launch looks broken. Her first sentence removes it (chat.her).
-const LOADING: Record<string, (m: ServiceStatusMsg) => string | null> = {
-  brain: m => m.state === "starting"
-    ? (/lesson/i.test(m.detail) ? "reading back your last lesson…" : "waking your tutor…")
-    : m.state === "ready" ? "she is thinking of how to start…" : null,
-  stt: m => (m.state === "loading" ? "loading speech recognition…" : null),
-  voicevox: m => (m.state === "loading" ? "warming her voice…" : null),
-};
-
-//: Only before her first sentence. The status heartbeat re-sends every service every few seconds
-//: (§5b), so without this the bubble came back mid-lesson saying she was thinking of how to start
-//: (user, 2026-09-12).
+//: Only before her first sentence THIS LESSON — server truth (`state.spoken`, a replayed line of
+//: hers, or her sentence arriving), because a reloaded page remembers nothing and would otherwise
+//: sit on "she is thinking of how to start…" for an opening it had already heard (user,
+//: 2026-09-12). The status heartbeat re-sends every service every few seconds (§5b), so without
+//: this the bubble came back mid-lesson too.
 let hasSpoken = false;
+function spoken(): void {
+  hasSpoken = true;
+  chat.ready();                                     // whatever caption was up is over
+}
 //: The "getting everything ready…" bubble belongs to a fresh page, once: a reconnect is not a
 //: launch, and the status replay that follows it names what is really still loading.
 let welcomed = false;
 
 function waitingFor(m: ServiceStatusMsg): void {
-  if (hasSpoken) return;
-  const caption = LOADING[m.service]?.(m);
+  const caption = loadingCaption(m, hasSpoken);
   if (caption) chat.loading(caption);
 }
 
@@ -251,18 +252,13 @@ function askExplain(kind: "grammar" | "sentence", text: string, context = ""): v
 //: sentence — their reading, the English WaniKani gives it, and where it is in their SRS — so
 //: this costs nothing and answers at once. On'yomi and kun'yomi wait for the offline dictionary.
 function showWord(word: VocabSpan, mark: HTMLElement): void {
-  const bits = [word.reading && `<p class="rd">${esc(word.reading)}</p>`,
-                word.meaning && `<p>${esc(word.meaning)}</p>`,
-                word.stage && `<p class="stage">${esc(word.stage)} on WaniKani</p>`];
-  showPop($("word-pop"), mark, `<small>Your vocabulary</small><b>${esc(word.word)}</b>`
-    + (bits.filter(Boolean).join("") || "<p>No reading stored for this one.</p>"));
+  showPop($("word-pop"), mark, wordCardHtml(word));
 }
 
 function showPoint(point: string, mark: HTMLElement): void {
   const pop = $("gp-pop");
   pop.dataset.point = point;
-  showPop(pop, mark, `<small>Grammar point</small><b>${esc(point)}</b>`
-    + '<p class="wait">Looking it up…</p>');
+  showPop(pop, mark, pointCardHtml(point, mark.dataset.level || ""));   // its Bunpro level, if on their list
   askExplain("grammar", point, chat.sentenceOf(mark));   // the sentence she used it in
 }
 
@@ -270,10 +266,10 @@ function showPoint(point: string, mark: HTMLElement): void {
 function onExplanation(m: ExplanationMsg): void {
   if (m.kind === "sentence") { chat.setTranslation(m.text, m.answer, m.error); return; }
   const pop = $("gp-pop");
-  const line = pop.querySelector("p");
+  const line = pop.querySelector("p.ans");            // not the level line above it
   if (pop.hidden || pop.dataset.point !== m.text || !line) return;
   line.textContent = m.answer || m.error || "no answer";
-  line.className = m.answer ? "" : "bad";
+  line.className = m.answer ? "ans" : "ans bad";
 }
 
 /** A small card beside what was clicked: above it if there is room, else below; on screen. */

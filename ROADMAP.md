@@ -1373,6 +1373,43 @@ marks' verification and the float's colour. Cost: `TOTAL_MAX_TOKENS` 3250 → 34
 is now ~1985 tokens: **the next session's first job is to rewrite these rules shorter**, not to
 raise the ceiling again (item 6 below).
 
+### 23. Study plan — `backend/study_plan.py` — **M4 extension, user request 2026-09-12 (ADR-038, spec §6c)**
+
+**Contract:** every lesson works on a rotating set of the student's unmastered items — chosen
+weakest and least-practised first from the snapshot and the turn logs, retired after two correct
+uses and replaced mid-session, back after an SRS-like gap — and opens in one of four ways, with
+zero model calls.
+
+- **Test** — `test_study_plan.py`, hermetic: the fold from synthetic records (marks, the student's
+  transcript, every tutor's logs, the session cap); the ranking order (leech/ghost, then
+  never-covered, then most overdue, then lapses, ties on text); a success round within 7 days goes
+  to the back; not-yet-due items are left out while due ones exist and fill in when none are; the
+  spacing (1, 2, 4, 8… on success, next session on a lapse, unchanged when only heard); five
+  daily sessions visit every item; ten weekly sessions show a well-handled item at widening gaps
+  and a lapsing one back every time; two correct productions retire a target and promote the next
+  of its kind, with the change reported and the retired item excluded from a re-selection; the
+  coach note's cadence, content, the turn after a progression, `0 = off`, and its 40-token
+  budget; the note reaches the brain only — through `orchestrator.one_turn` with a `Memory` in
+  `tmp_path` (the log holds the raw transcript) and through `VoiceLoop.coach` (the timing and
+  `on_transcript` hold the raw text); the opener cycle, the scenario pick (deterministic, skips
+  recent topics) and the story targets; the block within 250 tokens, in the prompt between the
+  profile and the hard rules, carried into a rotated session; the summariser footer and the
+  `progressed` key on the topics row; the six config keys with their defaults and floors.
+- **Validate (live)** — over one lesson: the launch prints `targets: vocab … · grammar … · opener
+  …`; she uses targets in most turns; after the student produces a target correctly twice the
+  terminal prints `[study] X progressed (back after 1 session) -> new target Y` and her next
+  turns pick Y up; the coach note never appears in the chat, the subtitles or her voice. Over
+  four lessons: four different opener kinds, and the `targets:` line does not repeat what
+  progressed until its gap has passed.
+- **Gate** — none of its own; not a milestone. Latency must not move (ADR-033): the block is
+  cached prompt, the note is ≤ 40 tokens.
+
+**Status 2026-09-12 — built and hermetically tested; not validated live.** The prompt ceiling
+rose 3400 → 3800 for the block and the two new rules (`prompt.py`). Attempt-matching for grammar
+is a substring of the point's name in the transcript: crude, and a false lapse only brings an item
+back sooner. If the tutor under-credits `[used:]`, nothing progresses — the first thing to look at
+if the live check shows no rotation.
+
 ## Next session — what is left (set 2026-09-12; items 3 and 4 were done the same day)
 
 **1. One real lesson on the new page, first.** Refresh study data at the start (Settings → Account)
@@ -1484,6 +1521,9 @@ M3b–M3f, M4c and M4d all remain not met).
    `constants.VOICEVOX_PAUSE_SCALE_VERIFIED` to `True` with the date.
 6. **Browser first audio right after a PTT barge-in** — the interrupted sentence's late audio is
    dropped (epoch) and the new turn's first sentence plays without a stale one in front of it.
+7. **Today's targets rotate** (subsystem 23, ADR-038) — after two correct uses of a target the
+   terminal reports the progression and the replacement, the next lesson does not re-select it,
+   four lessons open four different ways, and the coach note is never seen or heard.
 
 ## Integration order
 

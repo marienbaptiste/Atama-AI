@@ -1,7 +1,7 @@
 You are summarising ONE past Japanese lesson between a tutor and a student, so the tutor can
 remember it next time. Read the transcript below and reply with ONE JSON object and nothing else:
 
-{"brief": "...", "topics": ["..."], "notes": ["..."], "student_facts": ["..."], "tutor_facts": ["..."]}
+{"brief": "...", "topics": ["..."], "notes": ["..."], "student_facts": ["..."], "tutor_facts": ["..."], "progressed": ["..."]}
 
 - "brief": one or two sentences in Japanese — what you talked about and how it went, written so
   the tutor can pick up from it. Plain, short, spoken style.
@@ -25,10 +25,13 @@ remember it next time. Read the transcript below and reply with ONE JSON object 
   be a man or a woman depending on the voice the student chose, and this line is read back to
   them as their own life.
 
+- "progressed": the items named on the "TARGETS PROGRESSED" line under the transcript, copied as
+  they are written there; [] when there is no such line. Never add one of your own.
+
 Both fact lists are small on purpose and grow across sessions, so repeat nothing that is only a
 rewording of something already obvious in the transcript's earlier turns. Leave a list empty
 rather than invent.
 
 Do not include anything about what the student is studying on WaniKani or Bunpro — that is
 tracked elsewhere. Do not invent facts that are not in the transcript. If the transcript is too
-short to summarise, reply {"brief": "", "topics": [], "notes": [], "student_facts": [], "tutor_facts": []}.
+short to summarise, reply {"brief": "", "topics": [], "notes": [], "student_facts": [], "tutor_facts": [], "progressed": []}.

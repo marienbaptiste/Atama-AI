@@ -142,7 +142,7 @@ def test_study_marks_ride_with_their_sentence():
     speech.grammar, speech.target = (GrammarMark(0, 2, "〜たら"),), "〜たら"
     asyncio.run(hub.speak(speech))
     asyncio.run(hub.speak(FakeSpeech()))
-    assert sent[0]["grammar"] == [{"start": 0, "end": 2, "point": "〜たら"}] and sent[0]["target"] == "〜たら"
+    assert sent[0]["grammar"] == [{"start": 0, "end": 2, "point": "〜たら", "level": ""}] and sent[0]["target"] == "〜たら"
     assert sent[1]["grammar"] == [] and sent[1]["target"] == ""
 
 
@@ -520,7 +520,7 @@ def test_a_late_page_is_told_the_state_she_is_in(masked):
     with connect(hub) as client, client.websocket_connect("/ws", headers=PAGE) as ws:
         assert ws.receive_json()["type"] == "settings"
         state = ws.receive_json()
-        assert state == {"type": "state", "state": "speaking", "turn": 1}
+        assert state == {"type": "state", "state": "speaking", "turn": 1, "spoken": False}
 
 
 def test_a_frame_that_is_not_json_is_answered_not_fatal(masked):
@@ -559,3 +559,119 @@ def test_a_free_port_is_bound_here_and_handed_to_uvicorn():
         assert sock.getsockname()[0] == "127.0.0.1" and sock.getsockname()[1] > 0
     finally:
         sock.close()
+
+
+def test_a_point_from_their_list_she_forgot_to_mark_goes_red_anyway():
+    """「と思います」 stayed black although 「と思う」 was on the list (user, 2026-09-12): the hub
+    adds what the annotator finds, after her own marks, and never for a point not on the list."""
+    from types import SimpleNamespace
+    hub = app.Hub()
+    from backend.chunker import GrammarMark
+    hub.study = SimpleNamespace(items=[SimpleNamespace(text="と思う", kind="grammar"),
+                                      SimpleNamespace(text="雨", kind="vocab")])
+    seen = []
+    def points(text, names, marks):
+        seen.append((text, names, marks))
+        return [{"start": 6, "end": 11, "point": "と思う"}]
+    hub.points = points
+    text = "明日は雨が降ると思います。"
+    speech = SimpleNamespace(grammar=(GrammarMark(3, 4, "〜が"),))
+    assert hub._grammar(text, speech) == [{"start": 3, "end": 4, "point": "〜が", "level": ""},
+                                          {"start": 6, "end": 11, "point": "と思う", "level": ""}]
+    assert seen == [(text, ["と思う"], [{"start": 3, "end": 4, "point": "〜が", "level": ""}])]
+    hub.points = lambda *_: 1 / 0                                  # a broken finder costs nothing
+    assert hub._grammar(text, speech) == [{"start": 3, "end": 4, "point": "〜が", "level": ""}]
+
+
+def test_each_grammar_mark_carries_the_bunpro_level_of_its_point():
+    """The mark is painted the colour of its level (user, 2026-09-12): looked up on the student's
+    own list by normalised name, containment allowed (〜たら is たら); a point not on the list has
+    no level and keeps the neutral style. A leech among their words is flagged the same way."""
+    from types import SimpleNamespace
+    from backend.chunker import GrammarMark
+    hub = app.Hub()
+    hub.study = SimpleNamespace(
+        items=[SimpleNamespace(text="たら", kind="grammar", srs="beginner"),
+               SimpleNamespace(text="と思う", kind="grammar", srs="ghost"),
+               SimpleNamespace(text="雨", kind="vocab", srs="", leech=True)],
+        spans=lambda text: [{"start": 0, "end": 1, "word": "雨", "reading": "あめ", "meaning": "rain",
+                             "stage": "Apprentice 2"}])
+    text = "雨が降ったらと思うでしょう。"
+    speech = SimpleNamespace(grammar=(GrammarMark(2, 6, "〜たら"), GrammarMark(6, 9, "と思う"),
+                                      GrammarMark(9, 13, "でしょう")))
+    assert [(m["point"], m["level"]) for m in hub._grammar(text, speech)] == [
+        ("〜たら", "beginner"), ("と思う", "ghost"), ("でしょう", "")]
+    assert hub._vocab(text) == [{"start": 0, "end": 1, "word": "雨", "reading": "あめ", "meaning": "rain",
+                                 "stage": "Apprentice 2", "leech": True}]
+    hub.study = None
+    assert [m["level"] for m in hub._grammar(text, speech)] == ["", "", ""]
+
+
+def test_a_page_that_joins_later_gets_the_lesson_so_far_without_the_audio(masked):
+    """A reload sat on "she is thinking of how to start…" for an opening it had already heard
+    (user, 2026-09-12): the welcome now says she has spoken and replays the transcript."""
+    hub = app.Hub()
+    asyncio.run(hub.state("thinking"))
+    speech = FakeSpeech()
+    speech.grammar = (types.SimpleNamespace(start=0, end=2, point="〜たら"),)
+    asyncio.run(hub.speak(speech))
+    asyncio.run(hub.bargein())                                     # cut short: the page may not have heard it all
+    asyncio.run(hub.transcript("雨です", accepted=False, reason="blocklist"))
+    asyncio.run(hub.state("listening"))
+    with connect(hub) as client, client.websocket_connect("/ws", headers=PAGE) as ws:
+        got = [ws.receive_json() for _ in range(3)]
+    assert [m["type"] for m in got] == ["settings", "state", "history"]
+    assert got[1]["spoken"] is True
+    lines = got[2]["lines"]
+    assert [(l["who"], l["text"]) for l in lines] == [("her", "はい。"), ("you", "雨です")]
+    assert lines[0]["grammar"] == [{"start": 0, "end": 2, "point": "〜たら", "level": ""}]
+    assert lines[0]["turn"] == 1 and lines[0]["cut"] is True
+    assert lines[1]["accepted"] is False and lines[1]["reason"] == "blocklist"
+    assert not any(k in lines[0] for k in ("audio_b64", "visemes", "vtimes", "vdurations"))
+
+
+def test_a_fresh_lesson_replays_nothing_and_the_transcript_is_capped(masked):
+    hub = app.Hub()
+    with connect(hub) as client, client.websocket_connect("/ws", headers=PAGE) as ws:
+        assert ws.receive_json()["type"] == "settings"
+        ws.send_json({"type": "control", "action": "ready"})       # a round trip: nothing else was queued
+        assert hub.history.maxlen == app.HISTORY_LINES
+    for i in range(app.HISTORY_LINES + 5):
+        asyncio.run(hub.transcript(str(i)))
+    assert len(hub.history) == app.HISTORY_LINES and hub.history[0]["text"] == "5"
+    assert hub.spoken is False
+
+
+def test_her_mark_on_one_of_their_words_is_a_word_span_not_a_grammar_mark():
+    """The tutor wraps the student's WaniKani words like grammar — {{申します|申す}} — so her marks
+    are the authority for both (prompts/tutor.md, 2026-09-12): a mark naming a word on their list
+    becomes the word's span, her mark wins over what the list found on its own, and nothing is
+    marked twice."""
+    from types import SimpleNamespace
+    from backend.chunker import GrammarMark
+    hub = app.Hub()
+    text = "山田と申します。雨が降ったら帰ります。"
+    hub.study = SimpleNamespace(
+        items=[SimpleNamespace(text="申す", kind="vocab", reading="もうす", meaning="to be called", stage=2, leech=False, srs=""),
+               SimpleNamespace(text="たら", kind="grammar", srs="adept")],
+        # The list's own substring find overlaps her mark: hers wins, once.
+        spans=lambda t: [{"start": 3, "end": 5, "word": "申す", "reading": "もうす", "meaning": "to be called", "stage": "Apprentice 2"}])
+    speech = SimpleNamespace(grammar=(GrammarMark(3, 7, "申す"), GrammarMark(10, 14, "〜たら")))
+    hub.grammar = lambda t, marks: [m for m in marks if m["point"] != "申す"]   # the guard never sees the word anyway
+    assert hub._grammar(text, speech) == [{"start": 10, "end": 14, "point": "〜たら", "level": "adept"}]
+    assert hub._vocab(text, speech) == [{"start": 3, "end": 7, "word": "申す", "reading": "もうす", "meaning": "to be called",
+                                         "stage": "Apprentice 2", "leech": False}]
+    assert hub._vocab(text) == [{"start": 3, "end": 5, "word": "申す", "reading": "もうす", "meaning": "to be called",
+                                 "stage": "Apprentice 2", "leech": False}]      # the student's own line: no marks
+    hub.study, hub.grammar = SimpleNamespace(items=[], spans=lambda t: []), None
+    assert [m["point"] for m in hub._grammar(text, speech)] == ["申す", "〜たら"]    # not on their list: grammar, as before
+
+
+def test_a_point_on_their_list_is_grammar_whatever_the_guard_thinks():
+    from types import SimpleNamespace
+    from backend.chunker import GrammarMark
+    hub = app.Hub()
+    hub.study = SimpleNamespace(items=[SimpleNamespace(text="つもり", kind="grammar", srs="beginner")], spans=lambda t: [])
+    hub.grammar = lambda t, marks: []                                   # a guard that drops everything
+    speech = SimpleNamespace(grammar=(GrammarMark(0, 3, "つもり"), GrammarMark(4, 6, "先生")))
+    assert hub._grammar("つもりの先生", speech) == [{"start": 0, "end": 3, "point": "つもり", "level": "beginner"}]

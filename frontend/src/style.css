@@ -3,6 +3,14 @@
    scratch: no borrowed logos, glyphs or artwork. */
 :root{--glass:rgba(250,251,253,.74);--pill:rgba(255,255,255,.84);--ink:#2b2f36;--sub:#6b7380;
       --line:rgba(30,40,60,.10);--accent:#e8453c;--shadow:0 4px 14px rgba(0,0,0,.28);
+      /* The SRS level colours (user, 2026-09-12): the Bunpro progress palette, one scale for
+         grammar (its Bunpro level) and words (WaniKani stage mapped onto it, levels.ts). Each
+         --lv-* is the colour; --lv-*-ink is the text that reads on a chip of it (the two light
+         ones take dark text). These are the light palette, for the white bubbles and cards. */
+      --lv-ghost:#6b6b6b;--lv-beginner:#0e2f33;--lv-adept:#123559;--lv-seasoned:#5a3a75;
+      --lv-expert:#d9a6b9;--lv-master:#e2a5a5;--lv-self_study:#cfcfcf;
+      --lv-ghost-ink:#fff;--lv-beginner-ink:#fff;--lv-adept-ink:#fff;--lv-seasoned-ink:#fff;
+      --lv-expert-ink:#3a1f2b;--lv-master-ink:#3f2121;--lv-self_study-ink:#2b2f36;
       /* Japanese text: the first of these that the machine has. Noto Sans JP comes from the
          stylesheet in index.html when there is a network; the rest ship with the OS. */
       --jp:"Noto Sans JP","BIZ UDPGothic","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif}
@@ -180,17 +188,36 @@ body.study #subs{display:none!important}
 .msg.you{align-self:flex-end;border-bottom-right-radius:9px;color:#20386e;
      background:linear-gradient(180deg,#edf3ff,#dfe9ff)}
 .msg.you.dropped{background:#f1f3f6;color:#9aa1ab;font-style:italic;box-shadow:none}
-/* Red is grammar, blue is a word from their own lessons - one not yet Guru'd (user, 2026-09-12).
+/* A grammar point she used (gp) and a word from their own lessons (vw), each painted the colour
+   of ITS level — the class lv-<level> sets --lv (user, 2026-09-12; levels.ts). The two kinds keep
+   telling apart by the line under them: grammar is a solid bar, a word a dotted one, and the
+   text itself stays readable ink, because the two light levels would vanish as text on white.
+   A mark with no level (a point not on their list) keeps the old red/blue as its neutral.
    Grammar wins where they overlap: two nested marks would be a box inside a box. */
-/* Both are clickable, and the dotted line under each says so in its own colour — red for a
-   grammar point, blue for one of their words (user, 2026-09-12). Same weight, same discretion. */
-mark.gp,mark.vw{background:none;cursor:pointer;border-radius:3px;outline:none;
-                border-bottom:2px dotted currentColor;padding-bottom:1px}
-mark.gp{color:#e8453c;font-weight:700}
-mark.vw{color:#2563eb;font-weight:600}
-mark.gp:hover,mark.gp:focus{background:rgba(232,69,60,.08)}
-mark.vw:hover,mark.vw:focus{background:rgba(37,99,235,.08)}
-.msg.you mark.vw{color:#1d4ed8}
+mark.gp,mark.vw{--lv:var(--accent);background:none;cursor:pointer;border-radius:3px 3px 0 0;outline:none;
+                color:var(--ink);padding-bottom:1px;border-bottom:3px solid var(--lv)}
+mark.gp{font-weight:700}
+mark.vw{--lv:#2563eb;font-weight:600;border-bottom-style:dotted;border-bottom-width:2px}
+mark.gp:hover,mark.gp:focus,mark.vw:hover,mark.vw:focus{background:color-mix(in srgb,var(--lv) 12%,transparent)}
+.lv-ghost{--lv:var(--lv-ghost);--lv-ink:var(--lv-ghost-ink)}
+.lv-beginner{--lv:var(--lv-beginner);--lv-ink:var(--lv-beginner-ink)}
+.lv-adept{--lv:var(--lv-adept);--lv-ink:var(--lv-adept-ink)}
+.lv-seasoned{--lv:var(--lv-seasoned);--lv-ink:var(--lv-seasoned-ink)}
+.lv-expert{--lv:var(--lv-expert);--lv-ink:var(--lv-expert-ink)}
+.lv-master{--lv:var(--lv-master);--lv-ink:var(--lv-master-ink)}
+.lv-self_study{--lv:var(--lv-self_study);--lv-ink:var(--lv-self_study-ink)}
+/* The key, in the panel's header: seven dots, tiny, out of the way. */
+.legend{display:flex;flex-wrap:wrap;gap:2px 9px;margin-left:auto;font:600 9.5px system-ui;letter-spacing:0;
+        text-transform:none;color:var(--sub)}
+.legend .lv{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.sw{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--lv);
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+/* The level on a card: a filled chip in the level's colour, its name inside. */
+.pop .chip{display:inline-block;margin-right:6px;padding:1px 7px;border-radius:999px;background:var(--lv);
+           color:var(--lv-ink,#fff);font:700 10px/16px system-ui;letter-spacing:.04em;text-transform:uppercase;
+           font-style:normal;vertical-align:1px}
+/* A sentence of hers the student interrupted (a replayed one): she may not have finished it. */
+.msg.her.cut .body{opacity:.72}
 .pop{position:fixed;z-index:20;max-width:300px;padding:10px 14px;border-radius:14px;background:#fff;color:var(--ink);
      box-shadow:0 10px 30px rgba(0,0,0,.28);font:13px/1.5 system-ui}
 .pop small{display:block;color:var(--sub);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
@@ -364,6 +391,6 @@ mark.vw:hover,mark.vw:focus{background:rgba(37,99,235,.08)}
 .pop .row button#topic-yes:hover{filter:brightness(1.06)}
 
 /* The word card: their reading, what it means, and where it sits in their SRS. */
-#word-pop b{color:#2563eb}
+#word-pop b{color:var(--ink)}
 #word-pop .rd{font:600 15px/1.4 var(--jp);color:var(--ink);margin:2px 0 4px}
 #word-pop .stage{margin-top:6px;font-size:11.5px;color:#8b93a1}

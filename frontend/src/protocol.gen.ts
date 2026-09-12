@@ -3,7 +3,7 @@
 //   .venv/Scripts/python -m backend.tools.gen_protocol
 
 export const CLIENT_TYPES = ["control", "settings", "explain"] as const;
-export const SERVER_TYPES = ["state", "stt_partial", "stt_final", "speak", "bargein", "service_status", "settings", "mic_level", "meters", "timing", "explanation", "error"] as const;
+export const SERVER_TYPES = ["state", "stt_partial", "stt_final", "speak", "history", "bargein", "service_status", "settings", "mic_level", "meters", "timing", "explanation", "error"] as const;
 export const RESERVED_TYPES = ["stt_partial"] as const;
 export type ClientType = (typeof CLIENT_TYPES)[number];
 export type ServerType = (typeof SERVER_TYPES)[number];
@@ -25,6 +25,7 @@ export interface VocabSpan {
   reading: string;
   meaning: string;
   stage: string;
+  leech: boolean;
 }
 
 /** Where she used a grammar point in a `speak` sentence (ADR-036): characters [start, end) of `text`, counted in Unicode code points — the page counts the same way (Array.from). */
@@ -32,6 +33,24 @@ export interface GrammarSpan {
   start: number;
   end: number;
   point: string;
+  level: string;
+}
+
+/** One line of this lesson's transcript, hers or yours, with the marks the page drew the first time and without the audio (Hub.history, 2026-09-12). */
+export interface HistoryLine {
+  who: "her" | "you";
+  text: string;
+  emotion: string;
+  turn: number;
+  grammar: GrammarSpan[];
+  target: string;
+  used: string;
+  used_kind: string;
+  readings: Reading[];
+  vocab: VocabSpan[];
+  cut: boolean;
+  accepted: boolean;
+  reason: string;
 }
 
 // ------------------------------------------------------------------ client -> server
@@ -61,6 +80,7 @@ export interface StateMsg {
   type: "state";
   state: "listening" | "thinking" | "speaking";
   turn: number;
+  spoken: boolean;
 }
 
 /** RESERVED and never emitted in M2-M5. */
@@ -94,6 +114,12 @@ export interface SpeakMsg {
   used_kind: string;
   readings: Reading[];
   vocab: VocabSpan[];
+}
+
+/** The lesson so far, for a page that connects after it started — a reload sat on "she is thinking of how to start…" for an opening it had already heard (user, 2026-09-12). Sent once, on welcome, only when there is something to replay; the last HISTORY_LINES lines. */
+export interface HistoryMsg {
+  type: "history";
+  lines: HistoryLine[];
 }
 
 /** The server has accepted an interruption: stop playback and drop queued audio of `turn` and every epoch before it. */
@@ -174,4 +200,4 @@ export interface ErrorMsg {
 }
 
 export type ClientMessage = ControlMsg | SettingsUpdateMsg | ExplainMsg;
-export type ServerMessage = StateMsg | SttPartialMsg | SttFinalMsg | SpeakMsg | BargeInMsg | ServiceStatusMsg | SettingsMsg | MicLevelMsg | MetersMsg | TimingMsg | ExplanationMsg | ErrorMsg;
+export type ServerMessage = StateMsg | SttPartialMsg | SttFinalMsg | SpeakMsg | HistoryMsg | BargeInMsg | ServiceStatusMsg | SettingsMsg | MicLevelMsg | MetersMsg | TimingMsg | ExplanationMsg | ErrorMsg;

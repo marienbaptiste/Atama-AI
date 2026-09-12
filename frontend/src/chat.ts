@@ -1,5 +1,7 @@
 /** The conversation beside the tutor (spec §8b, ADR-036): each of her sentences becomes its own
- *  bubble as its audio starts, yours appear once heard, and the grammar she used is in red. */
+ *  bubble as its audio starts, yours appear once heard, and the grammar she used and the words
+ *  from your lessons are marked, each in the colour of its SRS level (levels.ts). */
+import { level, levelClass, levelOfStage } from "./levels";
 import type { GrammarSpan, Reading, SpeakMsg, VocabSpan } from "./protocol.gen";
 import { esc } from "./ui";
 
@@ -19,13 +21,14 @@ function usable<T extends { start: number; end: number }>(spans: readonly T[], l
   return out;
 }
 
-/** One sentence as HTML: her grammar uses wrapped in clickable red marks, the student's own words
- *  in blue (user, 2026-09-12), furigana over the kanji the setting asks for. Positions count code
- *  points, as Python does (models.py), so the text is split with Array.from rather than indexed as
- *  UTF-16. Anything out of range is ignored, never thrown on.
+/** One sentence as HTML: her grammar uses wrapped in clickable marks (`gp`), the student's own
+ *  words in theirs (`vw`), each carrying the class of its level — `lv-beginner`, `lv-ghost`… — so
+ *  the colour is the level's (user, 2026-09-12), and furigana over the kanji the setting asks for.
+ *  Positions count code points, as Python does (models.py), so the text is split with Array.from
+ *  rather than indexed as UTF-16. Anything out of range is ignored, never thrown on.
  *
- *  Where a word sits inside a grammar point the grammar wins: red is the teaching colour, and two
- *  nested marks would be a box inside a box for no gain. */
+ *  Where a word sits inside a grammar point the grammar wins: grammar is the teaching mark, and
+ *  two nested marks would be a box inside a box for no gain. */
 export function renderSentence(text: string, grammar: readonly GrammarSpan[] = [],
                                readings: readonly Reading[] = [], furigana: Furigana = "off",
                                vocab: readonly VocabSpan[] = []): string {
@@ -41,11 +44,17 @@ export function renderSentence(text: string, grammar: readonly GrammarSpan[] = [
   }
   let html = "";
   let open: GrammarSpan | VocabSpan | undefined;
-  const tagFor = (s: GrammarSpan | VocabSpan) =>
-    "point" in s ? `<mark class="gp" tabindex="0" data-point="${esc(s.point)}">`
-                 : `<mark class="vw" tabindex="0" data-word="${esc(s.word)}"`
-                   + ` data-reading="${esc(s.reading)}" data-meaning="${esc(s.meaning)}"`
-                   + ` data-stage="${esc(s.stage)}">`;
+  const tagFor = (s: GrammarSpan | VocabSpan) => {
+    if ("point" in s) {
+      const lv = level(s.level);
+      return `<mark class="gp${levelClass(lv)}" tabindex="0" data-point="${esc(s.point)}"`
+        + (lv ? ` data-level="${lv}"` : "") + ">";
+    }
+    const lv = levelOfStage(s.stage, s.leech);
+    return `<mark class="vw${levelClass(lv)}" tabindex="0" data-word="${esc(s.word)}"`
+      + ` data-reading="${esc(s.reading)}" data-meaning="${esc(s.meaning)}"`
+      + ` data-stage="${esc(s.stage)}"` + (s.leech ? ' data-leech="1"' : "") + ">";
+  };
   for (let i = 0; i < chars.length;) {
     const r = ruby.get(i);
     const end = r ? r.end : i + 1;
@@ -147,10 +156,12 @@ export class Chat {
   }
 
   /** Her sentence, as its audio starts — one bubble each (user, 2026-09-12), with the icon that
-   *  asks for its English. Nothing is translated until it is clicked (ADR-036). */
-  her(msg: SpeakMsg): void {
+   *  asks for its English. Nothing is translated until it is clicked (ADR-036). Also a replayed
+   *  line of hers (history.ts); `cut` marks one the student interrupted. */
+  her(msg: Pick<SpeakMsg, "text" | "grammar" | "readings" | "vocab">, cut = false): void {
     this.ready();
-    const body = this.bubble("her");
+    const body = this.bubble(cut ? "her cut" : "her");
+    if (cut) body.parentElement!.title = "You interrupted this one";
     this.show(body, msg.text, msg.grammar, msg.readings, msg.vocab);
     const button = document.createElement("button");
     button.type = "button";
@@ -164,7 +175,7 @@ export class Chat {
   private wordOf(mark: HTMLElement): VocabSpan {
     return { start: 0, end: 0, word: mark.dataset.word || mark.textContent || "",
              reading: mark.dataset.reading || "", meaning: mark.dataset.meaning || "",
-             stage: mark.dataset.stage || "" };
+             stage: mark.dataset.stage || "", leech: mark.dataset.leech === "1" };
   }
 
   /** The plain sentence an element sits in — not what is on screen, which carries furigana. */

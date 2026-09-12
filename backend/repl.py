@@ -101,7 +101,8 @@ async def text_loop(lesson: orchestrator.Lesson) -> None:
         if line == "/profile":
             print(lesson.profile_text)
             continue
-        await orchestrator.one_turn(lesson.brain, line, lesson.voice, mem=lesson.mem)
+        await orchestrator.one_turn(lesson.brain, line, lesson.voice, mem=lesson.mem,
+                                    coach=lesson.coach, noted=lesson.note_turn)
 
 
 def parse(argv: list[str] | None = None) -> argparse.Namespace:

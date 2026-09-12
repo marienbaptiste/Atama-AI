@@ -105,6 +105,10 @@ class VoiceLoop:
     #: Called at the turn boundary, before the brain is asked anything — the one place a rotated
     #: session may take over (ADR-032: never inside a turn).
     before_turn: Callable[[], None] | None = None
+    #: The text the brain is asked, rewritten at the turn boundary: the study plan's coach note
+    #: goes above the student's words here (spec §6c). Only the brain sees the result — the
+    #: transcript shown, logged and timed is the raw one.
+    coach: Callable[[str], str] | None = None
     #: The brain is condensing the conversation (start and end) — the caller explains the silence.
     on_compacting: Callable[[Compacting], None] | None = None
     #: One line for the student when the loop could not do what was asked (a dropped utterance
@@ -438,8 +442,9 @@ class VoiceLoop:
                     timing.first_audio_ms = (time.monotonic() - heard_at) * 1000.0
                 self._state("speaking")
 
+        asked = self.coach(text) if self.coach is not None else text
         try:
-            async for ev in self.brain.turn(text):  # type: ignore[attr-defined]
+            async for ev in self.brain.turn(asked):  # type: ignore[attr-defined]
                 if isinstance(ev, TextDelta):
                     await emit(chunker.push(ev.text))
                 elif isinstance(ev, Thinking):

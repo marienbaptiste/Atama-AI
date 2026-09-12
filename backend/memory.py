@@ -212,6 +212,11 @@ class Memory:
             write()
 
     # --------------------------------------------------------------- reading
+    def sessions_summarised(self) -> int:
+        """How many lessons this tutor has summarised — the study plan's opener index (spec §6c),
+        so the opener kind advances one step per lesson."""
+        return len(_read_jsonl(self.topics_jsonl))
+
     def recent_topics(self, sessions: int = RECENT_SESSIONS) -> list[str]:
         """Newest-first, de-duplicated topics from the last `sessions` summarised sessions."""
         rows = _read_jsonl(self.topics_jsonl)[-sessions:]
@@ -299,6 +304,9 @@ class Memory:
         facts_add = {side: [str(f).strip()[:FACT_MAX_CHARS]
                             for f in (summary.get(f"{side}_facts") or []) if str(f).strip()]
                      for side in ("student", "tutor")}
+        # Study targets the lesson progressed (spec §6c): an optional key, absent from older
+        # summaries and from a summariser that ignores it, kept on the topics row.
+        progressed = [str(p).strip() for p in (summary.get("progressed") or []) if str(p).strip()]
         if not brief and not topics:
             return False
         try:
@@ -317,10 +325,11 @@ class Memory:
                         f.write(existing.rstrip() + "\n" + "".join(f"- {n}\n" for n in fresh))
             if facts_add["student"] or facts_add["tutor"]:
                 self._merge_facts(facts_add["student"], facts_add["tutor"])
+            row: dict[str, Any] = {"date": date, "session": session, "topics": topics[:TOPICS_PER_SESSION]}
+            if progressed:
+                row["progressed"] = progressed[:TOPICS_PER_SESSION * 2]
             with _LOCK, self.topics_jsonl.open("a", encoding="utf-8") as f:
-                f.write(json.dumps({"date": date, "session": session,
-                                    "topics": topics[:TOPICS_PER_SESSION]},
-                                   ensure_ascii=False) + "\n")
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
             return True
         except OSError:
             return False
@@ -365,8 +374,12 @@ class Memory:
 
     async def summarise_pending(self, ask: Callable[[str], Awaitable[str]], instructions: str,
                                 limit: int | None = None,
-                                on_log: Callable[[Path, int, int], None] | None = None) -> int:
+                                on_log: Callable[[Path, int, int], None] | None = None,
+                                footer: Callable[[Path], str] | None = None) -> int:
         """Summarise unsummarised logs. `ask(prompt) -> reply text`. Returns how many landed.
+
+        `footer(log)` adds lines UNDER the transcript excerpt — the study plan's "targets
+        practised / progressed" (spec §6c) — after the cap, so a long lesson never cuts them.
 
         `ask` is injected rather than constructed here so tests can drive this with a fake, and so
         the caller decides which (cheap) model spends the tokens. `limit` takes the newest logs
@@ -388,6 +401,11 @@ class Memory:
                 # the launch reported "0 summarised"). Mark it done so it is never retried.
                 self.mark_done(log.stem.split("-", 3)[-1], log.stem[:10])
                 continue
+            if footer is not None:
+                try:
+                    excerpt = excerpt + ("\n" + tail if (tail := footer(log)) else "")
+                except Exception:       # noqa: BLE001 - a footer that fails costs a line, not a summary
+                    pass
             try:
                 reply = await ask(instructions + "\n\n" + excerpt)
             except Exception:           # noqa: BLE001 - best-effort by contract
@@ -544,3 +562,7 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _strip_comments(text: str) -> str:
     return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+
+
+#: The turn log is read by more than memory now — the study plan folds it (spec §6c).
+read_jsonl = _read_jsonl

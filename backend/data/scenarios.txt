@@ -1,0 +1,30 @@
+# Everyday situations the tutor can open a lesson on when the opener is `scenario` (spec §6c,
+# ADR-038). One per line, in Japanese, short: the tutor plays the other person and the student
+# acts their part. Picked deterministically from the session index (backend/study_plan.py), and a
+# line that overlaps a recently discussed topic is skipped. Data that changes without a release
+# lives here, not in Python (CLAUDE.md conventions).
+レストランで注文する
+駅で道を聞く
+病院の受付で症状を説明する
+忘れ物を駅員に届ける
+コンビニで宅配便を送る
+美容院で髪型を頼む
+不動産屋で部屋を探す
+友達を週末の予定に誘う
+電車が遅れて約束に遅刻する
+市役所で住所変更の手続きをする
+薬局で薬の飲み方を聞く
+ホテルにチェックインする
+隣の人に引っ越しのあいさつをする
+携帯電話の料金プランを変える
+スーパーで賞味期限の切れた商品を返品する
+バスの乗り換えを運転手に聞く
+図書館で本の予約をする
+カフェで席が空いているか聞く
+子どもの学校の先生と面談する
+新しい職場で自己紹介する
+服屋でサイズ違いを交換する
+温泉旅館の予約を電話でする
+落とした財布を交番に届け出る
+ゴミの出し方を大家さんに聞く
+歯医者の予約を変更する

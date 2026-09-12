@@ -33,6 +33,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from backend import config, models, settings_view
 from backend.speaker import Speech
+from backend.study import normalise, stage_name
 
 STATIC_DIR = config.REPO_ROOT / "frontend" / "public"
 #: The built page (`npm --prefix frontend run build`, ADR-009). Only its index and /assets come
@@ -52,6 +53,10 @@ NOT_BUILT = ("<!doctype html><meta charset=utf-8><title>Page not built</title>"
 HEARTBEAT_S = 4.0
 #: How long her voice waits for a connected page to be started (clicked) before it is dropped.
 READY_WAIT_S = 600.0
+#: The lesson transcript kept for a page that connects late (`Hub.history`): the last N lines,
+#: hers and yours, marks included, audio never. A reload sat on "she is thinking of how to start…"
+#: for an opening it had already heard (user, 2026-09-12).
+HISTORY_LINES = 200
 #: The orchestrator's port when nothing is configured (config.py's schema default).
 DEFAULT_PORT = int(next(s.default for s in config.SCHEMA if s.key == "PORT"))
 #: Vite's dev server (frontend/vite.config.ts `server.port`; `npm run dev`). It proxies /ws to
@@ -151,6 +156,10 @@ class Hub:
         #: (text, marks) -> the marks that are really grammar, red being for grammar and not for a
         #: word the tutor liked (`Annotator.grammar_only`). None until the REPL wires it.
         self.grammar: Callable[[str, list[dict[str, Any]]], list[dict[str, Any]]] | None = None
+        #: (text, point names, her marks) -> the student's own grammar points she used WITHOUT
+        #: marking them (`Annotator.find_points`): 「と思います」 stayed black although 「と思う」
+        #: was on their list (user, 2026-09-12). None until the REPL wires it.
+        self.points: Callable[[str, list[str], list[dict[str, Any]]], list[dict[str, Any]]] | None = None
 
         #: True once the page's stop button has been pressed: the REPL then takes the containers
         #: down as well, which is what that button means (user, 2026-09-12).
@@ -160,19 +169,103 @@ class Hub:
         #: page, and what kind of thing a `[used:…]` names. Replaced on a Refresh.
         self.study: Any = None
 
-    def _grammar(self, text: str, speech: Any) -> list[dict[str, Any]]:
-        """Her grammar marks for the page, minus any the guard reads as plain vocabulary."""
-        marks = [{"start": g.start, "end": g.end, "point": g.point}
-                 for g in getattr(speech, "grammar", ())]
-        try:
-            return self.grammar(text, marks) if self.grammar is not None else marks
-        except Exception:  # noqa: BLE001 - same contract as the readings hook
-            return marks
+        #: This lesson so far (models.HistoryLine as dicts), replayed to a page that joins late,
+        #: and whether she has said anything yet — a page's loading bubble waits on server truth.
+        self.history: deque[dict[str, Any]] = deque(maxlen=HISTORY_LINES)
+        self.spoken = False
 
-    def _vocab(self, text: str) -> list[dict[str, Any]]:
-        """Words the student is still learning, wherever they appear. Never raises."""
+    def _level_of(self, point: str) -> str:
+        """The Bunpro level of a grammar point from the student's own list ("ghost", "beginner",
+        …), "" when it is not on it. Her name for it may differ from Bunpro's (〜たら vs たら):
+        exact first, then containment, the way `Study.kind_of` matches."""
+        key = normalise(point)
+        items = [i for i in getattr(self.study, "items", ()) or () if getattr(i, "kind", "") == "grammar"]
+        if not key or not items:
+            return ""
+        by_key = {normalise(i.text): str(getattr(i, "srs", "") or "") for i in items}
+        if key in by_key:
+            return by_key[key]
+        for other, level in by_key.items():
+            if other and (other in key or key in other):
+                return level
+        return ""
+
+    def _vocab_item(self, name: str) -> Any:
+        """The student's vocabulary item a mark names (「申します|申す」 -> 申す), or None."""
+        key = normalise(name)
+        if not key:
+            return None
+        for item in getattr(self.study, "items", ()) or ():
+            if getattr(item, "kind", "") == "vocab" and normalise(getattr(item, "text", "")) == key:
+                return item
+        return None
+
+    def _her_marks(self, speech: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Her marks split by what they name: (grammar marks, word spans). The tutor wraps the
+        student's WaniKani words the way she wraps grammar — {{申します|申す}} — so her marks are
+        the authority for both (prompts/tutor.md, 2026-09-12); one that names a word on their
+        list is a word span, in the shape `Study.spans` gives, never a grammar mark."""
+        grammar, vocab = [], []
+        for g in getattr(speech, "grammar", ()):
+            item = self._vocab_item(str(g.point))
+            if item is None:
+                grammar.append({"start": g.start, "end": g.end, "point": g.point})
+            else:
+                vocab.append({"start": g.start, "end": g.end, "word": str(getattr(item, "text", "") or ""),
+                              "reading": str(getattr(item, "reading", "") or ""),
+                              "meaning": str(getattr(item, "meaning", "") or ""),
+                              "stage": stage_name(int(getattr(item, "stage", 0) or 0)),
+                              "leech": bool(getattr(item, "leech", False))})
+        return grammar, vocab
+
+    def _grammar(self, text: str, speech: Any) -> list[dict[str, Any]]:
+        """Her grammar marks for the page: each with its Bunpro level when the point is on the
+        student's list, and — for one on neither list — minus any the guard reads as a plain word.
+        A mark naming one of their WaniKani words is not here at all (`_her_marks`)."""
+        marks, _ = self._her_marks(speech)
+        for m in marks:
+            try:
+                m["level"] = self._level_of(str(m.get("point", "")))
+            except Exception:  # noqa: BLE001
+                m["level"] = ""
         try:
-            return self.study.spans(text) if self.study is not None else []
+            if self.grammar is not None:
+                listed = [m for m in marks if m["level"]]                  # theirs: grammar by definition
+                marks = sorted(listed + self.grammar(text, [m for m in marks if not m["level"]]),
+                               key=lambda m: m["start"])
+        except Exception:  # noqa: BLE001 - same contract as the readings hook
+            pass
+        # The safety net: points from the student's own list she used but did not mark. Her marks
+        # win where they overlap; the rest go red with the point's name, so a click explains it.
+        try:
+            names = [i.text for i in getattr(self.study, "items", ()) if getattr(i, "kind", "") == "grammar"]
+            if self.points is not None and names:
+                marks = sorted(marks + self.points(text, names, marks), key=lambda m: m["start"])
+        except Exception:  # noqa: BLE001 - a colour is never worth a lost sentence
+            pass
+        # Each mark's colour is its Bunpro level (user, 2026-09-12); a point not on their list
+        # has none and keeps the neutral grammar style. The safety net's finds get theirs here.
+        for m in marks:
+            if "level" not in m:
+                try:
+                    m["level"] = self._level_of(str(m.get("point", "")))
+                except Exception:  # noqa: BLE001
+                    m["level"] = ""
+        return marks
+
+    def _vocab(self, text: str, speech: Any = None) -> list[dict[str, Any]]:
+        """Words the student is still learning, wherever they appear — her own marks first, then
+        what the study list finds on its own where her marks are not — each with whether it is a
+        WaniKani leech (painted like a ghost, user 2026-09-12). Never raises."""
+        try:
+            _, hers = self._her_marks(speech) if speech is not None else ([], [])
+            spans = self.study.spans(text) if self.study is not None else []
+            leech = {str(i.text): bool(getattr(i, "leech", False))
+                     for i in getattr(self.study, "items", ()) or () if getattr(i, "kind", "") == "vocab"}
+            for s in spans:
+                s.setdefault("leech", leech.get(str(s.get("word", "")), False))
+            own = [s for s in spans if not any(s["start"] < h["end"] and h["start"] < s["end"] for h in hers)]
+            return sorted(hers + own, key=lambda s: s["start"])
         except Exception:  # noqa: BLE001 - a colour is never worth a lost sentence
             return []
 
@@ -292,12 +385,13 @@ class Hub:
         if name == "thinking":
             self.epoch += 1          # a new turn: its sentences outrank anything stopped before
         self.last_state = name
-        await self.send(models.State(state=name, turn=self.epoch).model_dump())
+        await self.send(models.State(state=name, turn=self.epoch, spoken=self.spoken).model_dump())
 
     async def transcript(self, text: str, accepted: bool = True, reason: str = "") -> None:
-        await self.send(models.SttFinal(text=text, accepted=accepted, reason=reason,
-                                        readings=self._readings(text),
-                                        vocab=self._vocab(text)).model_dump())
+        line = models.SttFinal(text=text, accepted=accepted, reason=reason,
+                               readings=self._readings(text), vocab=self._vocab(text)).model_dump()
+        self.history.append(models.HistoryLine(who="you", **{k: v for k, v in line.items() if k != "type"}).model_dump())
+        await self.send(line)
 
     async def speak(self, speech: Speech, turn: int | None = None) -> float:
         """Send one sentence for the browser to play. Returns its duration in seconds.
@@ -322,11 +416,8 @@ class Hub:
             await asyncio.sleep(0.1)
             waited += 0.1
         timeline = speech.timeline.as_message()
-        await self.send(models.Speak(
-            audio_b64=base64.b64encode(speech.wav).decode(),
-            visemes=timeline["visemes"],
-            vtimes=timeline["vtimes"],
-            vdurations=timeline["vdurations"],
+        line = models.HistoryLine(
+            who="her",
             text=speech.text,
             emotion=speech.emotion,
             turn=turn,
@@ -335,7 +426,16 @@ class Hub:
             used=getattr(speech, "used", ""),
             used_kind=self._used_kind(getattr(speech, "used", "")),
             readings=self._readings(speech.text),
-            vocab=self._vocab(speech.text),
+            vocab=self._vocab(speech.text, speech),
+        ).model_dump()
+        self.history.append(line)
+        self.spoken = True
+        await self.send(models.Speak(
+            audio_b64=base64.b64encode(speech.wav).decode(),
+            visemes=timeline["visemes"],
+            vtimes=timeline["vtimes"],
+            vdurations=timeline["vdurations"],
+            **{k: v for k, v in line.items() if k not in ("who", "cut", "accepted", "reason")},
         ).model_dump(), to=self._ready)
         return speech.duration_ms / 1000.0
 
@@ -401,6 +501,13 @@ class Hub:
         turn. Closes the epoch, so whatever she says next is never mistaken for it. Without this
         the page played on to the end of the sentence it had (found 2026-09-11)."""
         turn, self.epoch = self.epoch, self.epoch + 1
+        # The transcript remembers the cut: her last sentence of this turn was the one playing,
+        # or still queued, when the student spoke over her (the server cannot know which).
+        for line in reversed(self.history):
+            if line["who"] == "her":
+                if line["turn"] == turn:
+                    line["cut"] = True
+                break
         await self.send(models.BargeIn(turn=turn).model_dump())
 
     async def status(self, service: str, state: str, detail: str = "", last_error: str = "",
@@ -424,7 +531,12 @@ class Hub:
         if self.last_meters:
             await self.send(models.Meters(**self.last_meters).model_dump(), to={ws})
         if self.last_state is not None:
-            await self.send(models.State(state=self.last_state, turn=self.epoch).model_dump(), to={ws})
+            await self.send(models.State(state=self.last_state, turn=self.epoch,
+                                         spoken=self.spoken).model_dump(), to={ws})
+        # The lesson so far, so a reloaded page shows what was said rather than a loading bubble
+        # for an opening it already heard (user, 2026-09-12). Marks and readings, never audio.
+        if self.history:
+            await self.send(models.History(lines=list(self.history)).model_dump(), to={ws})
 
 
 def _current_task() -> asyncio.Task | None:

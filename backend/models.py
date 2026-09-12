@@ -92,6 +92,9 @@ class State(_Msg):
     #: The turn epoch this state belongs to (see `Speak.turn`): a page that interrupts her while
     #: she is still thinking knows which sentences, not yet arrived, to drop.
     turn: int = 0
+    #: She has said at least one sentence this lesson (server truth, 2026-09-12): a reloaded page
+    #: must not sit on "she is thinking of how to start…" for an opening it missed.
+    spoken: bool = False
 
 
 class SttPartial(_Msg):
@@ -134,6 +137,8 @@ class VocabSpan(_Msg):
     reading: str = ""
     meaning: str = ""
     stage: str = ""
+    #: A WaniKani leech (backend/study.py): painted like a Bunpro ghost (user, 2026-09-12).
+    leech: bool = False
 
 
 class SttFinal(_Msg):
@@ -155,6 +160,10 @@ class GrammarSpan(_Msg):
     start: int
     end: int
     point: str
+    #: The point's Bunpro SRS level, lower-case ("ghost", "beginner", "adept", "seasoned", "expert",
+    #: "master"), from the student's own list (backend/study.py); "" when the point is not on it.
+    #: The page colours the mark by it (user, 2026-09-12).
+    level: str = ""
 
 
 class Speak(_Msg):
@@ -194,6 +203,37 @@ class Speak(_Msg):
     readings: list[Reading] = []
     #: Their own words in this sentence, blue on the page (backend/study.py).
     vocab: list[VocabSpan] = []
+
+
+class HistoryLine(_Msg):
+    """One line of this lesson's transcript, hers or yours, with the marks the page drew the first
+    time and without the audio (Hub.history, 2026-09-12)."""
+
+    who: Literal["her", "you"]
+    text: str
+    #: Her lines: the `Speak` fields the chat renders from.
+    emotion: str = ""
+    turn: int = 0
+    grammar: list[GrammarSpan] = []
+    target: str = ""
+    used: str = ""
+    used_kind: str = ""
+    readings: list[Reading] = []
+    vocab: list[VocabSpan] = []
+    #: True when she was interrupted during this sentence: the page may not have heard all of it.
+    cut: bool = False
+    #: Your lines: whether the transcript was sent to her, and if not why (`SttFinal`).
+    accepted: bool = True
+    reason: str = ""
+
+
+class History(_Msg):
+    """The lesson so far, for a page that connects after it started — a reload sat on "she is
+    thinking of how to start…" for an opening it had already heard (user, 2026-09-12). Sent once,
+    on welcome, only when there is something to replay; the last HISTORY_LINES lines."""
+
+    type: Literal["history"] = "history"
+    lines: list[HistoryLine] = []
 
 
 class BargeIn(_Msg):
@@ -309,8 +349,8 @@ ClientMessage = Annotated[
 ]
 
 ServerMessage = Annotated[
-    Union[State, SttPartial, SttFinal, Speak, BargeIn, ServiceStatus, Settings, MicLevel, Meters,
-          Timing, Explanation, Error],
+    Union[State, SttPartial, SttFinal, Speak, History, BargeIn, ServiceStatus, Settings, MicLevel,
+          Meters, Timing, Explanation, Error],
     Field(discriminator="type"),
 ]
 

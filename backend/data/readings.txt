@@ -2,9 +2,12 @@
 # 2026-09-12. One per line: the word as written, whitespace, its reading in hiragana.
 # Matched on the text before tokenising, longest first; a word listed here is never re-read.
 # Add a line when the chat shows a wrong reading; no code change needed.
-日本語    にほんご
-日本人    にほんじん
-日本      にほん
+# A dot between kana gives one piece per kanji (日本語 に.ほん.ご): when the student knows some of
+# the kanji and not the rest, the furigana is hidden per kanji (に is not a WaniKani reading of 日,
+# so the snapshot alone cannot split 日本).
+日本語    に.ほん.ご
+日本人    に.ほん.じん
+日本      に.ほん
 私        わたし
 明日      あした
 何を      なにを

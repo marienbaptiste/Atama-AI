@@ -14,7 +14,9 @@ Endpoints (all GET through SrsClient, header Wanikani-Revision 20170710):
                               readings[{reading,primary}], parts_of_speech}}
   /v2/assignments?subject_types=kanji&started=true    (the chat's furigana, spec §8b)
                            -> data[].data.{subject_id, srs_stage, passed_at, ...}
-  /v2/subjects?types=kanji&levels=1,..,L               -> data[].{id, data.characters}
+  /v2/subjects?types=kanji&levels=1,..,L               -> data[].{id, data.{characters,
+                              readings[{reading, primary, accepted_answer, type: onyomi|kunyomi|nanori}]}}
+                              (readings verified against the local snapshot 2026-09-12: hiragana, onyomi included)
 SRS stages: 1-4 apprentice, 5-6 guru, 7 master, 8 enlightened, 9 burned.
 
 Kanji "known" = passed: `passed_at` is "Timestamp when the user reaches SRS stage 5 for the first
@@ -68,6 +70,10 @@ class WaniKaniProfile:
     leeches: list[Vocab] = field(default_factory=list)
     #: Kanji passed (Guru reached at least once) — the chat hides their furigana. Not in the prompt.
     known_kanji: list[str] = field(default_factory=list)
+    #: Every kanji up to the student's level -> its readings as WaniKani lists them (primary first,
+    #: on'yomi and kun'yomi, no nanori), as sent — hiragana in practice; backend/annotate.py
+    #: normalises. Lets the chat split a half-known compound's furigana per kanji. Not in the prompt.
+    kanji_readings: dict[str, list[str]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -144,6 +150,15 @@ def parse(raw: dict[str, Any]) -> WaniKaniProfile:
     passed = (x.get("data") or {} for x in (raw.get("kanji_assignments") or {}).get("data") or [])
     p.known_kanji = sorted({kanji[int(a["subject_id"])] for a in passed
                             if a.get("passed_at") and kanji.get(int(a.get("subject_id") or -1))})
+    for item in (raw.get("kanji_subjects") or {}).get("data") or []:
+        d = item.get("data") or {}
+        char = d.get("characters")
+        rows = [r for r in d.get("readings") or [] if isinstance(r, dict) and r.get("reading")
+                and r.get("type") in ("onyomi", "kunyomi")]
+        rows.sort(key=lambda r: not r.get("primary"))                   # stable: primary first
+        readings = list(dict.fromkeys(str(r["reading"]) for r in rows))
+        if char and readings:
+            p.kanji_readings[str(char)] = readings
     return p
 
 

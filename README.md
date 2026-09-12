@@ -130,14 +130,20 @@ the browser, so step 1 below is not yet how it works.
 **The conversation panel** (ADR-036, Settings → Display) puts the tutor on the left and the
 conversation on the right as a chat:
 
-- Grammar points she uses show in **red**: a conjugation, an auxiliary or a pattern, never a word
-  she happens to like. Click one for the rule, in English or Japanese (Settings → Display).
-- Words you are still learning show in **blue**. Click one for its reading, meaning and WaniKani
-  stage.
+- Grammar points she uses and words from your own WaniKani lists are marked in **the colour of
+  their level**, Bunpro's scale for both: ghost grey, beginner dark teal, adept navy, seasoned
+  purple, expert pink, master rose (a WaniKani Apprentice word is beginner, Guru adept, and so on;
+  a leech is a ghost). Grammar wears a solid bar, a word a dotted one; the legend is in the chat
+  header. Click a grammar point for the rule, in English or Japanese (Settings → Display); click a
+  word for its reading, meaning and level of mastery. She marks both herself; a point or word she
+  forgot is still found by the tokenizer, by whole words only.
+- Reloading the page brings the conversation so far back.
 - The **lightbulb** lights when she wants you to use a particular form or word. Click it to see
   which.
 - Kanji carry **furigana** (Settings → Display: all, only the ones you have not reached Guru on,
-  or none).
+  or none). In a compound, each kanji is judged on its own: 日本語 shows a reading over 語 alone
+  once 日 and 本 are yours. Where WaniKani lists no reading that fits, add a dotted correction to
+  `backend/data/readings.txt` (`日本語 に.ほん.ご`).
 - The 訳 button on any of her sentences shows its English. Every answer is written once and kept,
   so the second time is instant.
 - When you use something you are still learning, the word drifts up behind her.
@@ -470,7 +476,7 @@ returns (spec §9). The page shows the microphone's state under the talk button.
 | Group              | What's there                                                                 |
 |--------------------|------------------------------------------------------------------------------|
 | Account & tokens   | WaniKani token, Bunpro API key, Claude OAuth token, masked                   |
-| Brain              | Claude model, effort level, fallback model, per-turn timeout, memory and rotation |
+| Brain              | Claude model, effort level, fallback model, per-turn timeout, memory and rotation, today's targets (`STUDY_*`) |
 | Voice              | VOICEVOX speaker override, speed, pitch, intonation, pause scale             |
 | Sound              | Turn mode (push-to-talk / hands-free), microphone and output device, VAD window and thresholds, barge-in sensitivity |
 | Display            | Subtitles (JP / off), furigana, chat panel, explanation language, status heartbeat |
@@ -686,7 +692,7 @@ atama-ai/
 │  ├─ chunker.py        # sentence chunking + emotion / study tags
 │  ├─ emotions.py       # emotion → VOICEVOX style/params table
 │  ├─ prompt.py  memory.py  session.py  usage.py
-│  ├─ study.py  annotate.py  explain.py  model_tiers.py
+│  ├─ study.py  study_plan.py  annotate.py  explain.py  model_tiers.py
 │  ├─ mcp_ready.py  search_mcp.py  status.py  settings_view.py  vram.py
 │  ├─ tools/readonly_gate.py  # Golden Rule gate, runs on every test/run/doctor/commit
 │  ├─ tools/doctor.py   # `make doctor`
@@ -696,14 +702,14 @@ atama-ai/
 │  ├─ srs/bunpro_mcp.py # stdio MCP server, read tools only
 │  ├─ config.py  constants.py (verified CLI/endpoint findings, dated)
 │  ├─ models.py (pydantic WS protocol)
-│  ├─ data/             # hallucination_blocklist.txt, model_tiers.txt, news_feeds.txt, readings.txt
+│  ├─ data/             # hallucination_blocklist.txt, model_tiers.txt, news_feeds.txt, readings.txt, scenarios.txt
 │  └─ tests/            # fixtures/ (sanitised, committed)  fixtures/private/ (ignored)
 ├─ frontend/            # vite, vanilla TS (ADR-009)
 │  ├─ index.html  src/{main, ws, protocol.gen, avatar, audio_only, speech, expression, chat, rig,
 │  │                     rigpanel, mic, status, settings, ui, talkinghead_pins}.ts
 │  ├─ scripts/srs-grep.mjs  # prebuild half of the §0 gate
 │  └─ public/<persona>.glb (git-ignored; see The avatar)  cast.json, <persona>.speak.json (generated)
-├─ prompts/tutor.md  prompts/<persona>.md  prompts/{memory,handoff,summarise,summariser}.md
+├─ prompts/tutor.md  prompts/<persona>.md  prompts/{memory,handoff,summarise,summariser,coach}.md
 ├─ docker/searxng/settings.yml
 ├─ .cache/              # git-ignored, created at startup: mcp.json, prompts/<session-id>.txt,
 │                       #   srs/ snapshots, explain/, compaction.json
@@ -727,7 +733,9 @@ Message types are defined once in `backend/models.py` and generated into
 `stt_partial` (reserved, never emitted), `stt_final`, `speak` (`{audio_b64, visemes[], vtimes[],
 vdurations[], text, emotion, turn, grammar[], target, used, used_kind, readings[], vocab[]}`),
 `bargein`, `service_status`, `settings` (echo, secrets as `{set, hint}`), `mic_level`, `meters`,
-`timing` (stages incl. `first_play_ms`, rolling p50/p90), `explanation`, `error`.
+`timing` (stages incl. `first_play_ms`, rolling p50/p90), `explanation`, `history` (the lesson
+so far, sent to a page that connects; `state` carries `spoken`), `error`. Grammar spans carry
+`level`, word spans `leech`.
 
 Each page has its own send queue: `mic_level` is coalesced to the newest, everything else is
 delivered in order, and a page that stops reading is closed so it reconnects. If a page drops
@@ -961,6 +969,21 @@ without greeting you again. `0` turns this off. Where Claude condenses is Claude
 nothing reports it, so the app watches for it instead: if it happens, the page says she is tidying
 her notes, and if it came before the app rotated, the app rotates earlier from then on (remembered
 in `.cache/compaction.json`; delete the file to forget).
+
+**Lessons: today's targets.** Every lesson works on a rotating set of what you have not yet
+mastered — by default eight of your WaniKani words below Guru (leeches included) and four of your
+Bunpro grammar points — chosen from your own study data and from what past lessons already
+practised (the turn logs, all tutors together). The launch prints them: `targets: vocab … ·
+grammar … · opener …`. The weakest and the never-practised come first; a target you produce
+correctly twice in a lesson is done — she moves on to the next candidate at once, and the item
+comes back after a gap that doubles with every success (1, 2, 4, 8… lessons, up to 32), while one
+you attempted and did not get right is back next lesson. Lessons open in turn on news, an everyday
+scenario (`backend/data/scenarios.txt`), something she remembers about you, or a short story around
+today's targets; only the news lesson searches. No model call is spent on any of this. Keys, in
+Settings → Brain: `STUDY_TARGET_VOCAB` (8), `STUDY_TARGET_GRAMMAR` (4), `STUDY_PROGRESS_AFTER`
+(2), `STUDY_NUDGE_EVERY` (3 — how often she gets a one-line coach note with your words; never
+spoken, never in your transcript; 0 = off), `STUDY_SPACING_BASE` (1) and `STUDY_SPACING_MAX`
+(32). The wording she reads is `prompts/coach.md`.
 
 ---
 

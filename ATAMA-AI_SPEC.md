@@ -258,6 +258,8 @@ A session that opens with 「今日はどうですか」 dies immediately. Sense
 
 **She finds it herself.** The tutor is given a **search tool** backed by **SearxNG** — self-hosted metasearch, no API key, no third-party account, so the local-first property holds. It runs in `docker-compose.yml` beside VOICEVOX; one `docker compose up -d` starts both.
 
+**News is one of four openers** (since 2026-09-12, §6c): lessons open in turn on news, an everyday scenario, something remembered about the student, or a short story built around today's targets. Only a `news` lesson searches at the opening; the other three cost nothing.
+
 Boundaries:
 
 - **A separate MCP server** — `backend/search_mcp.py`, exposing one read tool, `search` (`query`, `category`, `language` ∈ {`ja`, `en`, `all`} — an allowlist, default `ja`; anything else falls back to the default). It is **never** a fourth tool on the Bunpro server, whose exact three-tool surface the Golden Rule gate asserts (§0 rule 5).
@@ -449,6 +451,80 @@ long enough to fill a window.
 pasted whole is thousands of tokens re-read on every subsequent turn for the rest of the session.
 Capping it is cheaper than rotating more often.
 
+## 6c. STUDY PLAN — ROTATING TARGETS (ADR-038, user request 2026-09-12)
+
+The problem: lessons revolved around a few news items and the top of the grammar list. The student
+wants diversity and coverage of **all** the vocabulary and grammar they have not mastered, with the
+target set rotating — an item they have replied well with a few times progresses out and the next
+candidate takes its place. The constraint: no additional model calls.
+
+**What it is.** `backend/study_plan.py`, deterministic, milliseconds, built at launch from two
+things that already exist: the SRS snapshot (§5 — never a new call, ADR-024) says what they are
+still learning, and the turn logs (§6b) say what has been practised. Nothing is persisted: the fold
+is recomputed at every launch and is the source of truth.
+
+- **Coverage ledger.** Every session log on disk — all tutors, the student is the same — the last
+  60 sessions, replayed in the order they happened. Per item (keyed by `study.normalise`):
+  `heard` (the tutor used or asked for it: her `{{span|point}}` marks, `[target:]`, or one of
+  their words matched in her sentence), `produced` (her `[used:]` credit), `attempted` (matched
+  in the student's transcript — their words by `backend.study`, a grammar point by its normalised
+  name), `last_seen`, `last_produced`, and the SRS part: `streak`, `lapses`, `due_session`,
+  `progressed`.
+- **It behaves like an SRS** (user refinement, 2026-09-12). When a replayed session closes, for
+  each item the tutor used or asked for: produced ≥ `STUDY_PROGRESS_AFTER` times → a success
+  round, `streak += 1` and due again at `session + min(STUDY_SPACING_MAX, STUDY_SPACING_BASE ×
+  2^(streak−1))` — 1, 2, 4, 8, 16, 32 sessions; attempted but never produced correctly → a lapse,
+  streak 0, `lapses += 1`, due next session; used by the tutor but never attempted → unchanged,
+  still due. A never-seen item is due at 0. The better it is handled, the rarer it returns; a
+  painful one comes back soon.
+- **Selection.** `STUDY_TARGET_VOCAB` (8) words from everything below Guru plus the leeches;
+  `STUDY_TARGET_GRAMMAR` (4) points from the ghosts and everything still in their Bunpro SRS.
+  Candidates are the items due (`due_session ≤ today`), ranked: a target that had a success round
+  within the last 7 days goes to the back — without this the weakest few come straight back at a
+  one-session gap and the rest of the list never gets a turn — then weakness (ghost > leech >
+  the lower SRS stage), then never-covered before covered, then the most overdue, then the most
+  lapses, then the fewest productions, then the text, so two launches over the same logs choose
+  the same targets. Too few due → filled with the soonest-due. Everything left is a ranked
+  **queue** for mid-session replacement.
+- **Progression, live.** After every turn the plan reads the same record memory does. A target
+  produced `STUDY_PROGRESS_AFTER` times this session is retired — its next due is set at once, so
+  a Refresh later in the session cannot bring it back — and the next queue candidate of the same
+  kind is promoted. The terminal says so (`[study] X progressed (back after N sessions) -> new
+  target Y`).
+- **Four openers, one per lesson in turn:** `news` (the §5c search — the only opener that may
+  search), `scenario` (an everyday situation from `backend/data/scenarios.txt`, picked by striding
+  through the list with the scenario ordinal and skipping anything that overlaps a recent topic),
+  `personal` (a remembered fact about the student, §6b; with none, a scenario), `story` (three
+  sentences of her own around three of today's targets, then a question). The index is the number
+  of lessons this tutor has summarised. With a LAST SESSION the greeting and the carry-on question
+  still come first (§6b); the opener applies when they choose something new.
+- **In the prompt.** A `{{study_plan}}` slot right after the profile (§6): TODAY'S TARGETS — the
+  words with reading and meaning, the grammar points as Bunpro names them, the OPENER line, and the
+  rule: at least one target in every turn, elicit each target at least once, a target produced
+  correctly twice is done — move on. ≤ 250 tokens (`STUDY_PLAN_MAX_TOKENS`, tested), and carried
+  into every session of the launch — rotated, refreshed, re-personed — through the same path as
+  the profile. The template's opening rule now follows the OPENER line, and TEACHING BEHAVIOR says
+  the targets are the priority list.
+- **Coach notes.** Every `STUDY_NUDGE_EVERY` turns (3; 0 = off), and always on the turn after a
+  progression, a bracketed English note of ≤ 40 tokens is put above the student's words in the
+  text the brain is asked: `[coach: not yet used: 貯金、〜たら; elicit 〜ておく next; 〜てみる
+  progressed (back after 2 sessions) → new target 〜ながら]`. Only the brain sees it: the turn
+  log records the raw transcript, the page's `stt_final` and the TTS never carry it
+  (`VoiceLoop.coach`, `orchestrator.one_turn(coach=)`). The tutor is told the notes are the
+  system's, never the student's, never to be read aloud or answered.
+- **Summariser.** Two lines under the excerpt — targets practised and progressed, from the log's
+  own marks, no item set needed — and an optional `progressed` key in the summary JSON, kept on
+  the topics row. A summary without it lands as before.
+- **Words in files** (ADR-012): `prompts/coach.md` holds the block's wording, the opener lines,
+  the note template and the summariser's two headings; the rules are in `prompts/tutor.md`.
+
+Config (§11): `STUDY_TARGET_VOCAB` 8, `STUDY_TARGET_GRAMMAR` 4, `STUDY_PROGRESS_AFTER` 2,
+`STUDY_NUDGE_EVERY` 3, `STUDY_SPACING_BASE` 1, `STUDY_SPACING_MAX` 32. Cost: zero model calls;
+about 250 cached prompt tokens per turn and a 40-token note every third turn. Known crudeness:
+grammar "attempted" is a substring match of the point's name in the transcript, so a false lapse
+is possible — it only brings an item back sooner, never later. Progress depends on the tutor's
+`[used:]` credit: if she under-credits, nothing progresses, which the terminal line makes visible.
+
 ## 7. TTS + LIP-SYNC (VOICEVOX → Oculus visemes)
 
 - `POST /audio_query?text=<sentence>&speaker=<id>` → JSON with `accent_phrases[].moras[]` (each mora: `consonant`, `consonant_length`, `vowel`, `vowel_length`) plus `pause_mora`, `prePhonemeLength`, `postPhonemeLength`, `speedScale`.
@@ -492,7 +568,7 @@ Capping it is cheaper than rotating more often.
 - TalkingHead init with the GLB avatar, lipsyncModules can be empty (we always pass visemes explicitly).
 - WebSocket client with auto-reconnect. Message protocol (define as typed constants shared in one place, mirrored in Python pydantic models; a contract test asserts the two sets are identical):
   - client→server: `control` (`start`, `stop`, `cancel`, `resync`, `quit`, `new_topic`, `ready` — `start`/`stop` are the push-to-talk edges, and `cancel` is **ALT GR during a hold** (the right-hand ALT: Chrome claims SPACE with the left one): what has been recorded is dropped, the talk key can then be released without sending anything, and the next press starts clean (user, 2026-09-12); `quit` shuts the orchestrator down cleanly from the page, and is deliberately not `stop`; `new_topic` is the page's New topic button — she drops the subject, interrupting herself if need be, and searches for a fresh one exactly as if the student had said 「話題を変えて」), `settings` (partial update of **any** key in the `config.py` schema, secrets included — §11; the server validates, persists to `settings.json`, applies live where possible, and replies with the applied `settings` echo in which secrets appear only as `{set, hint}`. `model` takes effect by respawning the claude subprocess with `--resume`, reported via `service_status: claude=restarting`; token changes re-run the session-start SRS fetch), `explain` (`{kind, text, context, lang}` — §8b). There is **no** audio message from the page: the orchestrator captures the microphone (§2).
-  - server→client: `state` (`listening|thinking|speaking`, with the turn epoch), `stt_partial` (**reserved**: STT runs on complete utterances, so partials are not produced in M2–M5; the type exists so a streaming-STT experiment does not need a protocol change), `stt_final`, `speak` (`{audio_b64, visemes[], vtimes[], vdurations[], text, emotion, turn, grammar[], target, used, used_kind, readings[], vocab[]}` — the sentence's text is the subtitle and the chat bubble, and its `emotion` rides with its audio), `bargein`, `service_status` (§5b), `settings` (echo), `mic_level`, `meters` (context use, §6b), `timing` (per-turn stage breakdown, §10), `explanation` (§8b), `error`. This is the whole set, generated from `backend/models.py` (gate M3a); there is no separate `assistant_text`, `emotion` or `srs_profile` message and no client `bargein_ack` / `settings_test` / `audio_chunk`.
+  - server→client: `state` (`listening|thinking|speaking`, with the turn epoch), `stt_partial` (**reserved**: STT runs on complete utterances, so partials are not produced in M2–M5; the type exists so a streaming-STT experiment does not need a protocol change), `stt_final`, `speak` (`{audio_b64, visemes[], vtimes[], vdurations[], text, emotion, turn, grammar[], target, used, used_kind, readings[], vocab[]}` — the sentence's text is the subtitle and the chat bubble, and its `emotion` rides with its audio), `bargein`, `service_status` (§5b), `settings` (echo), `mic_level`, `meters` (context use, §6b), `timing` (per-turn stage breakdown, §10), `explanation` (§8b), `history` (the lesson so far for a page that connects, §8b; `state` carries `spoken`), `error`. `grammar[]` entries carry `level`, `vocab[]` entries `leech`. This is the whole set, generated from `backend/models.py` (gate M3a); there is no separate `assistant_text`, `emotion` or `srs_profile` message and no client `bargein_ack` / `settings_test` / `audio_chunk`.
 - **The handshake checks `Origin`** (ADR-017, 2026-09-12): a browser always sends one, and only the page's own origin is accepted — `http://127.0.0.1`, `localhost` or `[::1]` at `PORT`, plus the Vite dev server on `5173` (whose proxy forwards the browser's Origin unchanged). Anything else — another site's, or the `null` of a sandboxed frame — is refused **before** the socket is accepted. A client with no Origin at all is not a browser (a test client, a script) and is admitted only from the loopback address itself.
 - **Each page has its own outbox** and sends never block the conversation: `mic_level` is coalesced (only the newest is kept), everything else — a sentence, a state, a barge-in, a settings echo — is delivered in order however slow the page; a page whose outbox reaches `OUTBOX_MAX` has stopped reading and is closed so it reconnects. A page that drops off the socket **mid-hold** has its hold cancelled as its own ALT GR would, so the microphone is never wedged open by a vanished tab.
 - **The avatar is optional at runtime.** If TalkingHead or the GLB cannot load (CDN down, page offline, file missing), the page says so on the stage and falls back to **audio-only playback** (`frontend/src/audio_only.ts`, the same queue contract as the head): every sentence still plays and still lands in the chat as its audio starts.
@@ -514,7 +590,7 @@ Capping it is cheaper than rotating more often.
 - The page does not capture audio. The orchestrator captures the microphone (sounddevice, 16 kHz mono, `backend/audio.py`) and the page only controls the turn: push-to-talk `control: start`/`stop`/`cancel`, and **losing window focus (`blur`) cancels a capture in progress** (§9b) — a key release the page never sees must not leave the hold open. The original design (ADR-006) streamed browser PCM over the socket; the socket now carries no microphone audio.
 - **DON'T** add build complexity: no React, no state library. One page, a few modules.
 
-## 8b. STUDY PANEL (ADR-036 — user request 2026-09-11. Built 2026-09-12: the layout, the chat, the tutor's marks, red grammar, the hint, furigana, the word you used floating behind her, explanations and translations on click. Not yet: word cards beyond their own WaniKani words)
+## 8b. STUDY PANEL (ADR-036 — user request 2026-09-11. Built 2026-09-12: the layout, the chat, the tutor's marks coloured by SRS level, the hint, per-kanji furigana, the word you used floating behind her, explanations and translations on click, the transcript replayed on reload. Not yet: word cards beyond their own WaniKani words)
 
 - **The wait has a face** (user, 2026-09-12). Until her first sentence the chat holds one bubble
   with three breathing dots and a caption taken from whichever service is still coming up —
@@ -538,32 +614,60 @@ Capping it is cheaper than rotating more often.
   not yet Guru'd (WaniKani stage < 5 — not only the newest thirty, which left her a palette of 21
   words and 13 % of her sentences carrying one) and the grammar they have not mastered, from the
   snapshot already on disk —
-  `backend/study.py`, no model call and no fetch (ADR-024). It marks her sentences and their own,
-  longest match first; where a word sits inside a grammar point the red wins, because two nested
+  `backend/study.py`, no model call and no fetch (ADR-024). **The tutor marks her own uses of
+  their words**, exactly as she marks grammar — `{{申します|申す}}`, named as WaniKani writes the
+  item (user, 2026-09-12: she is the one who knows which of her words is one of theirs) — and a
+  mark whose name is on the vocabulary list becomes a word span, one on the grammar list a
+  grammar span. Where she forgot, `Study.spans` finds a word by **whole tokens only**: a token's
+  surface, base form or lemma, or the join of adjacent tokens, must equal the item
+  (聞こえにくかった → 聞こえる, たけ → 竹 through the lemma). Never a piece of a token and never a
+  reading: 申す reads もうす, and the もう of もう一度 was painted with it until the reading and
+  stem forms were removed (user, 2026-09-12, screenshot). Without the tokenizer only the written
+  form counts. Where a word sits inside a grammar point the grammar wins, because two nested
   marks are a box inside a box. The same lists decide the **float behind her**: `[used:…]` is
   looked up, `speak.used_kind` says whether it was one of their words or one of their grammar
   points, and it drifts up in that colour. The student's own turn floats one too, the moment the
   transcript arrives: that one is objective (the word is theirs and they said it), while her credit
-  is the only one that can be a grammar point. A word matches as written, as its kana reading, and
-  by the prefix its inflections share — gold when the tutor credits something from neither
-  list, which is also how a tutor crediting the wrong thing shows up.
-- **Red is grammar, and only grammar** (user, 2026-09-12). A conjugation, an auxiliary or a
-  pattern, wrapped whole — 〜てみよう is marked from the stem, not from its tail. A noun, a plain
-  verb or adjective, a name or a number is vocabulary and is never red, whatever the tutor thinks
-  of the word. The prompt says so, and `Annotator.grammar_only` enforces it with the tokenizer
-  already loaded for furigana: a span whose every token is a noun, with a point not named as a
-  pattern, is dropped before the page sees it. Narrow on purpose — a dropped point costs more than
-  a stray word.
+  is the only one that can be a grammar point — gold when the tutor credits something from
+  neither list, which is also how a tutor crediting the wrong thing shows up.
+- **Every mark wears the colour of its SRS level** (user, 2026-09-12, replacing "red is grammar,
+  blue is a word"): the Bunpro scale — ghost grey, beginner dark teal, adept navy, seasoned purple,
+  expert pink, master rose — for a grammar point's own Bunpro level, and for a word its WaniKani
+  stage mapped onto the same scale (Apprentice → beginner, Guru → adept, Master → seasoned,
+  Enlightened → expert, Burned → master; a leech → ghost). Grammar is a solid bar, a word a dotted
+  one, so the kind stays readable; a legend of the seven swatches sits in the chat header. A
+  point the tutor names that is on neither list keeps the neutral grammar colour and still goes
+  through the guard below. Grammar is a conjugation, an auxiliary or a pattern, wrapped whole —
+  〜てみよう is marked from the stem, not from its tail; a noun, a plain verb or adjective, a name
+  or a number is a word, marked only when it is one of theirs. `Annotator.grammar_only` keeps an
+  unlisted all-noun span from going red, with the tokenizer already loaded for furigana.
+- **A point she forgot to mark still goes red** (user, 2026-09-12: 「と思います」 stayed black
+  although 「と思う」 was on their list). `Annotator.find_points` looks for every grammar point on
+  the student's list by the tokenizer's **base forms** — 思います and 思っ both read 思う — through
+  the auxiliaries that finish the form, with a gap in the point's name (あまり～ない) allowed to
+  hold anything. Conservative: a point that is one short kana token (ば, なら, かな) is never
+  guessed, and her own marks win where they overlap.
 - **A blue word is clickable too** (user, 2026-09-12), and its card needs no dictionary: the kana
   reading, the English meaning and the WaniKani stage travel with the sentence in `speak.vocab`,
-  because they are the student's own items and we already hold them. Red and blue both wear a
-  dotted underline in their own colour, which is what says "click me". On'yomi and kun'yomi per
-  kanji still wait for KANJIDIC2 (ADR-036 point 3).
+  because they are the student's own items and we already hold them. **The card shows the level
+  of mastery** (user, 2026-09-12): the WaniKani stage name ("Apprentice 4") or the Bunpro level
+  ("Ghost", "Beginner"…) as a chip in that level's colour. On'yomi and kun'yomi per kanji still
+  wait for KANJIDIC2 (ADR-036 point 3).
 - **Her sentences.** Grammar spans in **red**, clickable for the rule in `EXPLAIN_LANGUAGE`
   (`en` default, or `ja`). Words clickable for a card: the reading, on'yomi and kun'yomi of each
   kanji, the English meaning, and — when it is on WaniKani — its SRS stage. A **translate icon**
   at the end of each sentence shows the English beneath it. Furigana per `FURIGANA`: `unknown`
-  (default — kanji the student has not yet learned on WaniKani), `all`, or `off`.
+  (default — kanji the student has not yet learned on WaniKani), `all`, or `off`. **Per kanji,
+  not per run** (user, 2026-09-12): a compound with one unknown kanji used to carry one reading
+  over the whole run; now a mixed run is split with WaniKani's own on'yomi/kun'yomi for each kanji
+  (`WaniKaniProfile.kanji_readings`, rendaku and sokuon allowed), so the known ones hide and the
+  unknown one keeps its reading. A run that cannot be split keeps one reading; `readings.txt`
+  accepts dotted per-kanji corrections (`日本語 に.ほん.ご`) for the readings WaniKani does not list.
+- **Reload replays the lesson** (user, 2026-09-12: a reloaded page sat on "she is thinking of how
+  to start…" forever). The hub keeps this session's last 200 lines — hers with their marks,
+  readings and words, yours as heard, an interrupted one flagged `cut`, never audio — and sends
+  them as `history` after the `state` replay when a page connects; `state.spoken` says whether she
+  has spoken in this lesson, so the opening caption is server truth, not page memory.
 - **Tags, written by the tutor (prompt rules in `prompts/tutor.md`).** `{{span|point}}` wraps a
   grammar use — `span` is the text as it appears, `point` the grammar point's name, as Bunpro
   writes it where possible. `[target:point]` names what she wants the student to use next (a
@@ -753,6 +857,7 @@ atama-ai/                          (regenerated 2026-09-12 from `git ls-files ba
 │  ├─ prompt.py         # prompt assembly with per-section budgets (§6)
 │  ├─ memory.py  session.py  usage.py   # §6b: memory tiers, rotation, context meters
 │  ├─ annotate.py  study.py  explain.py # §8b: furigana, their own words, explanations
+│  ├─ study_plan.py     # §6c: today's targets, the coverage ledger, SRS spacing, openers, coach notes
 │  ├─ model_tiers.py    # tier → model id (data in data/model_tiers.txt)
 │  ├─ mcp_ready.py  search_mcp.py       # MCP readiness marker; the search MCP server (§5c)
 │  ├─ status.py         # §5b service status registry → service_status messages
@@ -768,7 +873,8 @@ atama-ai/                          (regenerated 2026-09-12 from `git ls-files ba
 │  ├─ tools/            # up, down, check_secrets, hooks, mcp_config, gen_protocol, latency_run,
 │  │                    #   emotion_rate, stt_compare, voices, capture_*, make_fixtures, migrate_env,
 │  │                    #   settings_cli, claude_probe, get_avatar, check_avatar, make_preview
-│  ├─ data/             # hallucination_blocklist.txt, model_tiers.txt, news_feeds.txt, readings.txt
+│  ├─ data/             # hallucination_blocklist.txt, model_tiers.txt, news_feeds.txt, readings.txt,
+│  │                    #   scenarios.txt (§6c openers)
 │  └─ tests/            # fixtures/ (sanitised, committed)  fixtures/private/ (ignored)
 ├─ frontend/            # vite, vanilla TS
 │  ├─ index.html  src/{main, ws, protocol.gen, avatar, audio_only, speech, expression, chat, rig,
@@ -776,7 +882,7 @@ atama-ai/                          (regenerated 2026-09-12 from `git ls-files ba
 │  ├─ scripts/srs-grep.mjs  # prebuild/pretest half of the §0 gate
 │  └─ public/<persona>.glb (git-ignored; README explains export)  cast.json, <persona>.speak.json (generated)
 ├─ prompts/             # tutor.md (template), tanaka|hayashi|minami|mori.md (personas),
-│                       #   memory.md, handoff.md, summarise.md, summariser.md
+│                       #   memory.md, handoff.md, summarise.md, summariser.md, coach.md (§6c)
 ├─ docker/searxng/settings.yml   # SearXNG config, committed, holds no secret
 ├─ .cache/              # git-ignored, created at startup: mcp.json, prompts/<session-id>.txt,
 │                       #   srs/ snapshots, explain/, compaction.json

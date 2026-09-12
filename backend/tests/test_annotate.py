@@ -89,3 +89,118 @@ def test_without_a_tokenizer_every_mark_stands():
     text = "竹の先生。"
     assert a.grammar_only(text, [mark(text, "竹")]) == [mark(text, "竹")]
     assert a.grammar_only(text, []) == []
+
+
+# ---------------------------------------------------------------- the grammar safety net
+# 「と思います」 stayed black on the page although 「と思う」 was on the student's unsettled list
+# (user, 2026-09-12): the tutor forgot her mark. The tokenizer finds the point by base forms.
+
+POINTS = ["と思う", "ようだ", "あまり～ない", "〜てみる", "がする", "なら", "ば", "Verb[よう]", "〜ている"]
+
+
+def found(text, points=POINTS, taken=()):
+    a = annotate.Annotator(overrides={})
+    return [(text[r["start"]:r["end"]], r["point"]) for r in a.find_points(text, points, taken)]
+
+
+def test_an_inflected_point_is_found_by_its_base_form_through_the_auxiliary():
+    assert found("明日は雨が降ると思います。") == [("と思います", "と思う")]
+    assert found("食べてみようと思っています") == [("てみよう", "〜てみる"), ("と思っ", "と思う"), ("ています", "〜ている")]
+
+
+def test_a_gap_in_the_points_name_may_hold_anything():
+    assert found("あまり難しくないと思う") == [("あまり難しくない", "あまり～ない"), ("と思う", "と思う")]
+
+
+def test_one_short_kana_token_is_never_guessed():
+    assert found("雨なら行きません") == []               # なら, ば: her mark is the only way
+    assert found("行けば分かります") == []
+
+
+def test_her_own_mark_wins_where_they_overlap():
+    assert found("雨が降ると思います", taken=[{"start": 4, "end": 7, "point": "と思う"}]) == []
+
+
+def test_names_the_tokenizer_cannot_read_are_skipped_and_nothing_raises():
+    assert found("はい、そうです。", ["Verb[よう]", "する (Have/Wear)", ""]) == []
+    assert annotate.Annotator(overrides={}).find_points("", POINTS) == []
+
+
+# --------------------------------------------------- furigana per kanji in a half-known compound
+# 日本語 with 日 and 本 passed but 語 not: one reading over the run hid nothing. Split with
+# WaniKani's readings for each kanji, the furigana is hidden over the two known ones alone (user,
+# 2026-09-12: "hide the furigana for the kanji known in WaniKani").
+
+WK = annotate.kana_table({"日": ["に", "にち", "ひ"], "本": ["ホン", "もと"], "語": ["ご"], "学": ["がく"],
+                          "校": ["こう"], "花": ["か", "はな"], "火": ["か", "ひ"]})
+
+
+def entries(a, text):
+    return [(text[r["start"]:r["end"]], r["reading"], r["known"]) for r in a.readings(text)]
+
+
+def test_a_half_known_run_is_split_per_kanji_with_wanikani_readings():
+    a = annotate.Annotator(known_kanji={"日", "本"}, overrides={"日本語": "にほんご"}, kanji_readings=WK)
+    assert entries(a, "日本語です。") == [("日", "に", True), ("本", "ほん", True), ("語", "ご", False)]
+
+
+def test_rendaku_and_sokuon_are_allowed_between_kanji():
+    assert annotate.split_reading("学校", "がっこう", WK) == ["がっ", "こう"]
+    assert annotate.split_reading("花火", "はなび", WK) == ["はな", "び"]
+    assert annotate.split_reading("日本", "にほん", WK) == ["に", "ほん"]
+    assert annotate.split_reading("日本", "にっぽん", WK) == ["にっ", "ぽん"]
+    assert annotate.split_reading("日々", "ひび", WK) == ["ひ", "び"]           # 々 repeats the kanji
+
+
+def test_without_a_full_split_the_run_keeps_one_reading():
+    table = {"日": ["にち"], "本": ["ほん"], "語": ["ご"]}                    # に is not a reading of 日
+    assert annotate.split_reading("日本語", "にほんご", table) is None
+    a = annotate.Annotator(known_kanji={"日", "本"}, overrides={"日本語": "にほんご"}, kanji_readings=table)
+    assert entries(a, "日本語です。") == [("日本語", "にほんご", False)]
+
+
+def test_a_run_wholly_known_or_wholly_unknown_is_not_split():
+    both = annotate.Annotator(known_kanji={"日", "本", "語"}, overrides={"日本語": "にほんご"}, kanji_readings=WK)
+    assert entries(both, "日本語") == [("日本語", "にほんご", True)]
+    none = annotate.Annotator(overrides={"日本語": "にほんご"}, kanji_readings=WK)
+    assert entries(none, "日本語") == [("日本語", "にほんご", False)]
+
+
+def test_a_dotted_correction_splits_without_wanikani():
+    """readings.txt may give a reading per kanji (に.ほん.ご) for the words WaniKani's readings
+    cannot split — 日本 reads 日 as に, which is not one of its readings there."""
+    a = annotate.Annotator(known_kanji={"日", "本"}, overrides={"日本語": "に.ほん.ご"})
+    assert entries(a, "日本語") == [("日", "に", True), ("本", "ほん", True), ("語", "ご", False)]
+    assert entries(annotate.Annotator(overrides={"日本語": "に.ほん.ご"}), "日本語") == [("日本語", "にほんご", False)]
+    assert annotate.Annotator(known_kanji={"日"}, overrides={"日本語": "に.ほんご"}).readings("日本語")[0]["reading"] == "にほんご"
+
+
+def test_the_shipped_corrections_split_japan_for_a_student_who_knows_its_kanji():
+    a = annotate.Annotator(known_kanji={"日", "本"})                # the real backend/data/readings.txt
+    assert entries(a, "日本語と日本人") == [("日", "に", True), ("本", "ほん", True), ("語", "ご", False),
+                                      ("日", "に", True), ("本", "ほん", True), ("人", "じん", False)]
+
+
+def test_wanikani_readings_are_normalised_to_hiragana_once():
+    a = annotate.Annotator(kanji_readings={"本": ["ホン", "ほん", "", "もと"]})
+    assert a.kanji_readings == {"本": ["ほん", "もと"]}
+    a.kanji_readings = None
+    assert a.kanji_readings == {}
+
+
+# ---------------------------------------------------------------- tokens, for whole-word matching
+def test_tokens_give_base_form_lemma_and_pos_over_code_points():
+    """backend/study.py matches the student's words by token, not substring: 申す must never be
+    the もう of もう一度, while たけ still reaches 竹 through the lemma (user, 2026-09-12)."""
+    a = annotate.Annotator(overrides={})
+    text = "𠮷野でもう一度食べます。"
+    got = a.tokens(text)
+    surfaces = [text[s:e] for s, e, *_ in got]
+    assert "".join(surfaces) == text and "もう" in surfaces          # code points: 𠮷 shifts nothing
+    assert "申す" not in [base for *_, base, _l, _p in got] and "申す" not in [l for *_, l, _p in got]
+    by_surface = {text[s:e]: (base, lemma, pos) for s, e, base, lemma, pos in got}
+    assert by_surface["食べ"] == ("食べる", "食べる", "動詞")
+    assert by_surface["もう"][2] == "副詞" and by_surface["ます"][2] == "助動詞"
+    assert a.tokens("") == []
+    a._get = lambda: None
+    assert a.tokens(text) == []

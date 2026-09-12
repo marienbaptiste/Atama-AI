@@ -37,3 +37,19 @@ def test_kanji_progress_is_read_with_documented_filters_only():
     wk.fetch_raw(client)
     assert ("/v2/assignments", {"subject_types": "kanji", "started": "true"}) in client.calls
     assert ("/v2/subjects", {"types": "kanji", "levels": "1,2,3"}) in client.calls
+
+
+def test_kanji_readings_come_from_the_subjects_primary_first_without_nanori():
+    """The chat's per-kanji furigana split (backend/annotate.py) reads them from the snapshot."""
+    raw = {"kanji_subjects": {"data": [
+        {"id": 1, "data": {"characters": "日", "readings": [
+            {"reading": "ひ", "primary": False, "accepted_answer": False, "type": "kunyomi"},
+            {"reading": "にち", "primary": True, "accepted_answer": True, "type": "onyomi"},
+            {"reading": "か", "primary": False, "accepted_answer": False, "type": "kunyomi"},
+            {"reading": "あきら", "primary": False, "accepted_answer": False, "type": "nanori"},
+            {"reading": "にち", "primary": False, "accepted_answer": True, "type": "onyomi"}]}},
+        {"id": 2, "data": {"characters": "本", "readings": "garbage"}},
+        {"id": 3, "data": {"characters": "", "readings": [{"reading": "x", "type": "onyomi"}]}},
+    ]}}
+    assert wk.parse(raw).kanji_readings == {"日": ["にち", "ひ", "か"]}
+    assert wk.parse({}).kanji_readings == {}

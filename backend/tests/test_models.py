@@ -18,14 +18,18 @@ from backend.tools import gen_protocol
 #: One valid instance of every server message. A new type must be added here to be tested, and the
 #: first test below fails until it is.
 SERVER_SAMPLES = {
-    "state": {"state": "thinking", "turn": 3},
+    "state": {"state": "thinking", "turn": 3, "spoken": True},
     "stt_partial": {"text": "こん"},
     "stt_final": {"text": "雨です", "accepted": False, "reason": "blocklist",
                   "readings": [{"start": 0, "end": 1, "reading": "あめ", "known": True}]},
     "speak": {"audio_b64": "UklGRg==", "visemes": ["aa", "sil"], "vtimes": [100.0, 180.0],
               "vdurations": [80.0, 50.0], "text": "あ。", "emotion": "happy", "turn": 2,
-              "grammar": [{"start": 0, "end": 1, "point": "〜たら"}], "target": "〜たら", "used": "雨",
-              "readings": [{"start": 0, "end": 1, "reading": "あ", "known": False}]},
+              "grammar": [{"start": 0, "end": 1, "point": "〜たら", "level": "beginner"}], "target": "〜たら",
+              "used": "雨", "readings": [{"start": 0, "end": 1, "reading": "あ", "known": False}],
+              "vocab": [{"start": 0, "end": 1, "word": "あ", "stage": "Apprentice 2", "leech": True}]},
+    "history": {"lines": [{"who": "her", "text": "あ。", "turn": 1, "cut": True,
+                           "grammar": [{"start": 0, "end": 1, "point": "〜たら", "level": "ghost"}]},
+                          {"who": "you", "text": "雨", "accepted": False, "reason": "blocklist"}]},
     "bargein": {"turn": 2},
     "service_status": {"service": "brain", "state": "ready", "detail": "claude-cli", "last_error": ""},
     "settings": {"values": {"TURN_MODE": "ptt"}, "fields": [{"key": "TURN_MODE"}], "pinned": {},

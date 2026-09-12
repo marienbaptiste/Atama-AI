@@ -99,6 +99,17 @@ def timing_line(t, done_ms: list[float], warn_s: float) -> str:
             + (f"  OVER {float(warn_s):.1f}s" if slow else "") + RESET)
 
 
+def targets_line(vocab: list[str], grammar: list[str], opener: str, subject: str = "") -> str:
+    """One line at launch: today's targets and how the lesson opens (spec §6c)."""
+    bits = []
+    if vocab:
+        bits.append("vocab " + "、".join(vocab))
+    if grammar:
+        bits.append("grammar " + "、".join(grammar))
+    bits.append(f"opener {opener}" + (f"（{subject}）" if subject else ""))
+    return f"{DIM}targets: {' · '.join(bits)}{RESET}"
+
+
 def session_report(timings, budget_s: float = 5.0) -> str | None:
     """The end-of-session line: turns, voice→voice median and p90 against the budget. None when
     no turn produced a voice. Nearest-rank percentiles, the same rule as latency_run."""

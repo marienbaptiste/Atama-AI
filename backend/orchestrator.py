@@ -16,7 +16,7 @@ import asyncio
 import datetime as dt
 import sys
 import time
-from typing import Any
+from typing import Any, Callable
 
 from backend import annotate as annotate_api
 from backend import brain as brain_api
@@ -26,6 +26,7 @@ from backend import memory as memory_api
 from backend import model_tiers
 from backend import session as session_api
 from backend import study as study_api
+from backend import study_plan
 from backend import usage as usage_api
 from backend import vram as vram_mod
 from backend.brain import (BrainError, Compacting, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome,
@@ -82,6 +83,10 @@ class Lesson:
         self.student = profile_api.StudentProfile()
         self.profile_text = ""
         self.memory_text = ""
+        #: Today's targets (spec §6c, ADR-038): built once the profile and memory are in, rendered
+        #: into every session of this launch, advanced after every turn. Zero model calls.
+        self.plan: study_plan.Plan | None = None
+        self.plan_text = ""
         self.annotator: annotate_api.Annotator | None = None
         self.explainer = explain_api.Explainer(cfg)
         self.hub = None
@@ -106,7 +111,8 @@ class Lesson:
         await self._sync_srs()
         # Furigana for the chat (spec §8b): a local tokenizer, and which kanji WaniKani says are passed.
         self.annotator = annotate_api.Annotator(
-            known_kanji=self.student.wanikani.known_kanji if self.student.wanikani else ())
+            known_kanji=self.student.wanikani.known_kanji if self.student.wanikani else (),
+            kanji_readings=self.student.wanikani.kanji_readings if self.student.wanikani else {})
 
         # --- memory (spec §6b, ADR-031) ------------------------------------------------------
         # The summary of the last lesson is what she greets with, so she must have read it before she
@@ -154,11 +160,14 @@ class Lesson:
         if await asyncio.to_thread(self.annotator.warm):
             hub.readings = self.annotator.readings
             hub.grammar = self.annotator.grammar_only
+            # The grammar safety net: a point of theirs she used without marking it - 「と思います」
+            # stayed black on the page (user, 2026-09-12) - found by the tokenizer's base forms.
+            hub.points = self.annotator.find_points
         else:
             print(f"{DIM}no furigana in the chat: {self.annotator.error}{RESET}")
         # Their own words, blue in the chat (spec §8b): from the snapshot already fetched, never
         # a new call (ADR-024). Rebuilt by the Refresh button, below.
-        hub.study = study_api.Study.from_profile(self.student)
+        hub.study = study_api.Study.from_profile(self.student, getattr(self.annotator, 'tokens', None))
         print(f"{BOLD}avatar:{RESET} {url}")
         if getattr(self.args, "show", False):
             import webbrowser
@@ -258,10 +267,41 @@ class Lesson:
         if self.mem is not None:
             self.memory_text = self.mem.render()
 
+    def _make_plan(self) -> None:
+        """Today's targets from the snapshot already in memory and the turn logs already on disk
+        (spec §6c): folded here, at launch, in milliseconds — never a fetch, never a model call."""
+        cfg = self.cfg
+        items = study_api.Study.from_profile(self.student, getattr(self.annotator, 'tokens', None)).items
+        spacing = dict(progress_after=int(cfg.STUDY_PROGRESS_AFTER), spacing_base=int(cfg.STUDY_SPACING_BASE),
+                       spacing_max=int(cfg.STUDY_SPACING_MAX))
+        ledger = study_plan.load_ledger(memory_api.sessions_dir(cfg), items, **spacing)
+        recent = self.mem.recent_topics() if self.mem is not None else []
+        facts = self.mem.facts()[0] if self.mem is not None else []
+        index = self.mem.sessions_summarised() if self.mem is not None else ledger.today
+        self.plan = study_plan.build(items, ledger, cfg, session_index=index, recent_topics=recent, facts=facts)
+        self.plan_text = study_plan.render(self.plan)
+        print(terminal.targets_line([t.item.text for t in self.plan.vocab], [t.item.text for t in self.plan.grammar],
+                                    self.plan.opener.kind, self.plan.opener.subject))
+
+    def coach(self, text: str) -> str:
+        """The student's words with the coach note above them, when one is due (spec §6c). What
+        the brain is asked — never what is logged, shown or spoken."""
+        return study_plan.coached(self.plan, text)
+
+    def note_turn(self, student: str, sentences: list[dict[str, Any]]) -> None:
+        """After every turn, the same facts memory recorded: the plan counts them and rotates."""
+        if self.plan is None:
+            return
+        change = self.plan.note_turn({"student": {"text": student}, "tutor": {"sentences": sentences}})
+        for (old, gap), new in zip(change.retired, [*change.promoted, *([None] * len(change.retired))]):
+            terminal.note("study", f"{old.text} progressed (back after {gap} session{'s' if gap != 1 else ''})"
+                          + (f" -> new target {new.text}" if new is not None else ""))
+
     async def _start_brain(self) -> int:
         cfg = self.cfg
+        self._make_plan()
         self.rendered = rendered = prompt.build(self.profile_text, persona=cfg.TUTOR_PERSONA,
-                                                memory=self.memory_text)
+                                                memory=self.memory_text, study_plan=self.plan_text)
         profile_api.debug_snapshot(self.student, self.profile_text, cfg.path("LOG_DIR"),
                                    dt.date.today().isoformat())
         sections = " · ".join(f"{k} {v}" for k, v in rendered.sections.items())
@@ -312,7 +352,7 @@ class Lesson:
         for the student to produce one. This is the turn that pays for the search. Then the older
         sessions are summarised in the background."""
         if not self.args.no_open:
-            await one_turn(self.brain, OPENING_NUDGE, self.voice, mem=self.mem, opening=True)
+            await one_turn(self.brain, OPENING_NUDGE, self.voice, mem=self.mem, opening=True, noted=self.note_turn)
             await self.account(self.brain)
         # Older sessions are summarised now, in the background: the student is already in the lesson,
         # and a summary that fails here simply waits for the next launch (2026-09-12).
@@ -326,9 +366,11 @@ class Lesson:
         answering until this one is up, so a failed switch leaves a tutor rather than nobody."""
         fresh = config.load()
         mem = self.mem
-        # The new tutor reads THEIR memory of this student, not the one the last tutor had.
+        # The new tutor reads THEIR memory of this student, not the one the last tutor had — and
+        # the same targets: the plan is the student's, whoever is teaching (spec §6c).
         text = prompt.build(self.profile_text, persona=name,
-                            memory=mem.for_persona(name).render() if mem is not None else "").text
+                            memory=mem.for_persona(name).render() if mem is not None else "",
+                            study_plan=self.plan_text).text
         new = brain_api.create(fresh, registry=registry, mcp_config=self._mcp_json,
                                model=await self._model_for(fresh),
                                mcp_ready_markers=mcp_config.markers(fresh) if self._mcp_json else None,
@@ -356,7 +398,7 @@ class Lesson:
         and tools, plus the lesson so far. Started here, swapped in at a turn boundary by listen()."""
         fresh = config.load()
         text = prompt.build(self.profile_text, persona=str(fresh.TUTOR_PERSONA), memory=self.memory_text,
-                            handoff=handoff).text
+                            handoff=handoff, study_plan=self.plan_text).text
         new = brain_api.create(fresh, registry=registry, mcp_config=self._mcp_json,
                                mcp_ready_markers=mcp_config.markers(fresh) if self._mcp_json else None,
                                system_prompt=text, allowed_tools=self._tools,
@@ -387,8 +429,12 @@ class Lesson:
         self.student = student
         self.profile_text = profile_api.render(student)
         self.annotator.known = set(student.wanikani.known_kanji) if student.wanikani else set()
+        self.annotator.kanji_readings = student.wanikani.kanji_readings if student.wanikani else {}
         if self.hub is not None:              # their words moved on: so does the blue in the chat
-            self.hub.study = study_api.Study.from_profile(student)
+            self.hub.study = study_api.Study.from_profile(student, getattr(self.annotator, 'tokens', None))
+        if self.plan is not None:             # and so do today's targets, keeping this session's progress
+            self.plan = self.plan.reselect(study_api.Study.from_profile(student, getattr(self.annotator, 'tokens', None)).items)
+            self.plan_text = study_plan.render(self.plan)
 
     def adopt(self, new) -> None:
         # After a rotation the replacement is THE session: the one closed at the end, and the one
@@ -502,8 +548,13 @@ async def summarise(cfg, mem, limit: int | None = None) -> int:
         if total > 1:                      # the launch summarises one; the background says where it is
             print(chr(13) + DIM + f"memory: summarising {log.stem[:10]} ({at}/{total})…" + RESET, flush=True)
 
+    def footer(log) -> str:
+        # Spec §6c: what the lesson's own marks say was practised and progressed, for the topics row.
+        return study_plan.summary_footer(log, int(cfg.STUDY_PROGRESS_AFTER))
+
     try:
-        return await asyncio.wait_for(mem.summarise_pending(ask, instructions, limit=limit, on_log=progress), 600)
+        return await asyncio.wait_for(mem.summarise_pending(ask, instructions, limit=limit, on_log=progress,
+                                                            footer=footer), 600)
     except asyncio.CancelledError:
         raise
     except Exception:  # noqa: BLE001
@@ -512,8 +563,13 @@ async def summarise(cfg, mem, limit: int | None = None) -> int:
         await worker.aclose()
 
 
-async def one_turn(brain, text: str, voice=None, mem=None, opening: bool = False) -> None:
-    """Send one text turn; print each sentence the moment it closes, with its latency."""
+async def one_turn(brain, text: str, voice=None, mem=None, opening: bool = False,
+                   coach: Callable[[str], str] | None = None,
+                   noted: Callable[[str, list], None] | None = None) -> None:
+    """Send one text turn; print each sentence the moment it closes, with its latency.
+
+    `coach` rewrites what the brain is asked (the study plan's note, spec §6c) — the log records
+    `text` as typed; `noted(student, sentences)` is told the turn afterwards, like memory is."""
     chunker = SentenceChunker()
     spoken: list[dict] = []
     started = time.monotonic()
@@ -532,7 +588,8 @@ async def one_turn(brain, text: str, voice=None, mem=None, opening: bool = False
             if voice is not None:
                 await voice.say(chunk)
 
-    async for event in brain.turn(text):
+    asked = coach(text) if coach is not None and not opening else text
+    async for event in brain.turn(asked):
         if isinstance(event, TextDelta):
             await show(chunker.push(event.text))
         elif isinstance(event, Thinking):
@@ -555,6 +612,8 @@ async def one_turn(brain, text: str, voice=None, mem=None, opening: bool = False
                 mem.record_turn(student="" if opening else text, tutor_sentences=spoken,
                                 latency={"ttft_ms": round(event.ttft_ms) if event.ttft_ms else None},
                                 usage=event.usage or {})
+            if noted is not None:
+                noted("" if opening else text, spoken)
             if voice is not None:
                 await voice.drain()
             total = time.monotonic() - started
@@ -697,6 +756,10 @@ async def listen(lesson: Lesson) -> None:
         # nothing here can sit between the student stopping and her first audio (spec §6b).
         # Record FIRST: `report_turn` arms and prepares the rotation, whose handoff is read from
         # this very log — prepared before the write, it missed the turn that just ended.
+        if mem is None:
+            lesson.note_turn(t.transcript, list(t.sentences))     # the plan still counts (spec §6c)
+            report_turn(t)
+            return
         last = getattr(loop.brain, "last_turn", None) or {}     # spec §6b: tools[], usage
         mem.record_turn(student=t.transcript, tutor_sentences=list(t.sentences),
                         tools=sanitised(list(last.get("tools") or [])),   # spec §11: once, here
@@ -712,9 +775,13 @@ async def listen(lesson: Lesson) -> None:
                                  "session_p50_ms": round(t.session_p50_ms) if t.session_p50_ms else None,
                                  "session_p90_ms": round(t.session_p90_ms) if t.session_p90_ms else None,
                                  "vram_mib": gpu["mib"]})           # spec §10b, latest sample
+        lesson.note_turn(t.transcript, list(t.sentences))         # the raw transcript, as logged
         report_turn(t)
 
-    loop.on_turn = remember if mem is not None else report_turn
+    loop.on_turn = remember
+    # The coach note rides above the student's words to the brain only (spec §6c): the transcript
+    # the page shows, the log records and the timing names is the raw one.
+    loop.coach = lesson.coach
 
     def compacting(ev: Compacting) -> None:
         # Claude condensing on its own schedule (spec §6b): explain the silence on both screens,

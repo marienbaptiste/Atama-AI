@@ -38,6 +38,9 @@ PROFILE_MAX_TOKENS = 600
 #: they live, their cat, and everything the tutor has claimed about her own life (spec §6b). Ten
 #: facts and six, one line each, is what "they have met before" costs.
 MEMORY_MAX_TOKENS = 400
+#: The study plan (spec §6c, ADR-038): today's targets, the opener and the rule. Rendered by
+#: study_plan.render within this budget, so prompt.build should never have to cut it.
+STUDY_PLAN_MAX_TOKENS = 250
 #: Whole assembled prompt. Template is ~700 tokens, so this leaves room for both sections.
 #: Ceiling for template + both sections. Raised 2000 -> 2100 on 2026-09-09: the explicit
 #: correction policy and the elicitation rule grew the static template to ~1050 tokens, and at
@@ -64,7 +67,10 @@ MEMORY_MAX_TOKENS = 400
 #: INVENTING one — she greeted the student by a name nobody had told her (live, 2026-09-12).
 #: The template is now ~1954 tokens and this has to stop: ROADMAP 22's next-session item 6 is to
 #: rewrite these rules shorter, not to raise the ceiling again. It is latency (§10).
-TOTAL_MAX_TOKENS = 3400
+#: 3400 -> 3800 on 2026-09-12 for the study plan (§6c, ADR-038): a 250-token TODAY'S TARGETS block
+#: and the opener/coach rules in the template, which replaced the old opening rule rather than
+#: adding to it. Same trade as ever, held by test_worst_case_sections_fit_the_total.
+TOTAL_MAX_TOKENS = 3800
 #: A ROTATED session's handoff (ADR-032): the lesson so far, from the turn log. Only rotated
 #: sessions carry it, so it has its own budget on top of TOTAL_MAX_TOKENS rather than squeezing
 #: the sections every session needs. Spent only when a long lesson has earned a fresh window.
@@ -208,11 +214,13 @@ def load_soul(path: Path | None = None, name: str | None = None) -> str:
 
 
 def build(student_profile: str, *, soul: str | None = None, template: str | None = None,
-          persona: str | None = None, memory: str = "", handoff: str = "") -> RenderedPrompt:
+          persona: str | None = None, memory: str = "", handoff: str = "",
+          study_plan: str = "") -> RenderedPrompt:
     """Assemble the system prompt. Placeholders that the template omits are simply not used.
 
     `handoff` is for a rotated session only (ADR-032): it follows the memory section under its own
-    heading and budget, so the template needs no placeholder for it."""
+    heading and budget, so the template needs no placeholder for it. `study_plan` is today's
+    targets block (§6c); every session of a launch — rotated, refreshed, re-personed — gets it."""
     tpl = template if template is not None else _read(TEMPLATE_FILE)
     if not tpl.strip():
         raise RuntimeError(f"missing or empty prompt template at {TEMPLATE_FILE} (ADR-012: it lives in a file)")
@@ -223,12 +231,15 @@ def build(student_profile: str, *, soul: str | None = None, template: str | None
     memory_text = _fit(memory.strip(), MEMORY_MAX_TOKENS, "memory", truncated) if memory.strip() else ""
     handoff_text = (_fit(handoff.strip(), HANDOFF_MAX_TOKENS, "handoff", truncated, keep="tail")
                     if handoff.strip() else "")
+    plan_text = _fit(study_plan.strip(), STUDY_PLAN_MAX_TOKENS, "study_plan", truncated) if study_plan.strip() else ""
     memory_slot = "\n\n".join(s for s in (memory_text, f"{handoff_heading()}\n{handoff_text}" if handoff_text else "") if s)
 
     text = (tpl.replace("{{soul}}", soul_text)
                .replace("{{student_profile}}", profile_text)
+               .replace("{{study_plan}}", plan_text)
                .replace("{{memory}}", memory_slot))
     sections = {"soul": estimate_tokens(soul_text), "student_profile": estimate_tokens(profile_text),
+                "study_plan": estimate_tokens(plan_text),
                 "memory": estimate_tokens(memory_text), "handoff": estimate_tokens(handoff_text)}
     total = estimate_tokens(text)
     return RenderedPrompt(text=text, tokens=total, sections=sections, truncated=truncated)

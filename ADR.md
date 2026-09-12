@@ -48,6 +48,7 @@ reasoning behind it. Build sequencing is in [ROADMAP.md](ROADMAP.md).
 | 035 | The page's protocol is generated; barge-in closes a turn epoch; a face changes with its audio | Accepted |
 | 036 | The study panel: the tutor tags, the student clicks, the dictionary is local | Accepted; partly built |
 | 037 | A turn is stopped by the CLI's interrupt request, never by a signal | Accepted (2026-09-12); amends ADR-016 |
+| 038 | Today's targets rotate like an SRS, with zero model calls | Accepted (2026-09-12) — user request |
 
 ---
 
@@ -1546,6 +1547,19 @@ dictionary's readings are exact and free).
 **Reversed if:** inline tagging proves unreliable in prompt tuning; then one background call per
 turn replaces point 1.
 
+**Amended 2026-09-12 (user feedback, same day, four points).** (a) *Colour is the level, not the
+kind*: "red is grammar, blue is a word" was replaced by Bunpro's level scale for both, with the
+kind carried by the mark's style (solid bar for grammar, dotted for a word) and a legend; the card
+shows the level of mastery as a chip. (b) *The tutor tags both*: she now wraps her uses of the
+student's WaniKani words as she wraps grammar (`{{申します|申す}}`), because she is the one who
+knows which of her words is one of theirs; the backend's own matcher became a safety net that
+matches **whole tokens by base form or lemma only** — the reading-stem shortcut painted the もう
+of もう一度 as 申す — and a second safety net finds grammar points she forgot to mark by base
+forms (「と思います」 stayed black although 「と思う」 was on the list). (c) *Furigana per kanji*:
+a mixed known/unknown compound is split with WaniKani's own kanji readings. (d) *Reload replays*:
+the hub keeps the lesson's lines and sends them as `history` to a page that connects, with
+`state.spoken`. Cost: a few output tokens per turn for her word marks; no new model call.
+
 ---
 
 ## ADR-037 — A turn is stopped by the CLI's interrupt request, never by a signal
@@ -1597,3 +1611,53 @@ interface to re-verify on each CLI upgrade.
 **Reversed if:** the CLI documents a different cancel mechanism, or the control request stops
 being answered — then the timeout falls back to point 2 for every interrupt, which is what the
 spec had before, minus the signal.
+
+
+## ADR-038 — Today's targets rotate like an SRS, with zero model calls
+
+**Status:** Accepted (2026-09-12) — user request, refined the same day (spacing). Spec §6c.
+
+**Context.** Lessons orbited a few news items and the top of the grammar list, while the student's
+profile lists dozens of words below Guru and every grammar point still in their Bunpro SRS. The
+user asked for diversity and coverage of *all* of it, with a rotating target set — an item they
+have replied well with a few times moves out and the next candidate moves in — and for it not to
+"break the bank". Every input already exists: the SRS snapshot of ADR-024 says what is unmastered,
+and the turn log of ADR-031 records the tutor's marks (ADR-036) and the student's words.
+
+**Decision.**
+
+1. **A deterministic plan, no model call, nothing persisted.** `backend/study_plan.py` folds the
+   turn logs at launch (all tutors, the last 60 sessions) into a coverage ledger and selects
+   today's targets from it; a Refresh or a tutor switch re-selects over the same ledger, keeping
+   the session's progress. Milliseconds, and the fold is the source of truth: there is no second
+   file to drift.
+2. **Selection is a fixed ranking:** due items only; a success round within the last 7 days
+   goes to the back, then weakness (ghost > leech > lower stage), never-covered before covered,
+   most overdue, most lapses, fewest productions, the text. Deterministic on purpose: two launches
+   over the same logs pick the same targets, and a test can say why an item was chosen.
+3. **Spacing is an SRS.** A success round (produced `STUDY_PROGRESS_AFTER` times in a session)
+   sets the item due again after `STUDY_SPACING_BASE × 2^(streak−1)` sessions, capped at
+   `STUDY_SPACING_MAX`; a lapse (attempted, never credited) resets the streak and brings it back
+   next session; heard-only is unchanged. A retirement mid-session sets its due at once.
+4. **Four openers in turn** — news, scenario, personal, story — so a lesson is not always a news
+   item; only news may search. The scenario list is data (`backend/data/scenarios.txt`).
+5. **The tutor is told, twice, cheaply.** A ≤ 250-token TODAY'S TARGETS block in the system prompt
+   (one `{{study_plan}}` slot, carried into every session of the launch) and a ≤ 40-token coach
+   note above the student's words every `STUDY_NUDGE_EVERY` turns and after each progression.
+   The note reaches the brain and nothing else: the log records the raw transcript, the page and
+   the TTS never see it. Its words, like the block's, live in `prompts/coach.md` (ADR-012).
+6. **The summariser reads two more lines** — practised and progressed, from the log's own marks —
+   and may return an optional `progressed` list that the topics row keeps.
+
+**Consequences / cost.** Zero model calls. About 250 cached prompt tokens per turn (the ceiling
+rose 3400 → 3800) plus a 40-token note every third turn. Grammar "attempted" is a substring
+match on the point's name, so a false lapse is possible; it only brings an item back sooner.
+Progress depends on the tutor's `[used:]` credit — if she under-credits, nothing progresses,
+which the terminal line and the note make visible rather than silent. Config keys:
+`STUDY_TARGET_VOCAB`, `STUDY_TARGET_GRAMMAR`, `STUDY_PROGRESS_AFTER`, `STUDY_NUDGE_EVERY`,
+`STUDY_SPACING_BASE`, `STUDY_SPACING_MAX`.
+
+**Reversed if:** the coverage measured from the logs does not improve over a week of lessons
+(ROADMAP 23's live check), the notes leak into her speech, or "produced correctly" turns out to
+need a judgement her `[used:]` mark cannot make — then a cheap model call *after* the turn, in the
+speaking gap, never on the speaking path (ADR-031).

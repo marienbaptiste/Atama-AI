@@ -126,6 +126,13 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("SETTINGS_FILE", "settings.json", str, "advanced", "Config store (git-ignored; mode 0600 where the OS has modes - Windows relies on the profile's ACLs)"),
     Setting("LOG_DIR", "logs", str, "advanced", "Session logs"),
     Setting("MEMORY_ENABLED", True, bool, "model", "Cross-session memory (spec §6b): the tutor remembers last session, avoids recently discussed topics, and keeps notes about you in an editable file outside the repo"),
+    # The study plan (spec §6c, ADR-038): today's targets, rotated like an SRS, zero model calls.
+    Setting("STUDY_TARGET_VOCAB", 8, int, "model", "How many of your not-yet-Guru'd WaniKani words (leeches included) are this lesson's targets. Chosen weakest and least-recently-practised first, rotated every lesson; 0 = none", low=0),
+    Setting("STUDY_TARGET_GRAMMAR", 4, int, "model", "How many of your Bunpro grammar points (ghosts and everything still in your SRS) are this lesson's targets. Weakest first, never-practised before practised, then the most overdue; 0 = none", low=0),
+    Setting("STUDY_PROGRESS_AFTER", 2, int, "model", "A target you have produced correctly this many times in one lesson (her [used:] credit) is done: it leaves the list, the next candidate takes its place, and it comes back after a spacing gap", low=1),
+    Setting("STUDY_NUDGE_EVERY", 3, int, "model", "Every this many turns the tutor gets a one-line coach note with her text - which targets are still unused, which to elicit next, what just progressed. Never spoken, never in your transcript. 0 = off (a progression still gets one note)", low=0),
+    Setting("STUDY_SPACING_BASE", 1, int, "model", "Sessions before a progressed target returns the first time. Each further success doubles the gap (1, 2, 4, 8...); an item you attempted and never got right comes back next lesson", low=1),
+    Setting("STUDY_SPACING_MAX", 32, int, "model", "The longest gap, in sessions, a well-handled target can earn before it is due again", low=1),
     Setting("EXPLAIN_MODEL", "haiku", str, "model", "Model that answers a click on a grammar point or a translate icon (spec §8b). Cheap on purpose: it runs off the conversation path and every answer is cached"),
     Setting("MEMORY_SUMMARY_MODEL", "haiku", str, "model", "Model that summarises each past session at the next launch. Cheap on purpose: it runs once per session over a short excerpt, never on the conversation path"),
     Setting("CACHE_DIR", ".cache", str, "advanced", "Generated/personal files"),
