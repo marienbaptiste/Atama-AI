@@ -87,6 +87,10 @@ class Hub:
         #: word the tutor liked (`Annotator.grammar_only`). None until the REPL wires it.
         self.grammar: Callable[[str, list[dict[str, Any]]], list[dict[str, Any]]] | None = None
 
+        #: The student's own study list (backend/study.py): their words in a sentence, blue on the
+        #: page, and what kind of thing a `[used:…]` names. Replaced on a Refresh.
+        self.study: Any = None
+
     def _grammar(self, text: str, speech: Any) -> list[dict[str, Any]]:
         """Her grammar marks for the page, minus any the guard reads as plain vocabulary."""
         marks = [{"start": g.start, "end": g.end, "point": g.point}
@@ -95,6 +99,19 @@ class Hub:
             return self.grammar(text, marks) if self.grammar is not None else marks
         except Exception:  # noqa: BLE001 - same contract as the readings hook
             return marks
+
+    def _vocab(self, text: str) -> list[dict[str, Any]]:
+        """Words the student is still learning, wherever they appear. Never raises."""
+        try:
+            return self.study.spans(text) if self.study is not None else []
+        except Exception:  # noqa: BLE001 - a colour is never worth a lost sentence
+            return []
+
+    def _used_kind(self, used: str) -> str:
+        try:
+            return self.study.kind_of(used) if (self.study is not None and used) else ""
+        except Exception:  # noqa: BLE001
+            return ""
 
     def _readings(self, text: str) -> list[dict[str, Any]]:
         try:
@@ -150,7 +167,8 @@ class Hub:
 
     async def transcript(self, text: str, accepted: bool = True, reason: str = "") -> None:
         await self.send(models.SttFinal(text=text, accepted=accepted, reason=reason,
-                                        readings=self._readings(text)).model_dump())
+                                        readings=self._readings(text),
+                                        vocab=self._vocab(text)).model_dump())
 
     async def speak(self, speech: Speech, turn: int | None = None) -> float:
         """Send one sentence for the browser to play. Returns its duration in seconds.
@@ -186,7 +204,9 @@ class Hub:
             grammar=self._grammar(speech.text, speech),
             target=getattr(speech, "target", ""),
             used=getattr(speech, "used", ""),
+            used_kind=self._used_kind(getattr(speech, "used", "")),
             readings=self._readings(speech.text),
+            vocab=self._vocab(speech.text),
         ).model_dump(), to=self._ready)
         return speech.duration_ms / 1000.0
 

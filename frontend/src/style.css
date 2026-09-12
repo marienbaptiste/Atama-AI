@@ -26,6 +26,10 @@ code{background:rgba(0,0,0,.06);padding:1px 4px;border-radius:4px}
      font:600 var(--s)/1 "Yu Gothic UI","Meiryo","Segoe UI Symbol",system-ui,sans-serif;
      filter:blur(var(--b));animation:kao var(--d) linear forwards}
 .kao.word{color:#ffd479;font-weight:800;filter:none;text-shadow:0 2px 14px rgba(0,0,0,.5)}
+/* Coloured like the chat: their word blue, their grammar point red (user, 2026-09-12). Lighter
+   than the chat's inks, because this sits on the dark stage rather than on a white bubble. */
+.kao.word.vocab{color:#8fbaff}
+.kao.word.grammar{color:#ff9a8f}
 @keyframes kao{
   0%  {transform:translate(0,0) rotate(var(--r0));opacity:0}
   15% {opacity:var(--o)}
@@ -169,9 +173,14 @@ body.study #subs{display:none!important}
 .msg.you{align-self:flex-end;border-bottom-right-radius:9px;color:#20386e;
      background:linear-gradient(180deg,#edf3ff,#dfe9ff)}
 .msg.you.dropped{background:#f1f3f6;color:#9aa1ab;font-style:italic;box-shadow:none}
+/* Red is grammar, blue is a word from their own lessons - one not yet Guru'd (user, 2026-09-12).
+   Grammar wins where they overlap: two nested marks would be a box inside a box. */
 mark.gp{background:none;color:#e8453c;font-weight:700;cursor:pointer;border-bottom:2px dotted rgba(232,69,60,.45);
         border-radius:3px;outline:none}
 mark.gp:hover,mark.gp:focus{background:rgba(232,69,60,.08)}
+mark.vw{background:none;color:#2563eb;font-weight:600;border-bottom:2px solid rgba(37,99,235,.22);
+        border-radius:3px}
+.msg.you mark.vw{color:#1d4ed8;border-bottom-color:rgba(29,78,216,.3)}
 .pop{position:fixed;z-index:20;max-width:300px;padding:10px 14px;border-radius:14px;background:#fff;color:var(--ink);
      box-shadow:0 10px 30px rgba(0,0,0,.28);font:13px/1.5 system-ui}
 .pop small{display:block;color:var(--sub);font-size:11px;letter-spacing:.06em;text-transform:uppercase}

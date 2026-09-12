@@ -16,8 +16,9 @@ services:
       - ./docker/searxng:/etc/searxng:rw
     environment:
       # Loopback-only, single user: the secret signs CSRF tokens and the image proxy.
-      # Generated into .env (git-ignored) by `make searxng-secret`.
-      - SEARXNG_SECRET=${SEARXNG_SECRET:?set SEARXNG_SECRET in .env — run `make searxng-secret`}
+      # Generated and passed in by the launcher (backend/tools/up.py), which keeps it in the
+      # per-user state directory - never in the repo, and never in a file you have to create.
+      - SEARXNG_SECRET=${SEARXNG_SECRET:?start with the run script (or make run), which generates this}
       - SEARXNG_BASE_URL=http://localhost:8888/
     restart: unless-stopped
     cap_drop:

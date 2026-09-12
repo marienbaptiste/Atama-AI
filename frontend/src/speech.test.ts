@@ -15,7 +15,7 @@ class FakeHead implements SpeakingHead {
 
 const say = (text: string, turn: number, emotion = ""): SpeakMsg => ({
   type: "speak", audio_b64: "", visemes: ["aa"], vtimes: [100], vdurations: [80], text, emotion, turn,
-  grammar: [], target: "", used: "", readings: [],
+  grammar: [], target: "", used: "", used_kind: "", readings: [], vocab: [],
 });
 const decodeNow = async () => ({ duration: 1 });
 

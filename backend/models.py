@@ -126,6 +126,16 @@ class Reading(_Msg):
     known: bool = False
 
 
+class VocabSpan(_Msg):
+    """Where a word the student is still learning appears in a sentence (spec §8b, user
+    2026-09-12): characters [start, end) in code points, blue on the page. From the WaniKani
+    snapshot already on disk (backend/study.py) — no model call, no fetch."""
+
+    start: int
+    end: int
+    word: str
+
+
 class SttFinal(_Msg):
     type: Literal["stt_final"] = "stt_final"
     text: str
@@ -134,6 +144,8 @@ class SttFinal(_Msg):
     reason: str = ""
     #: Furigana for the chat (backend/annotate.py), computed on the orchestrator, no model call.
     readings: list[Reading] = []
+    #: Their own words, in what they just said — the same blue as in hers.
+    vocab: list[VocabSpan] = []
 
 
 class AssistantText(_Msg):
@@ -182,8 +194,14 @@ class Speak(_Msg):
     #: A word or grammar point the student has just used correctly (user, 2026-09-12): the page
     #: floats it up behind her, the way her mood faces drift.
     used: str = ""
+    #: "vocab" | "grammar" | "": which list `used` came from, checked against what the student has
+    #: NOT yet Guru'd (backend/study.py). It colours the float, and an empty string means the tutor
+    #: named something that is not in their lists.
+    used_kind: str = ""
     #: Furigana for the chat (backend/annotate.py), computed on the orchestrator, no model call.
     readings: list[Reading] = []
+    #: Their own words in this sentence, blue on the page (backend/study.py).
+    vocab: list[VocabSpan] = []
 
 
 class Emotion(_Msg):

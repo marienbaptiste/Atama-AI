@@ -29,6 +29,7 @@ from backend import usage as usage_api
 from backend import model_tiers
 from backend import session as session_api
 from backend import annotate as annotate_api
+from backend import study as study_api
 from backend import explain as explain_api
 from backend.chunker import SentenceChunker
 from backend.brain import (BrainError, Compacting, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome,
@@ -171,6 +172,9 @@ async def run(args: argparse.Namespace) -> int:
             hub.grammar = annotator.grammar_only
         else:
             print(f"{DIM}no furigana in the chat: {annotator.error}{RESET}")
+        # Their own words, blue in the chat (spec §8b): from the snapshot already fetched, never
+        # a new call (ADR-024). Rebuilt by the Refresh button, below.
+        hub.study = study_api.Study.from_profile(student)
         print(f"{BOLD}avatar:{RESET} {url}")
         if getattr(args, "show", False):
             import webbrowser
@@ -328,6 +332,8 @@ async def run(args: argparse.Namespace) -> int:
             fresh.SRS_CACHE_TTL_S, fresh.SRS_FETCH_BUDGET_S, registry, force=True)
         profile_text = profile_api.render(student)
         annotator.known = set(student.wanikani.known_kanji) if student.wanikani else set()
+        if hub is not None:              # their words moved on: so does the blue in the chat
+            hub.study = study_api.Study.from_profile(student)
 
     def adopt(new) -> None:
         # After a rotation the replacement is THE session: the one closed at the end, and the one

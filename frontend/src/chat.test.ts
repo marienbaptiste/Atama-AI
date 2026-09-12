@@ -67,3 +67,23 @@ describe("furigana (spec §8b)", () => {
     expect(html).toBe("<ruby>雨<rt>あめ</rt></ruby>。");
   });
 });
+
+describe("their own words", () => {
+  it("marks a word from their lessons in blue, and lets grammar win where they overlap", () => {
+    const html = renderSentence("公園で勉強します。", [{ start: 3, end: 8, point: "〜ます" }], [], "off",
+                                [{ start: 0, end: 2, word: "公園" }, { start: 3, end: 5, word: "勉強" }]);
+    expect(html).toContain('<mark class="vw" data-word="公園">公園</mark>');
+    expect(html).toContain('data-point="〜ます"');
+    expect(html).not.toContain('data-word="勉強"');      // inside the grammar span: stays red
+  });
+
+  it("puts furigana over a blue word like any other", () => {
+    const html = renderSentence("公園です。", [], [{ start: 0, end: 2, reading: "こうえん", known: false }],
+                                "unknown", [{ start: 0, end: 2, word: "公園" }]);
+    expect(html).toBe('<mark class="vw" data-word="公園"><ruby>公園<rt>こうえん</rt></ruby></mark>です。');
+  });
+
+  it("ignores a span that runs off the end", () => {
+    expect(renderSentence("はい。", [], [], "off", [{ start: 1, end: 99, word: "x" }])).toBe("はい。");
+  });
+});

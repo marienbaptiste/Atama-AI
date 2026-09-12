@@ -49,8 +49,10 @@ function onSentence(msg: SpeakMsg, preview: boolean): void {
   chat.her(msg);
   if (msg.target) setGoal(msg.target);
   if (msg.used) {                                   // you used it, and she noticed
-    floatWord(msg.used);
-    log(`<b>you used ${esc(msg.used)}</b> — she counted it`, "ok");
+    floatWord(msg.used, msg.used_kind);
+    const whose = msg.used_kind === "vocab" ? " — one of your words"
+      : msg.used_kind === "grammar" ? " — one of your grammar points" : "";
+    log(`<b>you used ${esc(msg.used)}</b>${whose}`, "ok");
   }
   log(`<b>her:</b> ${esc(msg.text)}` + (msg.emotion ? ` <i>${esc(msg.emotion)}</i>` : ""), "her");
 }
@@ -61,7 +63,7 @@ const handlers: Handlers = {
   stt_partial: () => { /* reserved: never sent (models.py SttPartial) */ },
   stt_final: m => {
     if (m.accepted) subtitle(m.text, "you");
-    chat.you(m.text, m.accepted, m.reason, m.readings);
+    chat.you(m.text, m.accepted, m.reason, m.readings, m.vocab);
     log(`<b>you:</b> ${esc(m.text)}` + (m.accepted ? "" : ` <i>(discarded: ${esc(m.reason)})</i>`),
         m.accepted ? "you" : "err");
   },

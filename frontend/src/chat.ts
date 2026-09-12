@@ -1,6 +1,6 @@
 /** The conversation beside the tutor (spec §8b, ADR-036): each of her sentences becomes its own
  *  bubble as its audio starts, yours appear once heard, and the grammar she used is in red. */
-import type { GrammarSpan, Reading, SpeakMsg } from "./protocol.gen";
+import type { GrammarSpan, Reading, SpeakMsg, VocabSpan } from "./protocol.gen";
 import { esc } from "./ui";
 
 /** Settings → Display: furigana over every kanji, only over kanji not yet passed on WaniKani
@@ -19,13 +19,19 @@ function usable<T extends { start: number; end: number }>(spans: readonly T[], l
   return out;
 }
 
-/** One sentence as HTML: her grammar uses wrapped in clickable marks, furigana over the kanji the
- *  setting asks for. Positions count code points, as Python does (models.py), so the text is split
- *  with Array.from rather than indexed as UTF-16. Anything out of range is ignored, never thrown on. */
+/** One sentence as HTML: her grammar uses wrapped in clickable red marks, the student's own words
+ *  in blue (user, 2026-09-12), furigana over the kanji the setting asks for. Positions count code
+ *  points, as Python does (models.py), so the text is split with Array.from rather than indexed as
+ *  UTF-16. Anything out of range is ignored, never thrown on.
+ *
+ *  Where a word sits inside a grammar point the grammar wins: red is the teaching colour, and two
+ *  nested marks would be a box inside a box for no gain. */
 export function renderSentence(text: string, grammar: readonly GrammarSpan[] = [],
-                               readings: readonly Reading[] = [], furigana: Furigana = "off"): string {
+                               readings: readonly Reading[] = [], furigana: Furigana = "off",
+                               vocab: readonly VocabSpan[] = []): string {
   const chars = Array.from(text);
   const spans = usable(grammar, chars.length);
+  const words = usable(vocab, chars.length);
   const ruby = new Map<number, Reading>();
   if (furigana !== "off") {
     for (const r of usable(readings, chars.length)) {
@@ -34,14 +40,19 @@ export function renderSentence(text: string, grammar: readonly GrammarSpan[] = [
     }
   }
   let html = "";
-  let open: GrammarSpan | undefined;
+  let open: GrammarSpan | VocabSpan | undefined;
+  const tagFor = (s: GrammarSpan | VocabSpan) =>
+    "point" in s ? `<mark class="gp" tabindex="0" data-point="${esc(s.point)}">`
+                 : `<mark class="vw" data-word="${esc(s.word)}">`;
   for (let i = 0; i < chars.length;) {
     const r = ruby.get(i);
     const end = r ? r.end : i + 1;
-    const span = spans.find(g => g.start <= i && i < g.end);
+    const at = (list: readonly (GrammarSpan | VocabSpan)[]) =>
+      list.find(s => s.start <= i && i < s.end);
+    const span = at(spans) ?? at(words);
     if (span !== open) {
       if (open) html += "</mark>";
-      if (span) html += `<mark class="gp" tabindex="0" data-point="${esc(span.point)}">`;
+      if (span) html += tagFor(span);
       open = span;
     }
     const base = esc(chars.slice(i, end).join(""));
@@ -55,7 +66,10 @@ export function renderSentence(text: string, grammar: readonly GrammarSpan[] = [
  *  reread is left where they are. */
 const FOLLOW_PX = 80;
 
-interface Line { el: HTMLElement; text: string; grammar: readonly GrammarSpan[]; readings: readonly Reading[] }
+interface Line {
+  el: HTMLElement; text: string;
+  grammar: readonly GrammarSpan[]; readings: readonly Reading[]; vocab: readonly VocabSpan[];
+}
 
 /** The translate icon on her bubbles (spec §8b): 訳 = "translation". */
 const TRANSLATE = "訳";
@@ -102,7 +116,7 @@ export class Chat {
    *  asks for its English. Nothing is translated until it is clicked (ADR-036). */
   her(msg: SpeakMsg): void {
     const body = this.bubble("her");
-    this.show(body, msg.text, msg.grammar, msg.readings);
+    this.show(body, msg.text, msg.grammar, msg.readings, msg.vocab);
     const button = document.createElement("button");
     button.type = "button";
     button.className = "tr";
@@ -152,21 +166,22 @@ export class Chat {
   }
 
   /** What you said, once heard — or, faded, what was heard and not sent. */
-  you(text: string, accepted: boolean, reason = "", readings: readonly Reading[] = []): void {
+  you(text: string, accepted: boolean, reason = "", readings: readonly Reading[] = [],
+      vocab: readonly VocabSpan[] = []): void {
     const body = this.bubble(accepted ? "you" : "you dropped");
-    this.show(body, text || "…", [], readings);
+    this.show(body, text || "…", [], readings, vocab);
     if (!accepted) body.parentElement!.title = `Not sent to your tutor: ${reason}`;
   }
 
   private show(el: HTMLElement, text: string, grammar: readonly GrammarSpan[],
-               readings: readonly Reading[]): void {
-    const line: Line = { el, text, grammar, readings };
+               readings: readonly Reading[], vocab: readonly VocabSpan[] = []): void {
+    const line: Line = { el, text, grammar, readings, vocab };
     el.innerHTML = this.html(line);
     this.lines.push(line);
   }
 
   private html(line: Line): string {
-    return renderSentence(line.text, line.grammar, line.readings, this.furigana);
+    return renderSentence(line.text, line.grammar, line.readings, this.furigana, line.vocab);
   }
 
   private bubble(kind: string): HTMLElement {

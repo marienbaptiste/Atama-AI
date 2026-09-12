@@ -140,13 +140,17 @@ function spawnKao(mood = kaoMood, midway = false): void {
 }
 
 /** Something the student just used correctly, drifting up behind her (user, 2026-09-12). The same
- *  layer as her mood faces, but gold, larger and slower: this is praise, not decoration. */
-export function floatWord(word: string): void {
+ *  layer as her mood faces, but larger and slower: this is praise, not decoration.
+ *
+ *  `kind` is which of their lists it came from, checked on the orchestrator against what they have
+ *  not yet Guru'd (backend/study.py): blue for one of their words, red for a grammar point — the
+ *  chat's own two colours — and gold when it is theirs but from neither list. */
+export function floatWord(word: string, kind = ""): void {
   const layer = document.getElementById("moodbg");
   if (!layer || !word || kaoPaused || document.hidden) return;
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const el = document.createElement("span");
-  el.className = "kao word";
+  el.className = "kao word" + (kind === "vocab" || kind === "grammar" ? " " + kind : "");
   el.textContent = word;
   const seconds = 11 + Math.random() * 4;
   el.style.cssText = `--x:${(12 + Math.random() * 62).toFixed(1)}%;--s:${(30 + Math.random() * 12).toFixed(0)}px;`

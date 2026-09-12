@@ -92,6 +92,18 @@ def test_editor_comments_in_student_notes_never_reach_the_prompt(tmp_path):
     assert "Edit freely" not in m.render() and "Likes trains." in m.render()
 
 
+def test_memory_can_never_be_committed(tmp_path):
+    """It holds the student's life (spec §11). Outside the repository, therefore outside git —
+    and no stray copy of one of its files inside the tree (user, 2026-09-12)."""
+    from backend import config
+    cfg = config.load(tmp_path / "settings.json", env={})
+    root = memory_api.memory_dir(cfg)
+    assert config.REPO_ROOT not in root.parents and root != config.REPO_ROOT
+    for name in ("student.md", "about-me.md", "facts.md", "topics.jsonl", "last-session.md"):
+        strays = [p for p in config.REPO_ROOT.rglob(name) if ".venv" not in p.parts]
+        assert strays == [], f"{name} inside the repo: {strays}"
+
+
 # ------------------------------------------------------ what the two of them know (user request)
 def test_both_sides_of_the_memory_reach_the_prompt(tmp_path):
     """A tutor the student has met before: their name and life, and the tutor's own claims."""

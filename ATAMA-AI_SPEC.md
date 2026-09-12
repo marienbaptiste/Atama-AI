@@ -491,6 +491,14 @@ Capping it is cheaper than rotating more often.
   message thread — her bubbles on one side, the student's on the other, newest at the bottom,
   following the conversation as it grows. `STUDY_PANEL=off` returns to the full-width avatar with
   subtitles.
+- **Blue is one of their own words** (user, 2026-09-12): vocabulary the student has not yet Guru'd
+  (WaniKani stage < 5) and the grammar they have not mastered, from the snapshot already on disk —
+  `backend/study.py`, no model call and no fetch (ADR-024). It marks her sentences and their own,
+  longest match first; where a word sits inside a grammar point the red wins, because two nested
+  marks are a box inside a box. The same lists decide the **float behind her**: `[used:…]` is
+  looked up, `speak.used_kind` says whether it was one of their words or one of their grammar
+  points, and it drifts up in that colour — gold when the tutor credits something from neither
+  list, which is also how a tutor crediting the wrong thing shows up.
 - **Red is grammar, and only grammar** (user, 2026-09-12). A conjugation, an auxiliary or a
   pattern, wrapped whole — 〜てみよう is marked from the stem, not from its tail. A noun, a plain
   verb or adjective, a name or a number is vocabulary and is never red, whatever the tutor thinks

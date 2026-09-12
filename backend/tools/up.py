@@ -15,7 +15,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
+import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -30,6 +33,31 @@ STOP_HINT = r".\stop" if sys.platform == "win32" else "make stop"
 RUN_HINT = r".\run" if sys.platform == "win32" else "make run"
 
 
+def searxng_secret() -> str:
+    """The secret compose needs for SearXNG, generated once and kept out of the repo.
+
+    It used to live in `.env`, which meant a fresh clone could not start until someone created
+    that file by hand — and there is no `.env` any more (ADR-022 amendment). It signs CSRF tokens
+    and the image proxy of a loopback-only search container, so it is machine-local state, not
+    configuration: it lives beside the other per-user state, mode 0600, and is generated the
+    first time anything starts. Regenerating it only invalidates open search sessions.
+    """
+    path = config.claude_cwd(config.load()).parent / "searxng-secret"
+    try:
+        if (existing := path.read_text(encoding="utf-8").strip()):
+            return existing
+    except OSError:
+        pass
+    secret = secrets.token_hex(32)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(secret + "\n", encoding="utf-8")
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError:
+        pass                    # a secret we cannot store still starts this run
+    return secret
+
+
 def compose(*args: str) -> int:
     """Run docker compose, or explain why we cannot."""
     docker = shutil.which("docker")
@@ -37,7 +65,8 @@ def compose(*args: str) -> int:
         print("docker is not on PATH — start VOICEVOX yourself, or install Docker Desktop",
               file=sys.stderr)
         return 127
-    return subprocess.call([docker, "compose", *args], cwd=str(config.REPO_ROOT))
+    env = {**os.environ, "SEARXNG_SECRET": os.environ.get("SEARXNG_SECRET") or searxng_secret()}
+    return subprocess.call([docker, "compose", *args], cwd=str(config.REPO_ROOT), env=env)
 
 
 def wait_for_voicevox(url: str, seconds: float = 90.0) -> bool:

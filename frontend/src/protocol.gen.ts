@@ -17,6 +17,13 @@ export interface Reading {
   known: boolean;
 }
 
+/** Where a word the student is still learning appears in a sentence (spec §8b, user 2026-09-12): characters [start, end) in code points, blue on the page. From the WaniKani snapshot already on disk (backend/study.py) — no model call, no fetch. */
+export interface VocabSpan {
+  start: number;
+  end: number;
+  word: string;
+}
+
 /** Where she used a grammar point in a `speak` sentence (ADR-036): characters [start, end) of `text`, counted in Unicode code points — the page counts the same way (Array.from). */
 export interface GrammarSpan {
   start: number;
@@ -78,6 +85,7 @@ export interface SttFinalMsg {
   accepted: boolean;
   reason: string;
   readings: Reading[];
+  vocab: VocabSpan[];
 }
 
 /** One sentence of the tutor's reply, for the subtitle strip. Emotion tags are already stripped by the chunker — a tag must never reach the display or the TTS (ADR-020). */
@@ -99,7 +107,9 @@ export interface SpeakMsg {
   grammar: GrammarSpan[];
   target: string;
   used: string;
+  used_kind: string;
   readings: Reading[];
+  vocab: VocabSpan[];
 }
 
 /** A mood change not tied to a spoken sentence — the idle face between turns. */
