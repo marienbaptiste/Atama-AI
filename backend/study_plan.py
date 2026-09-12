@@ -189,8 +189,22 @@ def scan_turn(record: dict[str, Any], study: Study) -> TurnFacts:
             facts.heard.add(k)
         if k := resolve(str(sentence.get("used") or ""), keys):
             facts.produced.add(k)
-    student = str((record.get("student") or {}).get("text") or "")
-    if student:
+    who = record.get("student") or {}
+    student = str(who.get("text") or "")
+    # What the tokenizer found in the student's own words (orchestrator.student_marks, logged
+    # with the turn since 2026-09-12): objective, and credited as PRODUCED unless the tutor's
+    # reply corrected them ([serious] is the correction tag, prompts/tutor.md) — she asked for
+    # 〜ようと思う, got it, praised it and never wrote [used:], so credit no longer waits for her.
+    found: set[str] = set()
+    for name in list(who.get("vocab") or []) + list(who.get("grammar") or []):
+        if k := resolve(str(name), keys):
+            found.add(k)
+    corrected = any(isinstance(s, dict) and str(s.get("emotion") or "") == "serious"
+                    for s in tutor.get("sentences") or [])
+    facts.attempted |= found
+    if not corrected:
+        facts.produced |= found
+    if student and "vocab" not in who and "grammar" not in who:     # an older log: the matcher's guess
         for span in study.spans(student):
             facts.attempted.add(normalise(span["word"]))
         flat = normalise(student)

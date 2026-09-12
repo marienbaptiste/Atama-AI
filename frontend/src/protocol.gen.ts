@@ -96,6 +96,7 @@ export interface SttFinalMsg {
   reason: string;
   readings: Reading[];
   vocab: VocabSpan[];
+  grammar: GrammarSpan[];
 }
 
 /** One sentence of synthesised audio with its lip-sync timeline. */

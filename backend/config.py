@@ -134,6 +134,7 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("STUDY_SPACING_BASE", 1, int, "model", "Sessions before a progressed target returns the first time. Each further success doubles the gap (1, 2, 4, 8...); an item you attempted and never got right comes back next lesson", low=1),
     Setting("STUDY_SPACING_MAX", 32, int, "model", "The longest gap, in sessions, a well-handled target can earn before it is due again", low=1),
     Setting("EXPLAIN_MODEL", "haiku", str, "model", "Model that answers a click on a grammar point or a translate icon (spec §8b). Cheap on purpose: it runs off the conversation path and every answer is cached"),
+    Setting("MEMORY_SUMMARY_EFFORT", "medium", str, "model", "Effort for the session summariser, pinned apart from the tutor's (user, 2026-09-12: low was slower on the same lesson - 52.6 s against 13.7 s at medium - so medium it is, whatever CLAUDE_EFFORT says)", choices=("low", "medium", "high", "xhigh", "max")),
     Setting("MEMORY_SUMMARY_MODEL", "haiku", str, "model", "Model that summarises each past session at the next launch. Cheap on purpose: it runs once per session over a short excerpt, never on the conversation path"),
     Setting("CACHE_DIR", ".cache", str, "advanced", "Generated/personal files"),
     Setting("SRS_CACHE_TTL_S", 0, int, "advanced", "Launch re-uses an SRS snapshot younger than this many seconds instead of fetching. 0 (the default, user directive 2026-09-12): every launch fetches the latest WaniKani and Bunpro data; only a manual Refresh fetches after that (ADR-024)", low=0),

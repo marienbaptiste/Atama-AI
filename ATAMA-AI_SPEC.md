@@ -221,7 +221,7 @@ Two supported paths; `make doctor` explains which is active.
 A test in the standing suite records every outgoing HTTP request during a full mocked session (including MCP tool calls) and asserts all are `GET` (`backend/tests/test_srs_readonly_session.py`).
 
 At session start (parallel, 10 s total budget, both OPTIONAL — the app must run fine with zero, one, or both configured):
-- **WaniKani** (official, stable): `GET https://api.wanikani.com/v2/user` and `GET /v2/assignments?...` with `Authorization: Bearer $WANIKANI_TOKEN`. Extract: level, count of items by SRS stage, every vocabulary item still below Guru (kanji + reading + meaning; the newest thirty were not enough — §8b), ~15 leeches (low-stage, high-incorrect items) if derivable. Respect the ~60 req/min rate limit; store the snapshot to disk (`SRS_CACHE_TTL_S` re-uses a snapshot younger than that at launch; default 0 — every launch fetches, user directive 2026-09-12). Collections are paginated by following `pages.next_url`, up to 20 pages per collection (`wanikani.MAX_PAGES`, more than a level-60 student has); a collection that hits the cap is reported as truncated in the chip's `last_error`, never silently short.
+- **WaniKani** (official, stable): `GET https://api.wanikani.com/v2/user` and `GET /v2/assignments?...` with `Authorization: Bearer $WANIKANI_TOKEN`. Extract: level, count of items by SRS stage, every vocabulary item still below Guru (kanji + reading + meaning; the newest thirty were not enough — §8b), ~15 leeches (stage ≤ Guru 2, under 80 % correct **and at least four wrong answers** — `wanikani.LEECH_MIN_INCORRECT`; one miss in four is not a leech, user 2026-09-12) if derivable. Respect the ~60 req/min rate limit; store the snapshot to disk (`SRS_CACHE_TTL_S` re-uses a snapshot younger than that at launch; default 0 — every launch fetches, user directive 2026-09-12). Collections are paginated by following `pages.next_url`, up to 20 pages per collection (`wanikani.MAX_PAGES`, more than a level-60 student has); a collection that hits the cap is reported as truncated in the chip's `last_error`, never silently short.
 - **Bunpro** (unofficial — treat as fragile): via MCP server configured in `mcp.json` so Claude can query it live mid-conversation, AND a session-start fetch of JLPT progress + ~15 recent/ghost grammar points for the static profile. Wrap every Bunpro call in try/except; on any failure log a warning and continue without it. Never let Bunpro breakage block startup.
 
 **The Bunpro MCP server: we write it (ROADMAP V0.7, decided 2026-09-09; ADR-023).** Bunpro has **no official API** — it was deprecated in 2024 and the docs removed; reverse-engineering the site's `/api/frontend/*` endpoints is permitted by staff with the warning that they "may change without warning". Three community MCP servers exist: one has write tools (disqualified by §0), one needs the user's email + password (disqualified — this app never holds a password), one is read-only but stats-shaped and built for hosted deployment. So: `backend/srs/bunpro_mcp.py`, a small stdio MCP server exposing exactly `get_review_queue`, `get_ghost_reviews`, `get_grammar_progress`, on the same GET-only client as the session-start fetch.
@@ -634,8 +634,13 @@ is possible — it only brings an item back sooner, never later. Progress depend
   blue is a word"): the Bunpro scale — ghost grey, beginner dark teal, adept navy, seasoned purple,
   expert pink, master rose — for a grammar point's own Bunpro level, and for a word its WaniKani
   stage mapped onto the same scale (Apprentice → beginner, Guru → adept, Master → seasoned,
-  Enlightened → expert, Burned → master; a leech → ghost). Grammar is a solid bar, a word a dotted
-  one, so the kind stays readable; a legend of the seven swatches sits in the chat header. A
+  Enlightened → expert, Burned → master). A leech keeps its stage colour and is named a leech on
+  its card — "ghost" is Bunpro's word, and a WaniKani word called a ghost made no sense (user,
+  2026-09-12). The text of the mark is in its level's colour and so is the **marquee** under it, a
+  dashed line whose dashes creep along; grammar's is thicker than a word's, so the kind stays
+  readable. The chat header carries − / + for the text size (12–26 px in steps of two,
+  remembered per browser) in place of a legend: the cards name the level anyway (user,
+  2026-09-12). A
   point the tutor names that is on neither list keeps the neutral grammar colour and still goes
   through the guard below. Grammar is a conjugation, an auxiliary or a pattern, wrapped whole —
   〜てみよう is marked from the stem, not from its tail; a noun, a plain verb or adjective, a name
@@ -646,7 +651,17 @@ is possible — it only brings an item back sooner, never later. Progress depend
   the student's list by the tokenizer's **base forms** — 思います and 思っ both read 思う — through
   the auxiliaries that finish the form, with a gap in the point's name (あまり～ない) allowed to
   hold anything. Conservative: a point that is one short kana token (ば, なら, かな) is never
-  guessed, and her own marks win where they overlap.
+  guessed, and her own marks win where they overlap. A form Bunpro names by its ending —
+  `Verb[よう]`, `〜ようと思う`, `〜ば`, `〜たい`, `〜られる` — is found by the token's conjugation
+  (unidic folds 勉強しよう into one token, する in 意志推量形; probed 2026-09-12), the longest
+  name taking the span.
+- **Your own turn is read the same way** (user, 2026-09-12: she asked for 〜ようと思う, got it,
+  praised it and never wrote `[used:]`). `stt_final` carries the grammar points and words the
+  tokenizer found in what you said; the page marks them in your bubble and floats the best one at
+  once. The orchestrator logs the same finds with the turn (`student.grammar`, `student.vocab`),
+  and the study plan credits them as **produced** unless her reply carried a `[serious]`
+  correction — credit no longer waits for her mark, though the prompt now tells her that praise
+  for the very form she asked for without `[used:]` is a miss.
 - **A blue word is clickable too** (user, 2026-09-12), and its card needs no dictionary: the kana
   reading, the English meaning and the WaniKani stage travel with the sentence in `speak.vocab`,
   because they are the student's own items and we already hold them. **The card shows the level

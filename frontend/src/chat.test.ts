@@ -113,7 +113,7 @@ describe("the colour of a mark is its level (user, 2026-09-12)", () => {
     expect(renderSentence("雨が降ったら。", [gp(2, 6, "〜たら", "legendary")])).toContain('class="gp" ');
   });
 
-  it("maps a word's WaniKani stage onto the same scale, and a leech onto ghost", () => {
+  it("maps a word's WaniKani stage onto the same scale; a leech keeps its stage colour", () => {
     const at = (stage: string, leech = false) => renderSentence("公園", [], [], "off", [vw(0, 2, "公園", stage, leech)]);
     expect(at("Apprentice 1")).toContain('class="vw lv-beginner"');
     expect(at("Apprentice 4")).toContain('class="vw lv-beginner"');
@@ -121,7 +121,8 @@ describe("the colour of a mark is its level (user, 2026-09-12)", () => {
     expect(at("Master")).toContain('class="vw lv-seasoned"');
     expect(at("Enlightened")).toContain('class="vw lv-expert"');
     expect(at("Burned")).toContain('class="vw lv-master"');
-    expect(at("Apprentice 2", true)).toContain('class="vw lv-ghost"');
+    expect(at("Apprentice 2", true)).toContain('class="vw lv-beginner"');
+    expect(at("Apprentice 2", true)).toContain('data-leech="1"');
     expect(at("Apprentice 2", true)).toContain('data-leech="1"');
     expect(at("")).toContain('class="vw" ');
     expect(at("")).not.toContain("data-leech");

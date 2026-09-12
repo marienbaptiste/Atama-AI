@@ -18,7 +18,6 @@ describe("the scale", () => {
   it("maps every WaniKani stage onto it", () => {
     expect(["Apprentice 1", "Guru 2", "Master", "Enlightened", "Burned", "?"].map(s => levelOfStage(s)))
       .toEqual(["beginner", "adept", "seasoned", "expert", "master", ""]);
-    expect(levelOfStage("Burned", true)).toBe("ghost");
     expect(levelName("self_study")).toBe("Self-Study");
     expect(levelName("")).toBe("");
   });
@@ -41,7 +40,7 @@ describe("the cards (user, 2026-09-12: the level of mastery on the card)", () =>
     expect(html).toContain('<p class="rd">こうえん</p>');
     expect(html).toContain('<i class="chip lv-beginner">Beginner</i>Apprentice 2 on WaniKani</p>');
     const leech = wordCardHtml({ start: 0, end: 2, word: "公園", reading: "", meaning: "", stage: "Guru 1", leech: true });
-    expect(leech).toContain('<i class="chip lv-ghost">Ghost</i>Guru 1 on WaniKani · leech</p>');
+    expect(leech).toContain('<i class="chip lv-adept">Adept</i>Guru 1 on WaniKani · <i class="leech">leech</i></p>');
     expect(wordCardHtml({ start: 0, end: 1, word: "x", reading: "", meaning: "", stage: "", leech: false }))
       .toContain("No reading stored");
   });

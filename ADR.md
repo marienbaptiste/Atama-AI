@@ -1549,8 +1549,10 @@ turn replaces point 1.
 
 **Amended 2026-09-12 (user feedback, same day, four points).** (a) *Colour is the level, not the
 kind*: "red is grammar, blue is a word" was replaced by Bunpro's level scale for both, with the
-kind carried by the mark's style (solid bar for grammar, dotted for a word) and a legend; the card
-shows the level of mastery as a chip. (b) *The tutor tags both*: she now wraps her uses of the
+kind carried by the mark's line (a creeping dashed marquee in the level's colour, thicker for
+grammar; the text in the same colour) and a legend; the card shows the level of mastery as a
+chip, and a leech keeps its WaniKani stage colour rather than borrowing Bunpro's "ghost". The
+summariser's effort is pinned to medium (`MEMORY_SUMMARY_EFFORT`), apart from the tutor's. (b) *The tutor tags both*: she now wraps her uses of the
 student's WaniKani words as she wraps grammar (`{{申します|申す}}`), because she is the one who
 knows which of her words is one of theirs; the backend's own matcher became a safety net that
 matches **whole tokens by base form or lemma only** — the reading-stem shortcut painted the もう

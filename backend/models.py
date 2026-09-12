@@ -141,18 +141,6 @@ class VocabSpan(_Msg):
     leech: bool = False
 
 
-class SttFinal(_Msg):
-    type: Literal["stt_final"] = "stt_final"
-    text: str
-    #: False when the hallucination filter rejected it; `reason` says which rule fired (§9).
-    accepted: bool = True
-    reason: str = ""
-    #: Furigana for the chat (backend/annotate.py), computed on the orchestrator, no model call.
-    readings: list[Reading] = []
-    #: Their own words, in what they just said — the same blue as in hers.
-    vocab: list[VocabSpan] = []
-
-
 class GrammarSpan(_Msg):
     """Where she used a grammar point in a `speak` sentence (ADR-036): characters [start, end) of
     `text`, counted in Unicode code points — the page counts the same way (Array.from)."""
@@ -164,6 +152,21 @@ class GrammarSpan(_Msg):
     #: "master"), from the student's own list (backend/study.py); "" when the point is not on it.
     #: The page colours the mark by it (user, 2026-09-12).
     level: str = ""
+
+
+class SttFinal(_Msg):
+    type: Literal["stt_final"] = "stt_final"
+    text: str
+    #: False when the hallucination filter rejected it; `reason` says which rule fired (§9).
+    accepted: bool = True
+    reason: str = ""
+    #: Furigana for the chat (backend/annotate.py), computed on the orchestrator, no model call.
+    readings: list[Reading] = []
+    #: Their own words, in what they just said — the same blue as in hers.
+    vocab: list[VocabSpan] = []
+    #: Their own grammar points, in what they just said, found by the tokenizer (user, 2026-09-12:
+    #: 「〜ようと思う」 was asked for, produced and never credited — the page now sees it itself).
+    grammar: list[GrammarSpan] = []
 
 
 class Speak(_Msg):

@@ -38,6 +38,10 @@ STAGE_BUCKETS = {1: "apprentice", 2: "apprentice", 3: "apprentice", 4: "apprenti
                  5: "guru", 6: "guru", 7: "master", 8: "enlightened", 9: "burned"}
 RECENT_LIMIT = 30
 LEECH_LIMIT = 15
+#: A leech has been missed REPEATEDLY: below this many wrong answers (meaning + reading) an item
+#: is just young. The API filter (<80 % correct) alone made one miss in four a leech — かき氷 at
+#: Apprentice 3 wore the ghost colour for it (user, 2026-09-12).
+LEECH_MIN_INCORRECT = 4
 #: Every vocabulary item still below Guru, for the chat's blue words (spec §8b). The prompt still
 #: shows only the 30 most recent — this list is for matching, not for reading, so it can be wider.
 #: Capped so a student with hundreds in Apprentice cannot make the subjects URL unreasonable.
@@ -134,7 +138,8 @@ def parse(raw: dict[str, Any]) -> WaniKaniProfile:
 
     # Leeches: low stage + most incorrect answers (review_statistics filtered to <80% correct upstream).
     leech_rows = sorted(
-        (st for sid, st in stats.items() if stage_by_sid.get(sid, 9) <= 6),
+        (st for sid, st in stats.items() if stage_by_sid.get(sid, 9) <= 6
+         and int(st.get("meaning_incorrect") or 0) + int(st.get("reading_incorrect") or 0) >= LEECH_MIN_INCORRECT),
         key=lambda st: int(st.get("meaning_incorrect") or 0) + int(st.get("reading_incorrect") or 0),
         reverse=True,
     )

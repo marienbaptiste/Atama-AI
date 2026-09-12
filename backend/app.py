@@ -387,9 +387,24 @@ class Hub:
         self.last_state = name
         await self.send(models.State(state=name, turn=self.epoch, spoken=self.spoken).model_dump())
 
+    def student_grammar(self, text: str) -> list[dict[str, Any]]:
+        """Grammar points from their own list in what THEY said, with levels — the tokenizer's
+        finding, not the tutor's credit (user, 2026-09-12). Never raises."""
+        try:
+            names = [i.text for i in getattr(self.study, "items", ()) if getattr(i, "kind", "") == "grammar"]
+            if self.points is None or not names or not text:
+                return []
+            marks = self.points(text, names, [])
+            for m in marks:
+                m["level"] = self._level_of(str(m.get("point", "")))
+            return marks
+        except Exception:  # noqa: BLE001 - a colour is never worth a lost line
+            return []
+
     async def transcript(self, text: str, accepted: bool = True, reason: str = "") -> None:
         line = models.SttFinal(text=text, accepted=accepted, reason=reason,
-                               readings=self._readings(text), vocab=self._vocab(text)).model_dump()
+                               readings=self._readings(text), vocab=self._vocab(text),
+                               grammar=self.student_grammar(text) if accepted else []).model_dump()
         self.history.append(models.HistoryLine(who="you", **{k: v for k, v in line.items() if k != "type"}).model_dump())
         await self.send(line)
 

@@ -11,6 +11,11 @@
       --lv-expert:#d9a6b9;--lv-master:#e2a5a5;--lv-self_study:#cfcfcf;
       --lv-ghost-ink:#fff;--lv-beginner-ink:#fff;--lv-adept-ink:#fff;--lv-seasoned-ink:#fff;
       --lv-expert-ink:#3a1f2b;--lv-master-ink:#3f2121;--lv-self_study-ink:#2b2f36;
+      /* --lv-*-text is the level as TEXT on a white bubble: the dark ones are themselves, the two
+         light ones and self-study are the same hue, deepened enough to read (user, 2026-09-12: the
+         word itself in its level's colour, not only the line under it). */
+      --lv-ghost-text:#5a5a5a;--lv-beginner-text:#0e2f33;--lv-adept-text:#123559;--lv-seasoned-text:#5a3a75;
+      --lv-expert-text:#a0446d;--lv-master-text:#b3403f;--lv-self_study-text:#6b7078;
       /* Japanese text: the first of these that the machine has. Noto Sans JP comes from the
          stylesheet in index.html when there is a network; the rest ship with the OS. */
       --jp:"Noto Sans JP","BIZ UDPGothic","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,sans-serif}
@@ -189,25 +194,42 @@ body.study #subs{display:none!important}
      background:linear-gradient(180deg,#edf3ff,#dfe9ff)}
 .msg.you.dropped{background:#f1f3f6;color:#9aa1ab;font-style:italic;box-shadow:none}
 /* A grammar point she used (gp) and a word from their own lessons (vw), each painted the colour
-   of ITS level — the class lv-<level> sets --lv (user, 2026-09-12; levels.ts). The two kinds keep
-   telling apart by the line under them: grammar is a solid bar, a word a dotted one, and the
-   text itself stays readable ink, because the two light levels would vanish as text on white.
-   A mark with no level (a point not on their list) keeps the old red/blue as its neutral.
-   Grammar wins where they overlap: two nested marks would be a box inside a box. */
-mark.gp,mark.vw{--lv:var(--accent);background:none;cursor:pointer;border-radius:3px 3px 0 0;outline:none;
-                color:var(--ink);padding-bottom:1px;border-bottom:3px solid var(--lv)}
+   of ITS level — the class lv-<level> sets --lv (user, 2026-09-12; levels.ts). The text is in the
+   level's colour and so is the MARQUEE under it: a dashed line whose dashes creep along, not a
+   straight bar (user, 2026-09-12). Grammar's marquee is thicker than a word's, which is how the
+   two kinds still tell apart. A mark with no level (a point not on their list) keeps the old
+   red/blue as its neutral. Grammar wins where they overlap: two nested marks would be a box
+   inside a box. The creep stops for anyone who asked their OS for less motion. */
+mark.gp,mark.vw{--lv:var(--accent);--lv-text:var(--accent);--mq:2.5px;background:none;cursor:pointer;outline:none;
+                color:var(--lv-text);padding-bottom:2px;
+                background-image:repeating-linear-gradient(90deg,var(--lv) 0 6px,transparent 6px 10px);
+                background-repeat:repeat-x;background-position:0 100%;background-size:10px var(--mq);
+                animation:marquee 1.4s linear infinite}
 mark.gp{font-weight:700}
-mark.vw{--lv:#2563eb;font-weight:600;border-bottom-style:dotted;border-bottom-width:2px}
-mark.gp:hover,mark.gp:focus,mark.vw:hover,mark.vw:focus{background:color-mix(in srgb,var(--lv) 12%,transparent)}
-.lv-ghost{--lv:var(--lv-ghost);--lv-ink:var(--lv-ghost-ink)}
-.lv-beginner{--lv:var(--lv-beginner);--lv-ink:var(--lv-beginner-ink)}
-.lv-adept{--lv:var(--lv-adept);--lv-ink:var(--lv-adept-ink)}
-.lv-seasoned{--lv:var(--lv-seasoned);--lv-ink:var(--lv-seasoned-ink)}
-.lv-expert{--lv:var(--lv-expert);--lv-ink:var(--lv-expert-ink)}
-.lv-master{--lv:var(--lv-master);--lv-ink:var(--lv-master-ink)}
-.lv-self_study{--lv:var(--lv-self_study);--lv-ink:var(--lv-self_study-ink)}
-/* The key, in the panel's header: seven dots, tiny, out of the way. */
-.legend{display:flex;flex-wrap:wrap;gap:2px 9px;margin-left:auto;font:600 9.5px system-ui;letter-spacing:0;
+mark.vw{--lv:#2563eb;--lv-text:#2563eb;--mq:1.5px;font-weight:600}
+mark.gp:hover,mark.gp:focus,mark.vw:hover,mark.vw:focus{box-shadow:inset 0 0 0 100px color-mix(in srgb,var(--lv) 12%,transparent);border-radius:3px 3px 0 0}
+@keyframes marquee{to{background-position:10px 100%}}
+@media (prefers-reduced-motion:reduce){mark.gp,mark.vw{animation:none}}
+.lv-ghost{--lv:var(--lv-ghost);--lv-ink:var(--lv-ghost-ink);--lv-text:var(--lv-ghost-text)}
+.lv-beginner{--lv:var(--lv-beginner);--lv-ink:var(--lv-beginner-ink);--lv-text:var(--lv-beginner-text)}
+.lv-adept{--lv:var(--lv-adept);--lv-ink:var(--lv-adept-ink);--lv-text:var(--lv-adept-text)}
+.lv-seasoned{--lv:var(--lv-seasoned);--lv-ink:var(--lv-seasoned-ink);--lv-text:var(--lv-seasoned-text)}
+.lv-expert{--lv:var(--lv-expert);--lv-ink:var(--lv-expert-ink);--lv-text:var(--lv-expert-text)}
+.lv-master{--lv:var(--lv-master);--lv-ink:var(--lv-master-ink);--lv-text:var(--lv-master-text)}
+.lv-self_study{--lv:var(--lv-self_study);--lv-ink:var(--lv-self_study-ink);--lv-text:var(--lv-self_study-text)}
+/* "leech" on a word card: a plain small tag, not a level. */
+.pop .leech{font-style:normal;font-weight:700;color:var(--lv-ghost-text)}
+/* − / + in the panel's header (user, 2026-09-12, in place of the legend): the chat's text size,
+   a CSS variable every bubble follows. */
+#chat{--chat-size:16px}
+#chat .msg .body{font-size:var(--chat-size)}
+.tsize{display:inline-flex;gap:4px;margin-left:auto}
+.tsize button{width:26px;height:22px;border:0;border-radius:7px;background:rgba(0,0,0,.06);color:var(--ink);
+              font:700 15px/22px system-ui;cursor:pointer;padding:0}
+.tsize button:hover{background:rgba(0,0,0,.11)}
+.tsize button:disabled{opacity:.35;cursor:default}
+/* The key, still drawn by levels.ts for the cards' chips; no longer in the header. */
+.legend{display:flex;flex-wrap:wrap;gap:2px 9px;font:600 9.5px system-ui;letter-spacing:0;
         text-transform:none;color:var(--sub)}
 .legend .lv{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 .sw{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--lv);

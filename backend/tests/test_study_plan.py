@@ -384,3 +384,23 @@ def test_the_study_keys_exist_with_their_defaults_and_floors():
     plan = study_plan.build(ITEMS, study_plan.fold([], ITEMS), cfg, session_index=0)
     assert len(plan.vocab) == 8 and len(plan.grammar) == 4 and plan.progress_after == 2
     assert plan.spacing_base == 1 and plan.spacing_max == 32 and plan.nudge_every == 3
+
+
+def test_what_the_tokenizer_found_in_the_students_words_is_credit_unless_she_corrected_it():
+    """She praised 勉強しようと思う and wrote no [used:] (user, 2026-09-12). The turn record now
+    carries what the orchestrator found in the student's line; produced unless [serious]."""
+    items = [Item("〜ようと思う", "grammar", srs="beginner"), Item("復習", "vocab", "ふくしゅう")]
+    from backend.study import Study, normalise
+    from backend.study_plan import scan_turn
+    st = Study(items)
+    rec = {"ts": "2026-09-12T10:00:00+00:00",
+           "student": {"text": "週末に復習しようと思う", "grammar": ["〜ようと思う"], "vocab": ["復習"]},
+           "tutor": {"sentences": [{"text": "完璧です。", "emotion": "happy"}]}}
+    f = scan_turn(rec, st)
+    assert f.produced == {normalise("〜ようと思う"), normalise("復習")}
+    assert f.attempted >= f.produced
+    rec["tutor"]["sentences"] = [{"text": "違います。", "emotion": "serious"}]
+    f = scan_turn(rec, st)
+    assert f.produced == set() and normalise("〜ようと思う") in f.attempted
+    old = {"ts": "2026-09-11T10:00:00+00:00", "student": {"text": "復習は大切です"}, "tutor": {"sentences": []}}
+    assert normalise("復習") in scan_turn(old, st).attempted          # an older log: the matcher's guess

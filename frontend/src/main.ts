@@ -5,7 +5,8 @@ import "./style.css";
 import { Avatar, type CastEntry } from "./avatar";
 import { Chat } from "./chat";
 import { applyHistory, loadingCaption } from "./history";
-import { legendHtml, pointCardHtml, wordCardHtml } from "./levels";
+import { pointCardHtml, wordCardHtml } from "./levels";
+import { TextSize } from "./textsize";
 import { Talk } from "./mic";
 import type { ExplanationMsg, ServiceStatusMsg, SettingsMsg, SpeakMsg, TimingMsg, VocabSpan } from "./protocol.gen";
 import { Backchannel } from "./rig";
@@ -41,7 +42,9 @@ const chat = new Chat($("chat-list"), (point, mark) => showPoint(point, mark),
 //: EXPLAIN_LANGUAGE: the language a grammar explanation comes back in (a translation is English).
 let explainLang: "en" | "ja" = "en";
 //: The level colours' key, in the panel's header (user, 2026-09-12).
-$("chat").querySelector("header")?.insertAdjacentHTML("beforeend", legendHtml());
+// − / + for the chat's text (user, 2026-09-12: in place of the level legend — the cards name the
+// level anyway). Remembered per browser, clamped to what still fits a bubble.
+new TextSize($("chat")).mount($("chat").querySelector("header")!);
 
 //: Never rejects: without TalkingHead she is a voice (avatar.ts), and the chat still fills.
 const avatarReady: Promise<Avatar> = Avatar.create($("stage"), onSentence);
@@ -70,12 +73,15 @@ const handlers: Handlers = {
   stt_partial: () => { /* reserved: never sent (models.py SttPartial) */ },
   stt_final: m => {
     if (m.accepted) subtitle(m.text, "you");
-    chat.you(m.text, m.accepted, m.reason, m.readings, m.vocab);
-    // You used one of your own words: float it now, without waiting for her to notice (user,
-    // 2026-09-12 — "when I use a form well it doesn't always float"). Her own [used:] credit
-    // still arrives with her reply and floats too; that one can also be a grammar point, which
-    // nothing here can detect. One per turn, the longest match, so a sentence is not a shower.
-    if (m.accepted && m.vocab.length) {
+    chat.you(m.text, m.accepted, m.reason, m.readings, m.vocab, m.grammar);
+    // You used one of your own words or forms: float it now, without waiting for her to notice
+    // (user, 2026-09-12 — "when I use a form well it doesn't always float", and later the same
+    // day she praised 〜ようと思う without crediting it). The grammar the tokenizer found wins
+    // over a word; her own [used:] credit still arrives with her reply and floats too. One per
+    // turn, the longest match, so a sentence is not a shower.
+    if (m.accepted && m.grammar.length) {
+      floatWord(m.grammar[0].point, "grammar");
+    } else if (m.accepted && m.vocab.length) {
       const best = [...m.vocab].sort((a, b) => b.word.length - a.word.length)[0];
       floatWord(best.word, "vocab");
     }

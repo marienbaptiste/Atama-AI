@@ -1,7 +1,8 @@
 /** The SRS level colours (user, 2026-09-12): every grammar mark and every word span in the chat is
  *  painted the colour of ITS level, on the one scale Bunpro uses for progress. Grammar carries its
- *  Bunpro level as-is; a word's WaniKani stage is mapped onto the same scale, and a leech is
- *  painted like a ghost. The colours themselves are tokens in style.css (--lv-*); this module only
+ *  Bunpro level as-is; a word's WaniKani stage is mapped onto the same scale. A leech keeps its
+ *  stage colour and is named a leech on its card — "Ghost" is Bunpro's word and calling かき氷 a
+ *  ghost made no sense (user, 2026-09-12). The colours themselves are tokens in style.css (--lv-*); this module only
  *  decides which one a span gets, and draws the legend and the cards. Pure: no DOM. */
 import type { VocabSpan } from "./protocol.gen";
 import { esc } from "./ui";
@@ -23,9 +24,8 @@ export function level(raw: string): Level | "" {
 
 /** A WaniKani stage name ("Apprentice 2", "Guru 1", "Master", "Enlightened", "Burned") on the
  *  Bunpro scale: Apprentice is Beginner, Guru is Adept, Master is Seasoned, Enlightened is Expert
- *  and Burned is Master — the same five steps, one scale for both. A leech is a ghost. */
-export function levelOfStage(stage: string, leech = false): Level | "" {
-  if (leech) return "ghost";
+ *  and Burned is Master — the same five steps, one scale for both. */
+export function levelOfStage(stage: string): Level | "" {
   const s = stage.trim().toLowerCase();
   if (s.startsWith("apprentice")) return "beginner";
   if (s.startsWith("guru")) return "adept";
@@ -61,8 +61,8 @@ export function legendHtml(): string {
 /** The word card (user, 2026-09-12): reading, meaning, and the level of mastery with its colour.
  *  Everything came with the span, so the card costs nothing. */
 export function wordCardHtml(word: VocabSpan): string {
-  const lv = levelOfStage(word.stage, word.leech);
-  const where = word.stage ? `${esc(word.stage)} on WaniKani${word.leech ? " · leech" : ""}` : "";
+  const lv = levelOfStage(word.stage);
+  const where = word.stage ? `${esc(word.stage)} on WaniKani${word.leech ? ' · <i class="leech">leech</i>' : ""}` : "";
   const bits = [word.reading && `<p class="rd">${esc(word.reading)}</p>`,
                 word.meaning && `<p>${esc(word.meaning)}</p>`,
                 where && `<p class="stage">${chip(lv)}${where}</p>`];

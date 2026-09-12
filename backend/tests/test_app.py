@@ -675,3 +675,21 @@ def test_a_point_on_their_list_is_grammar_whatever_the_guard_thinks():
     hub.grammar = lambda t, marks: []                                   # a guard that drops everything
     speech = SimpleNamespace(grammar=(GrammarMark(0, 3, "つもり"), GrammarMark(4, 6, "先生")))
     assert hub._grammar("つもりの先生", speech) == [{"start": 0, "end": 3, "point": "つもり", "level": "beginner"}]
+
+
+def test_your_own_line_carries_the_grammar_you_used(monkeypatch):
+    """She asked for 〜ようと思う, got it, and never credited it (user, 2026-09-12): the page now
+    gets the grammar the tokenizer finds in YOUR line, with its level, and never for a rejected one."""
+    from types import SimpleNamespace
+    hub = app.Hub()
+    hub.study = SimpleNamespace(items=[SimpleNamespace(text="〜ようと思う", kind="grammar", srs="beginner")])
+    hub.points = lambda text, names, marks: [{"start": 8, "end": 14, "point": "〜ようと思う"}] if "しよう" in text else []
+    sent = []
+    async def fake_send(message, to=None):
+        sent.append(message)
+    monkeypatch.setattr(hub, "send", fake_send)
+    asyncio.run(hub.transcript("週末に日本語を勉強しようと思う。"))
+    assert sent[0]["grammar"] == [{"start": 8, "end": 14, "point": "〜ようと思う", "level": "beginner"}]
+    asyncio.run(hub.transcript("週末に日本語を勉強しようと思う。", accepted=False, reason="noise"))
+    assert sent[1]["grammar"] == []
+    assert hub.history[0]["grammar"][0]["point"] == "〜ようと思う"

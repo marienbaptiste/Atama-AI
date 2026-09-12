@@ -81,11 +81,11 @@ class ClaudeCliBrain:
         self._system_prompt = system_prompt
         self._allowed_tools = tuple(allowed_tools)
         self._model = model or cfg.CLAUDE_MODEL
-        #: Thinking budget. The tutor gets the configured one; the side workers (summariser,
-        #: explanations) pass "low" because a one-shot JSON extraction has nothing to deliberate
-        #: about — NOT for speed: measured 2026-09-12, one summary took 13.7 s at medium and
-        #: 52.6 s at low, so that call's latency is variance, not effort (which is also why the
-        #: launch no longer waits for it).
+        #: Thinking budget. The tutor gets CLAUDE_EFFORT; the explain worker passes "low" (a
+        #: one-shot lookup has nothing to deliberate about); the summariser passes
+        #: MEMORY_SUMMARY_EFFORT, medium by default and pinned apart from the tutor's knob —
+        #: measured 2026-09-12, one summary took 13.7 s at medium and 52.6 s at low, and the user
+        #: chose medium (which is also why the launch no longer waits for it).
         self._effort = cfg.CLAUDE_EFFORT if effort is None else effort
         replace = getattr(cfg, "CLAUDE_REPLACE_SYSTEM_PROMPT", True) if replace_system_prompt is None else replace_system_prompt
         self._prompt_flag = "--system-prompt-file" if replace else "--append-system-prompt-file"

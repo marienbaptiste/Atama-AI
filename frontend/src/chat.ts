@@ -50,7 +50,7 @@ export function renderSentence(text: string, grammar: readonly GrammarSpan[] = [
       return `<mark class="gp${levelClass(lv)}" tabindex="0" data-point="${esc(s.point)}"`
         + (lv ? ` data-level="${lv}"` : "") + ">";
     }
-    const lv = levelOfStage(s.stage, s.leech);
+    const lv = levelOfStage(s.stage);
     return `<mark class="vw${levelClass(lv)}" tabindex="0" data-word="${esc(s.word)}"`
       + ` data-reading="${esc(s.reading)}" data-meaning="${esc(s.meaning)}"`
       + ` data-stage="${esc(s.stage)}"` + (s.leech ? ' data-leech="1"' : "") + ">";
@@ -220,9 +220,11 @@ export class Chat {
 
   /** What you said, once heard — or, faded, what was heard and not sent. */
   you(text: string, accepted: boolean, reason = "", readings: readonly Reading[] = [],
-      vocab: readonly VocabSpan[] = []): void {
+      vocab: readonly VocabSpan[] = [], grammar: readonly GrammarSpan[] = []): void {
     const body = this.bubble(accepted ? "you" : "you dropped");
-    this.show(body, text || "…", [], readings, vocab);
+    // Your grammar too (user, 2026-09-12): what the tokenizer found in your line, so a form you
+    // produced is marked whether or not she credits it.
+    this.show(body, text || "…", grammar, readings, vocab);
     if (!accepted) body.parentElement!.title = `Not sent to your tutor: ${reason}`;
   }
 

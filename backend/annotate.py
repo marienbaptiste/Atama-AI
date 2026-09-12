@@ -50,6 +50,25 @@ _MIN_POINT_TOKENS = 2
 #: Auxiliaries (ます, た, ない, て…) that finish the inflected form: the red span runs through
 #: them, as the tutor is told to mark stem to ending.
 _TAIL_POS = ("助動詞",)
+#: Bunpro names a form by its ending — "Verb[よう]", "〜ば", "〜たい" — but unidic folds the ending
+#: into the verb: 勉強しよう is ONE token, する in 意志推量形 (probed 2026-09-12; 食べよう, 行こう
+#: the same), and 行けば is 行く in 仮定形 + ば. So a name that starts with one of these is matched
+#: by the token's conjugation form, not by a base form it does not have. 「〜ようと思う」 was asked
+#: for, produced, and missed (user, 2026-09-12).
+_FORMS: dict[str, tuple] = {
+    "よう": (("cform", "意志推量"),),
+    "ましょう": (("cform", "意志推量"),),
+    "ば": (("cform", "仮定形"), "ば"),
+    # Auxiliaries that are a point on their own: one token, but unambiguous by part of speech
+    # (bare 「たい」 tokenises as a symbol, so the name's own tokens cannot say so — this can).
+    "たい": (("aux", "たい"),),
+    "られる": (("aux", "られる"),),
+    "させる": (("aux", "させる"),),
+    "せる": (("aux", "せる"),),
+    "らしい": (("aux", "らしい"),),
+}
+#: "Verb[よう]", "Noun + だ", "い-Adj[くて]": the bracketed or prefixed part is the form itself.
+_WRAP = re.compile(r"^(?:Verb|Noun|Adj|い-Adj|な-Adj|Adjective)\s*\[(.+)\]$")
 
 
 #: Rendaku: the voiced form a kanji's reading takes after another (本 ほん -> 日本 にっぽん is
@@ -265,10 +284,10 @@ class Annotator:
         for m in taken:
             covered[int(m["start"]):int(m["end"])] = [True] * max(0, int(m["end"]) - int(m["start"]))
         out: list[dict[str, Any]] = []
-        for point in points:
-            halves = self._point_halves(tagger, point)
-            if not halves:
-                continue
+        # Longest name first, so 〜ようと思う takes the whole span before Verb[よう] can take its head.
+        plans = [(p, h) for p in points if (h := self._point_halves(tagger, p))]
+        plans.sort(key=lambda ph: -sum(len(h) for h in ph[1]))
+        for point, halves in plans:
             for start, end in self._matches(words, halves):
                 s, e = words[start][0], words[end][1]
                 while end + 1 < len(words) and words[end + 1][3] in _TAIL_POS:   # through ます, た, ない
@@ -281,8 +300,9 @@ class Annotator:
         return sorted(out, key=lambda r: r["start"])
 
     @staticmethod
-    def _tokens(tagger: Any, text: str) -> list[tuple[int, int, str, str]]:
-        """(start, end, base form, pos1) per token, positions over the text's code points."""
+    def _tokens(tagger: Any, text: str) -> list[tuple[int, int, str, str, str]]:
+        """(start, end, base form, pos1, conjugation form) per token, positions over the text's
+        code points."""
         out, pos = [], 0
         for w in tagger(text):
             start = text.find(w.surface, pos)
@@ -290,38 +310,61 @@ class Annotator:
                 continue
             pos = start + len(w.surface)
             base = getattr(w.feature, "orthBase", None) or getattr(w.feature, "lemma", None) or w.surface
-            out.append((start, pos, str(base), str(getattr(w.feature, "pos1", "") or "")))
+            out.append((start, pos, str(base), str(getattr(w.feature, "pos1", "") or ""),
+                        str(getattr(w.feature, "cForm", "") or "")))
         return out
 
     @staticmethod
-    def _point_halves(tagger: Any, point: str) -> list[list[str]]:
-        """The point's name as base-form token runs, split at its gaps: と思う -> [[と, 思う]],
-        あまり～ない -> [[あまり], [ない]]. Empty when the name is not one the tokenizer can find."""
+    def _point_halves(tagger: Any, point: str) -> list[list[Any]]:
+        """The point's name as runs of matchers, split at its gaps: と思う -> [[と, 思う]],
+        あまり～ない -> [[あまり], [ない]], Verb[よう] -> [[("cform", "意志推量")]], 〜ようと思う ->
+        [[("cform", "意志推量"), と, 思う]]. A matcher is a base form (str) or a conjugation-form
+        test (tuple). Empty when the name is not one the tokenizer can find: one short particle
+        (なら, かな) on its own would match too much — an auxiliary (たい) or a form is fine."""
         name = str(point or "").strip()
-        if not name or "[" in name or "(" in name:              # "Verb[よう]", "する (Have/Wear)"
+        if m := _WRAP.match(name):
+            name = m.group(1).strip()
+        if not name or "[" in name or "(" in name:              # "する (Have/Wear)", unknown wrappers
             return []
-        halves: list[list[str]] = [[]]
-        for w in tagger(name):
+        halves: list[list[Any]] = [[]]
+        kinds: list[str] = []
+        rest = name.lstrip("".join(_GAP))
+        for form, matchers in _FORMS.items():                   # a form ending leads the name
+            if rest.startswith(form):
+                halves[-1].extend(matchers)
+                kinds.append("form")
+                rest = rest[len(form):]
+                break
+        for w in tagger(rest):
             if w.surface in _GAP:
                 if halves[-1]:
                     halves.append([])
                 continue
             base = getattr(w.feature, "orthBase", None) or getattr(w.feature, "lemma", None) or w.surface
             halves[-1].append(str(base))
+            kinds.append(str(getattr(w.feature, "pos1", "") or ""))
         halves = [h for h in halves if h]
         tokens = sum(len(h) for h in halves)
-        if not halves or (tokens < _MIN_POINT_TOKENS and not _KANJI.search(name)):
+        alone_ok = bool(kinds) and kinds[0] == "form"
+        if not halves or (tokens < _MIN_POINT_TOKENS and not _KANJI.search(name) and not alone_ok):
             return []
         return halves
 
     @staticmethod
-    def _matches(words: list[tuple[int, int, str, str]], halves: list[list[str]]) -> list[tuple[int, int]]:
-        """Token index ranges [first, last] where the halves appear in order, base form for base
-        form, with any tokens between two halves."""
+    def _matches(words: list[tuple[int, int, str, str, str]], halves: list[list[Any]]) -> list[tuple[int, int]]:
+        """Token index ranges [first, last] where the halves appear in order — base form for base
+        form, a form test against the token's conjugation — with any tokens between two halves."""
         bases = [w[2] for w in words]
 
-        def run_at(i: int, half: list[str]) -> bool:
-            return bases[i:i + len(half)] == half
+        def fits(i: int, m: Any) -> bool:
+            if isinstance(m, tuple):
+                if m[0] == "aux":
+                    return bases[i] == m[1] and words[i][3] == "助動詞"
+                return words[i][4].startswith(m[1])
+            return bases[i] == m
+
+        def run_at(i: int, half: list[Any]) -> bool:
+            return i + len(half) <= len(words) and all(fits(i + k, m) for k, m in enumerate(half))
 
         found: list[tuple[int, int]] = []
         i = 0

@@ -8,7 +8,7 @@ import type { HistoryLine, ServiceStatusMsg } from "./protocol.gen";
 export interface Transcript {
   her(line: Pick<HistoryLine, "text" | "grammar" | "readings" | "vocab">, cut?: boolean): void;
   you(text: string, accepted: boolean, reason: string, readings: HistoryLine["readings"],
-      vocab: HistoryLine["vocab"]): void;
+      vocab: HistoryLine["vocab"], grammar?: HistoryLine["grammar"]): void;
   ready(): void;
 }
 
@@ -21,7 +21,7 @@ export function applyHistory(chat: Transcript, lines: readonly HistoryLine[]): b
       spoke = true;
       chat.her(line, line.cut);
     } else {
-      chat.you(line.text, line.accepted, line.reason, line.readings, line.vocab);
+      chat.you(line.text, line.accepted, line.reason, line.readings, line.vocab, line.grammar);
     }
   }
   if (spoke) chat.ready();

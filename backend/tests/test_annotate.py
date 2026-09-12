@@ -112,9 +112,23 @@ def test_a_gap_in_the_points_name_may_hold_anything():
     assert found("あまり難しくないと思う") == [("あまり難しくない", "あまり～ない"), ("と思う", "と思う")]
 
 
-def test_one_short_kana_token_is_never_guessed():
-    assert found("雨なら行きません") == []               # なら, ば: her mark is the only way
-    assert found("行けば分かります") == []
+def test_one_short_particle_is_never_guessed_but_a_form_is():
+    assert found("雨なら行きません") == []               # なら, かな: her mark is the only way
+    # 〜ば is a FORM: 行く in 仮定形 + ば, unambiguous, so it is found (user, 2026-09-12).
+    assert found("行けば分かります") == [("行けば", "ば")]
+
+
+def test_a_form_bunpro_names_by_its_ending_is_found_by_the_conjugation():
+    """unidic folds the volitional into the verb (勉強しよう = する, 意志推量形), so Verb[よう] is
+    matched by the token's form — 「〜ようと思う」 was asked for, produced and missed (user,
+    2026-09-12). The longest name wins the span."""
+    pts = ["Verb[よう]", "〜ようと思う", "と思う", "〜たい", "〜られる"]
+    assert found("週末に日本語を勉強しようと思う。", pts) == [("しようと思う", "〜ようと思う")]
+    assert found("何をしようと思いますか", pts) == [("しようと思います", "〜ようと思う")]
+    assert found("明日行こう", pts) == [("行こう", "Verb[よう]")]
+    assert found("食べたいです", pts) == [("たいです", "〜たい")]
+    assert found("先生に褒められました", pts) == [("られました", "〜られる")]
+    assert found("たいへんですね", pts) == []               # たい as a symbol, not the auxiliary
 
 
 def test_her_own_mark_wins_where_they_overlap():

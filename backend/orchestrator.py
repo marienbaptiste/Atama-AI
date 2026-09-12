@@ -288,11 +288,29 @@ class Lesson:
         the brain is asked — never what is logged, shown or spoken."""
         return study_plan.coached(self.plan, text)
 
+    def student_marks(self, text: str) -> dict[str, list[str]]:
+        """The student's own words and grammar points in what they said, found by the tokenizer
+        (spec §6c, user 2026-09-12: she asked for 〜ようと思う, got it, and never credited it — so
+        credit no longer waits for her). Logged with the turn and counted by the plan."""
+        out: dict[str, list[str]] = {"vocab": [], "grammar": []}
+        if not text:
+            return out
+        try:
+            study = getattr(self.hub, "study", None) or study_api.Study.from_profile(
+                self.student, getattr(self.annotator, "tokens", None))
+            out["vocab"] = sorted({s["word"] for s in study.spans(text)})
+            names = [i.text for i in study.items if i.kind == "grammar"]
+            out["grammar"] = sorted({m["point"] for m in self.annotator.find_points(text, names, [])})
+        except Exception:  # noqa: BLE001 - credit is a nicety; the turn matters more
+            pass
+        return out
+
     def note_turn(self, student: str, sentences: list[dict[str, Any]]) -> None:
         """After every turn, the same facts memory recorded: the plan counts them and rotates."""
         if self.plan is None:
             return
-        change = self.plan.note_turn({"student": {"text": student}, "tutor": {"sentences": sentences}})
+        change = self.plan.note_turn({"student": {"text": student, **self.student_marks(student)},
+                                      "tutor": {"sentences": sentences}})
         for (old, gap), new in zip(change.retired, [*change.promoted, *([None] * len(change.retired))]):
             terminal.note("study", f"{old.text} progressed (back after {gap} session{'s' if gap != 1 else ''})"
                           + (f" -> new target {new.text}" if new is not None else ""))
@@ -531,7 +549,7 @@ async def summarise(cfg, mem, limit: int | None = None) -> int:
     summary_model = await asyncio.to_thread(model_tiers.Resolver.from_config(cfg).resolve,
                                             str(cfg.MEMORY_SUMMARY_MODEL))
     worker = brain_api.create(cfg, registry=None, allowed_tools=(),
-                              model=summary_model,
+                              model=summary_model, effort=str(cfg.MEMORY_SUMMARY_EFFORT),
                               system_prompt=(prompt.PROMPTS_DIR / "summariser.md").read_text(encoding="utf-8"))
     try:
         await asyncio.wait_for(worker.start(), 90)
@@ -565,7 +583,8 @@ async def summarise(cfg, mem, limit: int | None = None) -> int:
 
 async def one_turn(brain, text: str, voice=None, mem=None, opening: bool = False,
                    coach: Callable[[str], str] | None = None,
-                   noted: Callable[[str, list], None] | None = None) -> None:
+                   noted: Callable[[str, list], None] | None = None,
+                   marks: Callable[[str], dict] | None = None) -> None:
     """Send one text turn; print each sentence the moment it closes, with its latency.
 
     `coach` rewrites what the brain is asked (the study plan's note, spec §6c) — the log records
@@ -610,6 +629,7 @@ async def one_turn(brain, text: str, voice=None, mem=None, opening: bool = False
                 # The opening nudge is our cue, not something the student said — log it empty,
                 # but keep her opener: it is exactly the topic the next session must not repeat.
                 mem.record_turn(student="" if opening else text, tutor_sentences=spoken,
+                                student_extra=marks(text) if (marks is not None and not opening) else None,
                                 latency={"ttft_ms": round(event.ttft_ms) if event.ttft_ms else None},
                                 usage=event.usage or {})
             if noted is not None:
@@ -764,7 +784,7 @@ async def listen(lesson: Lesson) -> None:
         mem.record_turn(student=t.transcript, tutor_sentences=list(t.sentences),
                         tools=sanitised(list(last.get("tools") or [])),   # spec §11: once, here
                         usage=dict(last.get("usage") or {}),
-                        student_extra={"stt_ms": round(t.stt_ms)},
+                        student_extra={"stt_ms": round(t.stt_ms), **lesson.student_marks(t.transcript)},
                         latency={"first_audio_ms": round(t.first_audio_ms),
                                  "first_play_ms": round(t.first_play_ms),   # playback start (2026-09-12)
                                  "voice_to_voice_ms": round(t.voice_to_voice_ms()),
