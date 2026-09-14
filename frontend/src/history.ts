@@ -28,6 +28,19 @@ export function applyHistory(chat: Transcript, lines: readonly HistoryLine[]): b
   return spoke;
 }
 
+/** The hint a reloaded page should wear (user, 2026-09-14): the last form she asked the student
+ *  to use, or "" when they have answered since — their own accepted line spends the ask, exactly
+ *  as a live turn clears it when they start answering (main.ts `onState`). Without this a reload
+ *  left the button dark for a question she had just asked. */
+export function lastGoal(lines: readonly HistoryLine[]): string {
+  let goal = "";
+  for (const line of lines) {
+    if (line.who === "her") { if (line.target) goal = line.target; }
+    else if (line.accepted) goal = "";
+  }
+  return goal;
+}
+
 /** What the chat says while she is still coming up (user, 2026-09-12). The chips already carry
  *  the detail; this turns the loudest of them into one sentence, because a blank panel during a
  *  40-second launch looks broken. Null once she has spoken — server truth (`state.spoken` or a

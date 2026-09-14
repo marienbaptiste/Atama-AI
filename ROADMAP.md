@@ -1524,6 +1524,11 @@ M3b–M3f, M4c and M4d all remain not met).
 7. **Today's targets rotate** (subsystem 23, ADR-038) — after two correct uses of a target the
    terminal reports the progression and the replacement, the next lesson does not re-select it,
    four lessons open four different ways, and the coach note is never seen or heard.
+8. **The hint lights up** (ADR-036) — the tutor's elicitation carries `[target:]`, so the dock's
+   amber hint button wakes on that sentence and the turn log records the mark. Four sessions on
+   2026-09-13 produced 54 sentences and **zero** targets while `{{...}}` and `[used:]` marks came
+   through, so the elicitation rule in `prompts/coach.md` now names the mark (2026-09-14); what is
+   unproven is that she obeys it. A reload mid-ask restores the hint (`history.ts` `lastGoal`).
 
 ## Integration order
 

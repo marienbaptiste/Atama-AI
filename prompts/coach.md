@@ -29,7 +29,7 @@ personal, no search: open on something you remember about them and ask how it is
 story, no search: tell a three-sentence story of your own built around these targets, then ask a question about it —
 
 ## rule
-Put at least one target in every turn; elicit each target at least once; a target the student has produced correctly twice is done — move on to the next.
+Put at least one target in every turn; elicit each target at least once, opening that sentence with [target:the item] — an elicitation without the mark does not count; a target the student has produced correctly twice is done — move on to the next.
 
 ## note
 [coach: {{body}}]
@@ -38,7 +38,7 @@ Put at least one target in every turn; elicit each target at least once; a targe
 not yet used: {{items}}
 
 ## elicit
-elicit {{item}} next
+elicit {{item}} next, in a sentence opening [target:{{item}}]
 
 ## progressed
 {{old}} progressed (back after {{n}} sessions) → new target {{new}}

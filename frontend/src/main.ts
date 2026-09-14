@@ -4,7 +4,7 @@
 import "./style.css";
 import { Avatar, type CastEntry } from "./avatar";
 import { Chat } from "./chat";
-import { applyHistory, loadingCaption } from "./history";
+import { applyHistory, lastGoal, loadingCaption } from "./history";
 import { pointCardHtml, wordCardHtml } from "./levels";
 import { TextSize } from "./textsize";
 import { Talk } from "./mic";
@@ -95,7 +95,7 @@ const handlers: Handlers = {
   },
   //: The lesson so far, for a page that (re)connects after it started: what was said, as it was
   //: marked, without the audio. Her lines here count as spoken (2026-09-12).
-  history: m => { if (applyHistory(chat, m.lines)) spoken(); },
+  history: m => { if (applyHistory(chat, m.lines)) spoken(); setGoal(lastGoal(m.lines)); },
   bargein: async m => {
     (await avatarReady).stop(m.turn);
     bargedIn();

@@ -1,7 +1,7 @@
 // A reloaded page sat on "she is thinking of how to start…" for an opening it had already heard
 // (user, 2026-09-12): the server replays the lesson, and the caption follows server truth.
 import { describe, expect, it } from "vitest";
-import { applyHistory, loadingCaption, type Transcript } from "./history";
+import { applyHistory, lastGoal, loadingCaption, type Transcript } from "./history";
 import type { HistoryLine, ServiceStatusMsg } from "./protocol.gen";
 
 function recorder() {
@@ -37,6 +37,17 @@ describe("applyHistory", () => {
     expect(applyHistory(chat, [you("はい")])).toBe(false);
     expect(seen).toEqual(["you:はい:true:"]);
     expect(applyHistory(chat, [])).toBe(false);
+  });
+});
+
+describe("lastGoal", () => {
+  it("wears the form she last asked for, until the student has answered it", () => {
+    expect(lastGoal([her("何を食べますか。", { target: "〜たら" })])).toBe("〜たら");
+    expect(lastGoal([her("あ。", { target: "〜たら" }), her("もう一度。", { target: "〜ながら" })])).toBe("〜ながら");
+    expect(lastGoal([her("あ。", { target: "〜たら" }), you("雨が降ったら行きません")])).toBe("");
+    // A rejected transcript never reached her, so the ask still stands.
+    expect(lastGoal([her("あ。", { target: "〜たら" }), you("ん", { accepted: false, reason: "blocklist" })])).toBe("〜たら");
+    expect(lastGoal([her("こんにちは。")])).toBe("");
   });
 });
 
