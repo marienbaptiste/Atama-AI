@@ -88,7 +88,7 @@ def test_close_writes_the_lesson_down_and_says_so(tmp_path, monkeypatch, capsys)
     assert later.pending_logs() == []
 
 
-def test_a_launch_where_nobody_spoke_costs_no_call_at_shutdown(tmp_path, monkeypatch):
+def test_a_launch_where_nobody_spoke_costs_no_call_at_shutdown(tmp_path, monkeypatch, capsys):
     mem = Memory(root=tmp_path / "memory", sessions=tmp_path / "sessions", session_id="today")
     mem.record_turn(student="", tutor_sentences=[{"text": "こんにちは。"}])   # her greeting, nobody answered
     called = []
@@ -100,6 +100,7 @@ def test_a_launch_where_nobody_spoke_costs_no_call_at_shutdown(tmp_path, monkeyp
     monkeypatch.setattr(orchestrator, "summarise", fake_summarise)
     asyncio.run(_lesson(tmp_path, mem, []).remember_this_lesson())
     assert called == []
+    assert "nothing to write down - you didn't speak this lesson" in capsys.readouterr().out
 
 
 def test_a_failed_shutdown_summary_leaves_it_for_the_next_launch(tmp_path, monkeypatch, capsys):

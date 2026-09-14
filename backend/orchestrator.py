@@ -501,7 +501,10 @@ class Lesson:
             return
         log = self.mem.log_path()
         if not log.is_file() or not memory_api.has_a_lesson(memory_api.excerpt_of(log)):
-            return                                # nobody spoke: nothing to remember, no call
+            # Nobody spoke: nothing to remember, no call - but said, because a silent skip looked
+            # like a summary that never ran (user, 2026-09-14).
+            print(f"{DIM}memory: nothing to write down - you didn't speak this lesson{RESET}", flush=True)
+            return
         print(f"{DIM}memory: writing down today's lesson so your tutor remembers it next time "
               f"({self.cfg.MEMORY_SUMMARY_MODEL}) - Ctrl+C skips it, and the next launch does it instead…{RESET}",
               flush=True)
