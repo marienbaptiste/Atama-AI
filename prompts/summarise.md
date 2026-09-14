@@ -1,7 +1,7 @@
 You are summarising ONE past Japanese lesson between a tutor and a student, so the tutor can
 remember it next time. Read the transcript below and reply with ONE JSON object and nothing else:
 
-{"brief": "...", "topics": ["..."], "notes": ["..."], "student_facts": ["..."], "tutor_facts": ["..."], "progressed": ["..."]}
+{"brief": "...", "topics": ["..."], "notes": ["..."], "student_facts": ["..."], "tutor_facts": ["..."]}
 
 - "brief": one or two sentences in Japanese — what you talked about and how it went, written so
   the tutor can pick up from it. Plain, short, spoken style.
@@ -9,12 +9,14 @@ remember it next time. Read the transcript below and reply with ONE JSON object 
   (e.g. "台風", "新幹線", "谷川岳"). These stop the next lesson opening on the same subject, so
   name subjects, not grammar.
 - "notes": at most 3 things worth remembering about how this student LEARNS, in English, one line
-  each: grammar they got wrong more than once, a word they used unprompted, what they find hard.
-  Who they are goes in "student_facts" instead. Leave it empty rather than guess.
+  each: a mistake the tutor corrected, a word they used unprompted, what they found hard. One clear
+  instance is enough; do not wait for a pattern. Who they are goes in "student_facts" instead.
 - "student_facts": at most 3 DURABLE facts about the student, in English, one short line each —
-  the kind of thing a friend remembers and would be embarrassed to forget. **If they gave their
-  name anywhere in this transcript, that is the first fact and it is never left out: write it as
-  "Name: X".** Then the city or country they live in, their job or studies, their family, their
+  the kind of thing a friend remembers and would be embarrassed to forget. **If the student's
+  name appears anywhere in this transcript, said by either of them, that is the first fact and it
+  is never left out: write it as "Name: X", as the transcript writes it.** Only the transcript
+  counts: ignore anything you may know from elsewhere, such as an e-mail address or an account
+  name. Then the city or country they live in, their job or studies, their family, their
   pets, a hobby they care about, a trip they are planning. Still true in a month, or leave it out. Not their mood today, not what
   they got wrong — that is "notes".
 - "tutor_facts": at most 3 things the TUTOR said about THEIR OWN life in this lesson, in English,
@@ -25,8 +27,8 @@ remember it next time. Read the transcript below and reply with ONE JSON object 
   be a man or a woman depending on the voice the student chose, and this line is read back to
   them as their own life.
 
-- "progressed": the items named on the "TARGETS PROGRESSED" line under the transcript, copied as
-  they are written there; [] when there is no such line. Never add one of your own.
+The TARGETS lines under the transcript, when present, are written by the app from the lesson's own
+marks. Use them to judge how it went; do not copy them into any field.
 
 Both fact lists are small on purpose and grow across sessions, so repeat nothing that is only a
 rewording of something already obvious in the transcript's earlier turns. Leave a list empty
@@ -34,4 +36,7 @@ rather than invent.
 
 Do not include anything about what the student is studying on WaniKani or Bunpro — that is
 tracked elsewhere. Do not invent facts that are not in the transcript. If the transcript is too
-short to summarise, reply {"brief": "", "topics": [], "notes": [], "student_facts": [], "tutor_facts": [], "progressed": []}.
+short to summarise, reply {"brief": "", "topics": [], "notes": [], "student_facts": [], "tutor_facts": []}.
+
+This is a short extraction, not an essay: decide each field once, write the JSON, and stop. Do not
+draft alternatives.

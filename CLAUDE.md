@@ -53,7 +53,8 @@ first with `make doctor`.
 **Also built ahead of its milestone, by user directive:** the browser avatar with push-to-talk
 over a WebSocket (`backend/app.py`, `.
 un`), and the memory half of §6b (`backend/memory.py` —
-turn log, brief, recent topics, editable student notes, summarised at the next launch). Rotation
+turn log, brief, recent topics, editable student notes, summarised at session end with the next
+launch as fallback — ADR-031 Amendment 3). Rotation
 (ADR-032) is built and on by default at 0.7 of the reported window, adaptive to the provider's own
 compactions; its gate (M4c, live) is not met. Neither closes an M3 or M4 gate. Also by user request
 (2026-09-12): the study plan (`backend/study_plan.py`, spec §6c, ADR-038) — today's targets chosen

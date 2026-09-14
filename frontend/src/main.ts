@@ -326,7 +326,12 @@ const link = new Link(handlers, {
     for (const id of ["topic", "quit"]) $<HTMLButtonElement>(id).disabled = true;
     talk.reset();
     if (!retrying) { avatar?.end(); showEnded(); return; }  // stopped on purpose: no retry loop
-    live("disconnected — reconnecting…", "warn");
+    live(link.quitting ? "stopping — reaching the tutor…" : "disconnected — reconnecting…", "warn");
+  },
+  unreachable() {
+    avatar?.end();
+    showEnded("<b>Could not reach the tutor to stop it</b><br>It may already have stopped. If its window "
+      + "is still open, press Ctrl+C there, then run the stop command to take the containers down.");
   },
   stale() { log("no word from the server for 12 s — reconnecting", "err"); },
 });
@@ -379,13 +384,12 @@ $("topic").onclick = e => {
 };
 
 $("quit").onclick = () => {
-  if (!link.open) { showEnded(); return; }
   if (!confirm("Stop the tutor and shut down the server?")) return;
-  link.quitting = true;
   talk.press(false);                                // never leave the mic open on the way out
-  link.send({ type: "control", action: "quit" });
-  live("stopping…");
-  window.setTimeout(showEnded, 8000);               // the server closes the socket once clean
+  // Delivered, or re-sent on the next reconnect: "Session ended" appears only once the server has
+  // it and is gone, never on a timer (user, 2026-09-14: the page said stopped, nothing had).
+  link.requestStop();
+  live(link.open ? "stopping…" : "stopping — reaching the tutor…", "warn");
 };
 
 async function showPersona(id: string): Promise<void> {

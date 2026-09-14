@@ -73,6 +73,7 @@ class ClaudeCliBrain:
         model: str | None = None,
         replace_system_prompt: bool | None = None,
         effort: str | None = None,
+        turn_timeout_s: float | None = None,
     ):
         self._cfg = cfg
         self._registry = registry
@@ -85,8 +86,12 @@ class ClaudeCliBrain:
         #: one-shot lookup has nothing to deliberate about); the summariser passes
         #: MEMORY_SUMMARY_EFFORT, medium by default and pinned apart from the tutor's knob —
         #: measured 2026-09-12, one summary took 13.7 s at medium and 52.6 s at low, and the user
-        #: chose medium (which is also why the launch no longer waits for it).
+        #: chose medium; re-measured 2026-09-14, low was slower again (29 s, 57 s vs 20 s, 48 s).
         self._effort = cfg.CLAUDE_EFFORT if effort is None else effort
+        #: How long one turn may run before it is interrupted. The tutor's is CLAUDE_TURN_TIMEOUT_S, a
+        #: live conversation's patience; the summariser passes its own, because it is not on the
+        #: speaking path and a 60 s cut made every real lesson fail and retry forever (2026-09-14).
+        self._turn_timeout_s = float(cfg.CLAUDE_TURN_TIMEOUT_S if turn_timeout_s is None else turn_timeout_s)
         replace = getattr(cfg, "CLAUDE_REPLACE_SYSTEM_PROMPT", True) if replace_system_prompt is None else replace_system_prompt
         self._prompt_flag = "--system-prompt-file" if replace else "--append-system-prompt-file"
         self._session_id = str(uuid.uuid4())
@@ -161,7 +166,7 @@ class ClaudeCliBrain:
             return
 
         self._report("thinking")
-        deadline = time.monotonic() + float(self._cfg.CLAUDE_TURN_TIMEOUT_S)
+        deadline = time.monotonic() + self._turn_timeout_s
         spoken: list[str] = []
         tool_started: float | None = None
         tool_ms = 0.0
@@ -176,7 +181,7 @@ class ClaudeCliBrain:
                     # The CLI answers the interrupt with the turn's `result`; the next turn
                     # drains it (_settle), or replaces the process if it never comes.
                     self._interrupt()
-                    yield BrainError(f"turn exceeded {self._cfg.CLAUDE_TURN_TIMEOUT_S}s", fatal=False)
+                    yield BrainError(f"turn exceeded {self._turn_timeout_s:g}s", fatal=False)
                     yield TurnComplete(text="".join(spoken))
                     self._report("ready")
                     return
@@ -209,7 +214,7 @@ class ClaudeCliBrain:
                     if isinstance(event, Compacting):
                         # A compaction is the CLI working, not hanging: the timeout restarts when it
                         # starts and when it ends, or a long one would be cut off as a stuck turn.
-                        deadline = time.monotonic() + float(self._cfg.CLAUDE_TURN_TIMEOUT_S)
+                        deadline = time.monotonic() + self._turn_timeout_s
                     elif isinstance(event, TextDelta):
                         spoken.append(event.text)
                     elif isinstance(event, ToolCall):

@@ -928,9 +928,13 @@ the prompt alongside your SRS profile. There is no memory lookup during a turn: 
 loaded at the start, Sensei does not know it.
 
 **Written in the gaps.** Turn records are appended while the avatar is still speaking. The summary
-that becomes next lesson's memory is written when you next launch. It runs while Whisper and
-VOICEVOX load, and she is spawned once it is in, so she never greets you having forgotten
-yesterday. A lesson you never spoke in is skipped rather than summarised.
+that becomes next lesson's memory is written when the lesson ends: the console says
+`memory: writing down today's lesson…` as the last step, after the page and the containers have stopped, which can take a
+minute or two after a real lesson. Press Ctrl+C to skip it. The next launch checks first, and only
+summarises a lesson that was not written at shutdown, before she greets you, so she never greets
+you having forgotten yesterday. A lesson you never spoke in is skipped rather than summarised.
+`MEMORY_SUMMARY_TIMEOUT_S` (default 240) is how long the summary may think before it is left for the
+next launch.
 
 **Each lesson opens with a choice.** If there is a last lesson to remember, she recalls it in a
 sentence and asks whether to carry on or talk about something new. Carry on and she picks the

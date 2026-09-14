@@ -375,11 +375,20 @@ class Memory:
     async def summarise_pending(self, ask: Callable[[str], Awaitable[str]], instructions: str,
                                 limit: int | None = None,
                                 on_log: Callable[[Path, int, int], None] | None = None,
-                                footer: Callable[[Path], str] | None = None) -> int:
+                                footer: Callable[[Path], str] | None = None,
+                                progressed: Callable[[Path], list[str]] | None = None,
+                                logs: list[Path] | None = None) -> int:
         """Summarise unsummarised logs. `ask(prompt) -> reply text`. Returns how many landed.
 
         `footer(log)` adds lines UNDER the transcript excerpt — the study plan's "targets
         practised / progressed" (spec §6c) — after the cap, so a long lesson never cuts them.
+
+        `logs` summarises exactly those instead of what is pending — the lesson that is ending, at
+        shutdown (user, 2026-09-14), which `pending_logs` leaves out because it is still this
+        session's.
+
+        `progressed(log)` is the study plan's own count (spec §6c): it fills the summary's
+        `progressed` key after the reply, so the model is never asked to copy it.
 
         `ask` is injected rather than constructed here so tests can drive this with a fake, and so
         the caller decides which (cheap) model spends the tokens. `limit` takes the newest logs
@@ -387,7 +396,7 @@ class Memory:
         older ones are caught up in the background while the student is already talking (2026-09-12:
         five pending sessions held the launch for 80 s). `on_log` reports progress.
         """
-        pending = self.pending_logs()
+        pending = self.pending_logs() if logs is None else [log for log in logs if log.is_file()]
         queue = list(reversed(pending))[:limit] if limit else pending
         landed = 0
         for at, log in enumerate(queue, start=1):
@@ -412,6 +421,11 @@ class Memory:
                 continue
             summary = parse_summary(reply)
             session, date = log.stem.split("-", 3)[-1], log.stem[:10]
+            if summary is not None and progressed is not None:
+                try:
+                    summary["progressed"] = progressed(log)
+                except Exception:       # noqa: BLE001 - a count that fails costs the key, not the summary
+                    summary.pop("progressed", None)
             if summary is None:
                 # It answered, but not in JSON. That is the model, not the lesson, and it will do
                 # the same next launch — so stop asking. Only a *failed call* (the except above)

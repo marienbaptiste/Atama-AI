@@ -1069,7 +1069,8 @@ rotation) is **not met**.
 **Status 2026-09-10 — the memory half is built, pulled forward from M4 by user directive.**
 `backend/memory.py`: the turn log (§6b schema, append-only, recorded from `on_turn` after
 `TurnComplete`), the start-of-session read into a `{{memory}}` prompt section, the summariser (run
-at the next launch on `MEMORY_SUMMARY_MODEL`, driven through an injected `ask`), and a fourth tier
+at the next launch on `MEMORY_SUMMARY_MODEL`, driven through an injected `ask`; since 2026-09-14 at
+session end, with the launch as fallback — ADR-031 Amendment 3, `test_summary_at_shutdown.py`), and a fourth tier
 the original design lacked — `topics.jsonl`, rendered as *recently discussed — do not open on
 these*. Hermetic tests in `test_memory.py` cover the schema, append-only writes, a half-written
 last line, empty-renders-to-nothing, topic recency and de-duplication, a malformed summary leaving
@@ -1530,6 +1531,19 @@ M3b–M3f, M4c and M4d all remain not met).
    2026-09-13 produced 54 sentences and **zero** targets while `{{...}}` and `[used:]` marks came
    through, so the elicitation rule in `prompts/coach.md` now names the mark (2026-09-14); what is
    unproven is that she obeys it. A reload mid-ask restores the hint (`history.ts` `lastGoal`).
+9. **The summary is written at shutdown, from every exit** (ADR-031 Amendment 3). Verified live
+   2026-09-14 in text mode: `/quit` after a real exchange wrote it (54 s), and the next launch
+   found nothing pending, loaded the memory and greeted without waiting. **Not yet seen:** the
+   page's stop button (containers down first, the summary last), Ctrl+C in a voice lesson,
+   and a second Ctrl+C during the summary leaving the lesson pending with no orphan `claude.exe`.
+10. **The gauges fill in before the page is clicked** — the context and five-hour chips after her
+   opening is written (not played), and the GPU chip at launch rather than 30 s after the voice
+   loop starts.
+11. **A stop press survives a dropped socket** (`ws.ts` `requestStop`, 2026-09-14) — a press that met a
+   reconnecting link used to send nothing and still show "Session ended" while the tutor and the
+   containers ran on (seen live: the app was still up, py-spy showed the mic thread reading). The
+   server side was verified live the same day: the quit message closed the socket in 1 s and took
+   the containers down. Not yet seen: a real press through a real reconnect.
 
 ## Integration order
 

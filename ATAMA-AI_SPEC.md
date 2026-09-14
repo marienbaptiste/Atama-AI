@@ -329,11 +329,11 @@ is abandoned.
 | tier | where | read | written | budget |
 |---|---|---|---|---|
 | turn log | `logs/sessions/<date>-<session>.jsonl` — one file per lesson; the date is fixed at launch, so a lesson crossing midnight stays one file | never by the tutor | appended in the speaking gap | — |
-| student notes | `<state>/memory/student.md` | session start → prompt | summarised at next launch | `MEMORY_MAX_TOKENS` |
-| about the student | `<state>/memory/about-me.md` | session start → prompt | summarised at next launch | shares the above |
-| last-session brief | `<state>/memory/<tutor>/last-session.md` | session start → prompt | summarised at next launch | shares the above |
-| recent topics | `<state>/memory/<tutor>/topics.jsonl` | session start → prompt | summarised at next launch | shares the above |
-| about this tutor | `<state>/memory/<tutor>/facts.md` | session start → prompt | summarised at next launch | shares the above |
+| student notes | `<state>/memory/student.md` | session start → prompt | summarised at session end (next launch if missed) | `MEMORY_MAX_TOKENS` |
+| about the student | `<state>/memory/about-me.md` | session start → prompt | summarised at session end (next launch if missed) | shares the above |
+| last-session brief | `<state>/memory/<tutor>/last-session.md` | session start → prompt | summarised at session end (next launch if missed) | shares the above |
+| recent topics | `<state>/memory/<tutor>/topics.jsonl` | session start → prompt | summarised at session end (next launch if missed) | shares the above |
+| about this tutor | `<state>/memory/<tutor>/facts.md` | session start → prompt | summarised at session end (next launch if missed) | shares the above |
 
 - **They know each other** (user, 2026-09-12). Two short lists carry the relationship: what is
   durably true of the student — their name, the country they live in, their work, their cat — and
@@ -363,12 +363,24 @@ is abandoned.
   the student never waits twice for the same seconds. A session nobody spoke in is marked
   summarised without a model call, and an answer of "there is nothing here" is not asked again —
   three such logs were re-read at every launch (live, 2026-09-12).
-- **Summarise at the next launch** (amended 2026-09-10), as a separate short-lived `Brain` on a
-  cheap model (`MEMORY_SUMMARY_MODEL`, default `haiku`) whose input is a text-only excerpt of the
-  turn log — deterministic and re-runnable. Originally this ran at session end with the next launch
-  as the fallback; the fallback is now the path. Exit has to be instant — a Ctrl+C that hangs for
-  fifteen seconds reads as a crash — whereas launch is init time the student already waits
-  through. A session is "summarised" when `topics.jsonl` holds a row for it — keyed by
+- **Summarise at session end; the next launch only if that did not happen** (amended 2026-09-10,
+  and back again 2026-09-14 by user decision), as a separate short-lived `Brain` on a cheap model
+  (`MEMORY_SUMMARY_MODEL`, default `sonnet` since 2026-09-14 — see below — `MEMORY_SUMMARY_EFFORT` medium) whose input is a
+  text-only excerpt of the turn log — deterministic and re-runnable. `Lesson.close()` summarises the
+  lesson that is ending LAST, after the brain, the page and the containers are down, and says so on the console with
+  the way out: Ctrl+C skips it. The 2026-09-10 objection to exit work (a Ctrl+C that hangs reads as
+  a crash) is met by that line, not by moving the wait: measured 2026-09-14, Haiku at medium thinks
+  for 50–100 s on a real lesson, and at launch that held her greeting — while a 60 s cap borrowed
+  from the tutor's `CLAUDE_TURN_TIMEOUT_S` cut every real lesson off mid-thought, so it stayed
+  pending and was retried, and failed, at every launch. The summariser therefore has its own
+  `MEMORY_SUMMARY_TIMEOUT_S` (240 s). At launch the pending check runs as before: a lesson written
+  at shutdown has its row and costs nothing; one that was skipped, interrupted or failed is
+  summarised then, and awaited before her prompt. Turning thinking off was measured too (3–4 s)
+  and rejected: in three runs out of three it named grammar as topics and once invented a fact. The
+  model is **Sonnet** (user decision, same day): on the same lesson Haiku took 70–98 s and 7.7–9.6k
+  output tokens at effort medium *and with no effort flag at all*, while Sonnet 5 at medium took 4.4 s
+  and ~200 tokens, its summaries as good or sharper (in two runs it once named a word as a topic and
+  both times left the name out; names learned earlier are kept, so recall is unaffected). A session is "summarised" when `topics.jsonl` holds a row for it — keyed by
   `(date, session)`, the two things a log's name carries — so there is no second bookkeeping
   file to drift. Only a failed **call** stays pending — a provider error as much as a timeout; an
   answer that says there is nothing here, or that is not JSON, is marked done and never asked
@@ -511,8 +523,9 @@ is recomputed at every launch and is the source of truth.
   (`VoiceLoop.coach`, `orchestrator.one_turn(coach=)`). The tutor is told the notes are the
   system's, never the student's, never to be read aloud or answered.
 - **Summariser.** Two lines under the excerpt — targets practised and progressed, from the log's
-  own marks, no item set needed — and an optional `progressed` key in the summary JSON, kept on
-  the topics row. A summary without it lands as before.
+  own marks, no item set needed — as context for "how it went". The topics row's `progressed` list
+  is **counted** by `study_plan.progressed_in` and set after the reply (2026-09-14): asking the model
+  to copy a line our own code wrote was the part of its prompt it deliberated over longest.
 - **Words in files** (ADR-012): `prompts/coach.md` holds the block's wording, the opener lines,
   the note template and the summariser's two headings; the rules are in `prompts/tutor.md`.
 

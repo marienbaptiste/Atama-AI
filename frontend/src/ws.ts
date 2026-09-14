@@ -14,6 +14,9 @@ export type Handlers = {
  *  but name, even while the socket still reads "open" — close it and reconnect. */
 export const WATCHDOG_MS = 12_000;
 export const RETRY_MS = 2_000;
+/** Reconnects a stop press may try, while the server has not had it yet, before the page says it
+ *  could not reach the tutor (about 10 s at RETRY_MS). */
+export const STOP_ATTEMPTS = 5;
 
 const KNOWN = new Set<string>(SERVER_TYPES);
 
@@ -33,9 +36,11 @@ export async function dispatch(handlers: Handlers, raw: string): Promise<boolean
 
 export interface LinkEvents {
   open(): void;
-  /** `retrying`: false once the student has asked the tutor to stop. */
+  /** `retrying`: false once the tutor has stopped on request — the end, not a fault. */
   close(retrying: boolean): void;
   stale?(): void;
+  /** Stop was pressed and the tutor could not be reached to be told. */
+  unreachable?(): void;
 }
 
 export function defaultUrl(): string {
@@ -45,13 +50,31 @@ export function defaultUrl(): string {
 export class Link {
   private socket: WebSocket | null = null;
   private lastHeard = 0;
-  /** Set when stop was pressed: the close that follows is the end, not a fault to recover from. */
-  quitting = false;
+  /** Stop was pressed. It stays pressed until the server has had it: a press that met a dropped
+   *  or reconnecting socket used to send nothing and still show "Session ended", while the tutor
+   *  and the containers ran on (user, 2026-09-14). */
+  private stopping = false;
+  /** The stop went out on an open socket at least once. */
+  private stopDelivered = false;
+  private failedConnects = 0;
 
   constructor(private readonly handlers: Handlers, private readonly events: LinkEvents,
               private readonly url: string = defaultUrl()) {}
 
   get open(): boolean { return this.socket?.readyState === WebSocket.OPEN; }
+
+  get quitting(): boolean { return this.stopping; }
+
+  /** The page's stop button. Sent now if the socket is open, and again on every reconnect until the
+   *  server goes away — which is how the page knows it was heard. */
+  requestStop(): void {
+    this.stopping = true;
+    this.deliverStop();
+  }
+
+  private deliverStop(): void {
+    if (this.stopping && this.send({ type: "control", action: "quit" })) this.stopDelivered = true;
+  }
 
   start(): void {
     this.connect();
@@ -80,16 +103,25 @@ export class Link {
       window.setTimeout(() => this.connect(), RETRY_MS);
       return;
     }
+    let opened = false;
     socket.onopen = () => {
+      opened = true;
+      this.failedConnects = 0;
       this.socket = socket;
       this.lastHeard = performance.now();
+      if (this.stopping) { this.deliverStop(); return; }   // a reconnect made only to be told to stop
       this.events.open();
     };
     socket.onclose = () => {
       if (this.socket === socket) this.socket = null;
-      const retrying = !this.quitting;
-      this.events.close(retrying);
-      if (retrying) window.setTimeout(() => this.connect(), RETRY_MS);   // the tutor may not be up yet
+      if (this.stopping && !opened) {
+        // A reconnect that found nobody. After the server had the stop, that IS the stop; before
+        // it, the tutor is unreachable, and the page must say so rather than claim it stopped.
+        if (this.stopDelivered) { this.events.close(false); return; }
+        if (++this.failedConnects >= STOP_ATTEMPTS) { this.events.unreachable?.(); return; }
+      }
+      this.events.close(true);
+      window.setTimeout(() => this.connect(), RETRY_MS);   // the tutor may not be up yet, or not gone yet
     };
     socket.onmessage = event => {
       this.lastHeard = performance.now();

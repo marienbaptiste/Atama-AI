@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import datetime as dt
 import sys
 import time
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from backend import annotate as annotate_api
 from backend import brain as brain_api
@@ -134,6 +135,11 @@ class Lesson:
         await self._read_memory()
         return await self._start_brain()
 
+    async def _first_vram(self) -> None:
+        reading = await asyncio.to_thread(vram_mod.read)
+        if reading is not None and self.hub is not None:
+            await self.hub.meters(vram_used_mib=reading.used_mib, vram_total_mib=reading.total_mib)
+
     async def _sync_srs(self) -> None:
         # --- launch: SRS snapshot -> student profile (spec §5, ADR-024) -------------
         cfg = self.cfg
@@ -168,6 +174,9 @@ class Lesson:
         # Their own words, blue in the chat (spec §8b): from the snapshot already fetched, never
         # a new call (ADR-024). Rebuilt by the Refresh button, below.
         hub.study = study_api.Study.from_profile(self.student, getattr(self.annotator, 'tokens', None))
+        # One GPU reading now: the 30 s sampler starts with the voice loop, after her opening line —
+        # which a page plays only once clicked, so the gauge sat empty until then (2026-09-14).
+        asyncio.get_running_loop().create_task(self._first_vram())
         print(f"{BOLD}avatar:{RESET} {url}")
         if getattr(self.args, "show", False):
             import webbrowser
@@ -370,13 +379,16 @@ class Lesson:
         for the student to produce one. This is the turn that pays for the search. Then the older
         sessions are summarised in the background."""
         if not self.args.no_open:
-            await one_turn(self.brain, OPENING_NUDGE, self.voice, mem=self.mem, opening=True, noted=self.note_turn)
-            await self.account(self.brain)
+            # The gauges fill in when her opening is written, not when it has played: a page cannot
+            # play it until it is clicked, and the numbers waited for that click (2026-09-14).
+            brain = self.brain
+            await one_turn(brain, OPENING_NUDGE, self.voice, mem=self.mem, opening=True, noted=self.note_turn,
+                           answered=lambda: self.account(brain))
         # Older sessions are summarised now, in the background: the student is already in the lesson,
         # and a summary that fails here simply waits for the next launch (2026-09-12).
         if self.mem is not None and self.mem.pending_logs():
-            self.catchup = asyncio.create_task(summarise(self.cfg, self.mem))
-            self.catchup.add_done_callback(lambda t: None if t.cancelled() else t.exception())
+            self.catchup = asyncio.create_task(summarise(self.cfg, self.mem, quiet=True))
+            self.catchup.add_done_callback(_caught_up)
 
     async def switch_persona(self, name: str):
         """Live tutor change (settings panel): a fresh session with the new persona, speaking in
@@ -463,10 +475,12 @@ class Lesson:
     async def close(self) -> None:
         """Everything down, in the order that never leaves a process behind. Safe to call after
         a partial launch: what was never opened is skipped."""
-        if self.catchup is not None:
-            self.catchup.cancel()
-        if self.summary is not None and not self.summary.done():
-            self.summary.cancel()      # it outran the launch's patience; do not outlive the lesson
+        for task in (self.catchup, self.summary):
+            if task is not None and not task.done():
+                task.cancel()          # a lesson left pending is summarised next launch
+                # Awaited, so its claude process is closed before anything else goes down.
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
         await self.explainer.aclose()
         if self.voice is not None:
             await self.voice.aclose()
@@ -476,6 +490,34 @@ class Lesson:
             from backend import app as web
             await web.shutdown(self.server_task)
         await stop_containers(self.hub)
+        # Her memory of today, LAST (user, 2026-09-14): everything else is already down and said so,
+        # so this is the only thing left on the console and the one thing a Ctrl+C would skip.
+        await self.remember_this_lesson()
+
+    async def remember_this_lesson(self) -> None:
+        """Summarise the lesson that is ending (spec §6b). Best-effort: skipped, interrupted or
+        failed, the log simply stays pending and the next launch summarises it instead."""
+        if self.mem is None:
+            return
+        log = self.mem.log_path()
+        if not log.is_file() or not memory_api.has_a_lesson(memory_api.excerpt_of(log)):
+            return                                # nobody spoke: nothing to remember, no call
+        print(f"{DIM}memory: writing down today's lesson so your tutor remembers it next time "
+              f"({self.cfg.MEMORY_SUMMARY_MODEL}) - Ctrl+C skips it, and the next launch does it instead…{RESET}",
+              flush=True)
+        before, started = self.mem.sessions_summarised(), time.monotonic()
+        await summarise(self.cfg, self.mem, logs=[log])
+        done = self.mem.sessions_summarised() > before
+        print(f"{DIM}memory: {'written' if done else 'not written - the next launch will try again'} "
+              f"({time.monotonic() - started:.0f}s){RESET}", flush=True)
+
+
+def _caught_up(task: asyncio.Task) -> None:
+    """The background catch-up's one line, on the meter's line rather than through it."""
+    if task.cancelled() or task.exception() is not None:
+        return
+    if landed := task.result():
+        terminal.note("memory", f"caught up on {landed} earlier lesson{'s' if landed != 1 else ''}")
 
 
 # ---------------------------------------------------------------------- the parts
@@ -530,7 +572,13 @@ async def stop_containers(hub) -> None:
     script does — VOICEVOX and SearXNG go too. Ctrl+C deliberately does NOT: that is the "back in a
     minute" exit, and the containers are slow to start and cheap to keep (backend/tools/up.py).
     """
-    if hub is None or not getattr(hub, "quit_requested", False):
+    if hub is None:
+        return
+    if not getattr(hub, "quit_requested", False):
+        from backend.tools.up import STOP_HINT
+        # Said, because it was silent and looked like a cleanup that never ran (user, 2026-09-14).
+        print(f"{DIM}the containers stay up for next time - the page's stop button, or `{STOP_HINT}`, "
+              f"takes them down{RESET}", flush=True)
         return
     from backend.tools.down import main as compose_down
 
@@ -538,7 +586,7 @@ async def stop_containers(hub) -> None:
     await asyncio.to_thread(compose_down, [])
 
 
-async def summarise(cfg, mem, limit: int | None = None) -> int:
+async def summarise(cfg, mem, limit: int | None = None, logs: list | None = None, quiet: bool = False) -> int:
     """One short-lived, cheap brain that summarises past sessions, then goes away.
 
     Same Brain interface as the tutor (ADR-027) but its own process, its own model and no tools:
@@ -550,6 +598,7 @@ async def summarise(cfg, mem, limit: int | None = None) -> int:
                                             str(cfg.MEMORY_SUMMARY_MODEL))
     worker = brain_api.create(cfg, registry=None, allowed_tools=(),
                               model=summary_model, effort=str(cfg.MEMORY_SUMMARY_EFFORT),
+                              turn_timeout_s=float(cfg.MEMORY_SUMMARY_TIMEOUT_S),
                               system_prompt=(prompt.PROMPTS_DIR / "summariser.md").read_text(encoding="utf-8"))
     try:
         await asyncio.wait_for(worker.start(), 90)
@@ -563,7 +612,9 @@ async def summarise(cfg, mem, limit: int | None = None) -> int:
         return await brain_api.reply_text(worker, text)
 
     def progress(log, at: int, total: int) -> None:
-        if total > 1:                      # the launch summarises one; the background says where it is
+        # `quiet` during a lesson: a progress line written over the push-to-talk meter tangled the
+        # console (user, 2026-09-14). The catch-up reports once, when it is done.
+        if total > 1 and not quiet:
             print(chr(13) + DIM + f"memory: summarising {log.stem[:10]} ({at}/{total})…" + RESET, flush=True)
 
     def footer(log) -> str:
@@ -571,8 +622,12 @@ async def summarise(cfg, mem, limit: int | None = None) -> int:
         return study_plan.summary_footer(log, int(cfg.STUDY_PROGRESS_AFTER))
 
     try:
+        progress_after = int(cfg.STUDY_PROGRESS_AFTER)
         return await asyncio.wait_for(mem.summarise_pending(ask, instructions, limit=limit, on_log=progress,
-                                                            footer=footer), 600)
+                                                            footer=footer,
+                                                            progressed=lambda log: study_plan.progressed_in(log, progress_after),
+                                                            logs=logs),
+                                      float(cfg.MEMORY_SUMMARY_TIMEOUT_S) * 2.5)
     except asyncio.CancelledError:
         raise
     except Exception:  # noqa: BLE001
@@ -584,11 +639,14 @@ async def summarise(cfg, mem, limit: int | None = None) -> int:
 async def one_turn(brain, text: str, voice=None, mem=None, opening: bool = False,
                    coach: Callable[[str], str] | None = None,
                    noted: Callable[[str, list], None] | None = None,
-                   marks: Callable[[str], dict] | None = None) -> None:
+                   marks: Callable[[str], dict] | None = None,
+                   answered: Callable[[], Awaitable[None]] | None = None) -> None:
     """Send one text turn; print each sentence the moment it closes, with its latency.
 
     `coach` rewrites what the brain is asked (the study plan's note, spec §6c) — the log records
-    `text` as typed; `noted(student, sentences)` is told the turn afterwards, like memory is."""
+    `text` as typed; `noted(student, sentences)` is told the turn afterwards, like memory is.
+    `answered()` runs the moment her reply is complete, before her voice has finished: the page's
+    context and usage gauges come from the reply, and the opening's audio waits for a click."""
     chunker = SentenceChunker()
     spoken: list[dict] = []
     started = time.monotonic()
@@ -634,6 +692,8 @@ async def one_turn(brain, text: str, voice=None, mem=None, opening: bool = False
                                 usage=event.usage or {})
             if noted is not None:
                 noted("" if opening else text, spoken)
+            if answered is not None:
+                asyncio.get_running_loop().create_task(answered())
             if voice is not None:
                 await voice.drain()
             total = time.monotonic() - started

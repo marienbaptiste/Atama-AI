@@ -1151,7 +1151,7 @@ need to share one voice — in which case the declaration moves back out to conf
 
 ## ADR-031 — Memory is read once at session start and written in the gaps; never retrieved mid-turn
 
-**Status:** Accepted (2026-09-09); **amended 2026-09-10** — a recent-topics tier, and summarising moves to the next launch (see *Amendment* below); **amended 2026-09-12** — a fifth tier, and memory split per tutor (see *Amendment 2*). Extends ADR-024's principle to a second kind of expensive work.
+**Status:** Accepted (2026-09-09); **amended 2026-09-10** — a recent-topics tier, and summarising moves to the next launch (see *Amendment* below); **amended 2026-09-12** — a fifth tier, and memory split per tutor (see *Amendment 2*). **Amended 2026-09-14** — the summary moves back to session end, with the next launch as fallback (see *Amendment 3*). Extends ADR-024's principle to a second kind of expensive work.
 See spec §6b.
 
 **Context.** Spec §6 and ADR-028 already tell Sensei to open "from what she knows about them or
@@ -1275,6 +1275,26 @@ your name every week is not worth the tokens it saves.
 *Rejected:* one shared memory for the whole cast (a new tutor recalling a lesson they were not at
 is worse than one who asks); a facts *tool* the model calls mid-turn (ADR-031's whole point);
 unbounded facts (a diary that grows is a prompt that grows).
+
+**Amendment 3 (2026-09-14, user decision) — summarise at session end; the next launch only if that
+did not happen.** Measured on the user's machine: Haiku at `MEMORY_SUMMARY_EFFORT` medium spends
+50–100 s (7,700–9,000 output tokens) on one real lesson — effort low was slower still — and the
+summariser borrowed the tutor's 60 s `CLAUDE_TURN_TIMEOUT_S`. Every real lesson was cut off
+mid-thought, left pending, and retried and failed at every launch, holding the greeting for a
+minute and running the catch-up for five lessons in the background; five lessons were never
+remembered. Decisions: (1) `Lesson.close()` summarises the ending lesson last, after the page and the
+containers stop, with a console line that says Ctrl+C skips it; (2) the launch keeps its pending
+check, so a lesson written at shutdown costs nothing and one that was not is summarised then; (3)
+the summariser has its own `MEMORY_SUMMARY_TIMEOUT_S` (240 s); (4) `progressed` is counted in
+Python, not copied by the model (ADR-038 point 6); (5) the instructions now say the name comes
+from the transcript only, never an account e-mail the CLI exposes. Thinking **off** was measured
+(3–4 s) and rejected on quality: three runs out of three put grammar in `topics`, one invented a
+fact. (6) **the summariser runs on Sonnet** (user decision, same day): Haiku took 70–98 s and 7.7–9.6k output
+tokens on the same lesson at effort medium and with no effort flag, Sonnet 5 at medium 4.4 s and
+~200 tokens with equal or better summaries — the bigger model is the faster and the cheaper one here.
+*Cost:* quitting after a real lesson takes a few seconds more, visibly and skippably; Sonnet
+omitted the student's name in two runs, which the fact list's kept anchors absorb. *Reversed if:* a model or setting summarises a real lesson in seconds without breaking
+the rules above — then the launch path alone is enough again.
 
 ## ADR-032 — Context is rotated pre-emptively during the avatar's speech, never compacted mid-turn
 
@@ -1653,7 +1673,8 @@ and the turn log of ADR-031 records the tutor's marks (ADR-036) and the student'
    The note reaches the brain and nothing else: the log records the raw transcript, the page and
    the TTS never see it. Its words, like the block's, live in `prompts/coach.md` (ADR-012).
 6. **The summariser reads two more lines** — practised and progressed, from the log's own marks —
-   and may return an optional `progressed` list that the topics row keeps.
+   and may return an optional `progressed` list that the topics row keeps. *Amended 2026-09-14
+   (ADR-031 Amendment 3):* the list is counted by `study_plan.progressed_in`, not returned by the model.
 
 **Consequences / cost.** Zero model calls. About 250 cached prompt tokens per turn (the ceiling
 rose 3400 → 3800) plus a 40-token note every third turn. Grammar "attempted" is a substring

@@ -609,10 +609,9 @@ def coached(plan: Plan | None, text: str) -> str:
 
 
 # -------------------------------------------------------------------- the summariser
-def summary_footer(log: Path, progress_after: int = 2) -> str:
-    """Two lines under a lesson's transcript for the summariser (spec §6c): what the tutor's own
-    marks say was practised, and what was produced often enough to progress. From the log alone —
-    no item set, so it needs nothing the next launch may not have."""
+def _lesson_marks(log: Path) -> tuple[list[str], Counter[str]]:
+    """The tutor's own marks in one lesson log: what she practised (grammar marks and targets, in
+    order, repeated) and how often she credited each thing the student used."""
     practised: list[str] = []
     produced: Counter[str] = Counter()
     for row in memory_api.read_jsonl(log):
@@ -626,10 +625,27 @@ def summary_footer(log: Path, progress_after: int = 2) -> str:
                 practised.append(t)
             if u := str(s.get("used") or "").strip():
                 produced[u] += 1
+    return practised, produced
+
+
+def progressed_in(log: Path, progress_after: int = 2) -> list[str]:
+    """What the student produced often enough in this lesson to progress (spec §6c). Counted here,
+    never asked of the summariser: copying a line our own code wrote was the part of its prompt
+    it deliberated over longest (2026-09-14), and a count needs no judgement."""
+    _, produced = _lesson_marks(log)
+    return [k for k, n in produced.items() if n >= int(progress_after)][:12]
+
+
+def summary_footer(log: Path, progress_after: int = 2) -> str:
+    """Two lines under a lesson's transcript for the summariser (spec §6c): what the tutor's own
+    marks say was practised, and what was produced often enough to progress — context for "how it
+    went", not something to copy. From the log alone, so it needs nothing the next launch may not
+    have."""
+    practised, _ = _lesson_marks(log)
     say = wording()
     lines = []
     if names := list(dict.fromkeys(practised)):
         lines.append(say["practised"] + " " + "、".join(names[:12]))
-    if done := [k for k, n in produced.items() if n >= int(progress_after)]:
-        lines.append(say["progressed_line"] + " " + "、".join(done[:12]))
+    if done := progressed_in(log, progress_after):
+        lines.append(say["progressed_line"] + " " + "、".join(done))
     return "\n".join(lines)
