@@ -10,12 +10,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-SERVICES = ("wanikani", "bunpro", "bunpro_mcp", "brain", "search", "voicevox", "stt")
+#: No `bunpro_mcp`: the Bunpro MCP server was retired on 2026-09-14 (ADR-039). A persisted
+#: status.json that still names it is read by service, so the stale row is simply never shown.
+SERVICES = ("wanikani", "bunpro", "brain", "search", "voicevox", "stt")
 
 STATES: dict[str, frozenset[str]] = {
     "wanikani": frozenset({"disabled", "syncing", "ok", "stale", "error"}),
     "bunpro": frozenset({"disabled", "syncing", "ok", "stale", "error"}),
-    "bunpro_mcp": frozenset({"disabled", "starting", "connected", "failed", "used"}),
     # `brain`, not `claude`: the provider is named in the detail (ADR-027).
     "brain": frozenset({"starting", "ready", "thinking", "rate_limited", "fallback", "restarting", "error"}),
     "search": frozenset({"disabled", "ok", "down", "used"}),

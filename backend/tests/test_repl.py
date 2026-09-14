@@ -258,7 +258,7 @@ def test_refresh_without_a_resync_says_so_and_a_good_one_rotates():
 def test_tool_records_are_sanitised_before_the_turn_log():
     reg = StatusRegistry()
     reg.register_secret(BP)
-    tools = [{"name": "get_ghost_reviews", "args": {"q": f"Token token={BP}"},
+    tools = [{"name": "search", "args": {"q": f"Token token={BP}"},
               "ok": False, "error": f"HTTP 401 for {BP}", "ms": 12}]
     clean = orchestrator.sanitised(tools, reg.sanitize)
     assert clean[0]["ms"] == 12 and clean[0]["ok"] is False

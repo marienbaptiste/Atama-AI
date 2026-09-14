@@ -37,7 +37,9 @@ CLAUDE_INIT_APIKEYSOURCE_SUBSCRIPTION = "none"
 # "MCP connected" event on stdout, so readiness comes from OUR server's ready marker
 # (ATAMA_MCP_READY, written on notifications/initialized ~1.1 s after spawn). The orchestrator
 # MUST wait on it before writing the first user turn.
-CLAUDE_MCP_TOOL_PREFIX = "mcp__bunpro__"
+# 2026-09-14 (ADR-039): the Bunpro server this was verified on is retired; the same marker
+# protocol now serves the search server alone (ATAMA_SEARCH_MCP_READY). CLAUDE_MCP_TOOL_PREFIX
+# ("mcp__bunpro__") went with it — nothing read it.
 CLAUDE_MCP_READY_TIMEOUT_S = 20.0
 # (CLAUDE_INIT_TIMEOUT_S removed 2026-09-12: `init` arrives with the first turn, so the per-turn
 # timeout already covers it and nothing read the constant.)

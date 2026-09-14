@@ -72,7 +72,7 @@ def test_factory_builds_the_configured_provider_and_rejects_unknown(tmp_path):
 
 # ----------------------------------------------------------------- spawn args
 def test_argv_carries_every_spec_required_flag(tmp_path):
-    b = ClaudeCliBrain(cfg(tmp_path), mcp_config=tmp_path / "mcp.json", allowed_tools=["mcp__bunpro__x"],
+    b = ClaudeCliBrain(cfg(tmp_path), mcp_config=tmp_path / "mcp.json", allowed_tools=["mcp__search__search"],
                        system_prompt="SENSEI")
     argv = b._argv(resume=False)
     pairs = list(zip(argv, argv[1:]))
@@ -83,7 +83,7 @@ def test_argv_carries_every_spec_required_flag(tmp_path):
     assert "--strict-mcp-config" in argv                 # never inherit the user's MCP servers
     assert ("--session-id", b.session_id) in pairs       # orchestrator-assigned
     assert ("--effort", cfg(tmp_path).CLAUDE_EFFORT) in pairs   # spec §10 lever, configurable
-    assert ("--allowedTools", "mcp__bunpro__x") in pairs
+    assert ("--allowedTools", "mcp__search__search") in pairs
     # The prompt goes as a FILE: the string variants truncate multi-line values at the first
     # newline and swallow following flags (verified 2026-09-09).
     prompt_pair = next(p for p in pairs if p[0].endswith("system-prompt-file"))
@@ -138,7 +138,7 @@ def test_translate_covers_the_real_captured_stream(tmp_path):
     spoken = "".join(e.text for e in events if isinstance(e, TextDelta))
     assert "そういう" in spoken
     call = next(e for e in events if isinstance(e, ToolCall))
-    assert call.name == "mcp__bunpro__get_ghost_reviews"
+    assert call.name == "mcp__bunpro__get_ghost_reviews"   # a recorded 2026-09-09 turn: history, not config
     assert next(e for e in events if isinstance(e, ToolOutcome)).ok is True
     done = [e for e in events if isinstance(e, TurnComplete)]
     assert len(done) == 1 and done[0].ttft_ms and done[0].duration_ms
@@ -439,7 +439,7 @@ def test_a_cancelled_start_closes_the_process_it_launched(tmp_path):
     """A rotation discarded mid-spawn (session.discard) lands a CancelledError inside start()
     after Popen has run; the process must not outlive the brain that never finished starting."""
     async def go():
-        b = FakeCli(cfg(tmp_path), mcp_ready_markers={"bunpro_mcp": tmp_path / "never-written"})
+        b = FakeCli(cfg(tmp_path), mcp_ready_markers={"search": tmp_path / "never-written"})
         task = asyncio.create_task(b.start())
         await asyncio.sleep(0.3)                            # inside _await_mcp_ready, Popen done
         task.cancel()
@@ -496,7 +496,7 @@ def test_the_last_turn_carries_its_tools_and_usage_for_the_turn_log(tmp_path):
 
     events, last = asyncio.run(go())
     [outcome] = [e for e in events if isinstance(e, ToolOutcome)]
-    assert outcome.name == "mcp__bunpro__get_ghost_reviews"     # paired with its call
-    assert [t["name"] for t in last["tools"]] == ["mcp__bunpro__get_ghost_reviews"]
+    assert outcome.name == "mcp__search__search"     # paired with its call
+    assert [t["name"] for t in last["tools"]] == ["mcp__search__search"]
     assert last["tools"][0]["ok"] is True and isinstance(last["tools"][0]["ms"], int)
     assert last["usage"].get("input_tokens") == 10

@@ -6,7 +6,7 @@ import { $, APP_NAME, esc } from "./ui";
 
 //: Spec §5b: every external dependency, working or not — not merely configured. One dot each.
 export const SVC_NAMES: Record<string, string> = {
-  wanikani: "WaniKani", bunpro: "Bunpro", bunpro_mcp: "Bunpro tools", brain: "Brain",
+  wanikani: "WaniKani", bunpro: "Bunpro", brain: "Brain",
   search: "Search", voicevox: "Voice", stt: "Listening",
 };
 export const GREEN = "#22a355", BLUE = "#3b82f6", AMBER = "#f2a33a", RED = "#e8453c", OFF = "#c9ced6";

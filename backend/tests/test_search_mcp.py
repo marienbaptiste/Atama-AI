@@ -73,12 +73,12 @@ def test_tool_surface_is_exactly_one_read_tool():
     m._assert_surface()
 
 
-def test_it_is_a_separate_server_from_bunpro():
-    """The Bunpro server's three-tool surface is asserted by the Golden Rule gate; search must
-    never be bolted onto it (spec §0 rule 5, ADR-028)."""
-    from backend.srs import bunpro_mcp
-    assert m.server is not bunpro_mcp.server
-    assert set(m.READ_TOOLS).isdisjoint(bunpro_mcp.READ_TOOLS)
+def test_it_carries_no_srs_tool():
+    """Search is the only MCP server since ADR-039, and it never gains an SRS tool: none of the
+    names the Golden Rule gate knows as SRS read tools may appear on it (spec §0 rule 5)."""
+    from backend.tools.readonly_gate import MCP_READ_TOOLS
+    assert set(m.READ_TOOLS).isdisjoint(MCP_READ_TOOLS)
+    assert m.server.name != "bunpro"
 
 
 def test_search_returns_cleaned_results_and_uses_get():

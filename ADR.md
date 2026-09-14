@@ -13,14 +13,14 @@ reasoning behind it. Build sequencing is in [ROADMAP.md](ROADMAP.md).
 |-----|---------------------------------------------------------------|----------|
 | 001 | Claude CLI subprocess, not the Anthropic API SDK              | Accepted |
 | 002 | One persistent subprocess per session, not one per turn       | Accepted |
-| 003 | No tools for the tutor; no permission bypass                  | Superseded by ADR-016 |
+| 003 | No tools for the tutor; no permission bypass                  | Superseded by ADR-016; amended by ADR-039 |
 | 004 | Local STT: faster-whisper `large-v3` @ `int8_float16`         | Accepted; amended 2026-09-09 (`float16` is the default) |
 | 005 | VOICEVOX on CPU in Docker, never on the GPU                   | Accepted |
 | 006 | Server-side Silero VAD over raw PCM from an AudioWorklet      | Accepted; amended 2026-09-12 (the orchestrator captures the mic) |
 | 007 | `speakAudio` with explicit visemes, never `speakText`         | Accepted |
 | 008 | Sentence-level streaming, with fillers as masking only        | Accepted; fillers deferred to the end of the project (2026-09-12) |
 | 009 | Vanilla TS + Vite frontend; no React, no state library        | Accepted |
-| 010 | SRS sources are optional; Bunpro is fragile by assumption     | Accepted |
+| 010 | SRS sources are optional; Bunpro is fragile by assumption     | Accepted; amended by ADR-039 |
 | 011 | Student Profile capped at 600 tokens                          | Accepted |
 | 012 | Tutor prompt lives in a versioned file, not in code           | Accepted |
 | 013 | No database — JSONL files, one user                           | Accepted |
@@ -29,12 +29,12 @@ reasoning behind it. Build sequencing is in [ROADMAP.md](ROADMAP.md).
 | 016 | Subprocess isolation: `--tools ""`, strict MCP, empty cwd, env allowlist | Accepted; amended by ADR-037 (interrupt protocol) |
 | 017 | Loopback-only binding for every service                        | Accepted; amended 2026-09-12 (Origin check) |
 | 018 | Self-barge-in is designed out, not tuned out                   | Accepted |
-| 019 | Service health is surfaced from real signals, in the UI       | Accepted |
+| 019 | Service health is surfaced from real signals, in the UI       | Accepted; amended by ADR-039 |
 | 020 | Emotion is one tag, sentence-scoped, driving face and voice together | Accepted; amended 2026-09-12 (seven tags; settles at end of turn) |
-| 021 | WaniKani and Bunpro are read-only, enforced at three layers     | Accepted |
+| 021 | WaniKani and Bunpro are read-only, enforced at three layers     | Accepted; amended by ADR-039 |
 | 022 | Configuration lives in a settings interface; `.env` is gone   | Accepted; amended 2026-09-12 |
-| 023 | Bunpro MCP server is written in-repo; credential is the Settings→API token only | Accepted |
-| 024 | SRS APIs are called only at launch and manual refresh; MCP tools read the snapshot | Accepted |
+| 023 | Bunpro MCP server is written in-repo; credential is the Settings→API token only | Superseded by ADR-039 (the server is retired; the credential decision stands) |
+| 024 | SRS APIs are called only at launch and manual refresh; MCP tools read the snapshot | Accepted; amended by ADR-039 (no SRS tools remain) |
 | 025 | Session topic seed fetched by the orchestrator, never by the tutor | Superseded by ADR-028 |
 | 026 | Sensei has a soul file: persona lives in `prompts/soul.md` | Accepted; amended by ADR-030 (one file per persona) |
 | 027 | The brain is a provider behind an interface; Claude CLI is the only implementation | Accepted |
@@ -49,6 +49,7 @@ reasoning behind it. Build sequencing is in [ROADMAP.md](ROADMAP.md).
 | 036 | The study panel: the tutor tags, the student clicks, the dictionary is local | Accepted; partly built |
 | 037 | A turn is stopped by the CLI's interrupt request, never by a signal | Accepted (2026-09-12); amends ADR-016 |
 | 038 | Today's targets rotate like an SRS, with zero model calls | Accepted (2026-09-12) — user request |
+| 039 | The Bunpro MCP server is retired: both SRS sources reach the tutor through the profile only | Accepted (2026-09-14) — user decision |
 
 ---
 
@@ -108,7 +109,7 @@ strictly simpler.
 
 **Status:** Superseded by ADR-016 (2026-09-09). The intent stands; the mechanism changed —
 `--disallowedTools` left 20 built-in tools in the prompt, and the subprocess was inheriting the
-user's global Claude Code configuration. Reasoning below kept as written.
+user's global Claude Code configuration. Reasoning below kept as written. **Amended by ADR-039 (2026-09-14):** the Bunpro MCP server this refers to is retired.
 
 **Context.** Claude Code ships with file and execution tools. A conversation tutor needs none of
 them, and every available tool costs system-prompt tokens — which is latency (ADR-011) — while
@@ -297,7 +298,7 @@ about whether it should (ADR-013's spirit).
 
 ## ADR-010 — SRS sources are optional; Bunpro is fragile by assumption
 
-**Status:** Accepted
+**Status:** Accepted. **Amended by ADR-039 (2026-09-14):** the Bunpro MCP server this refers to is retired.
 
 **Context.** WaniKani has a stable official API. Bunpro does not — integration is unofficial and
 can break without warning. Personalisation is the whole value proposition, but a broken
@@ -554,7 +555,7 @@ unnecessary.
 
 ## ADR-019 — Service health is surfaced from real signals, in the UI
 
-**Status:** Accepted (2026-09-09)
+**Status:** Accepted (2026-09-09). **Amended by ADR-039 (2026-09-14):** the Bunpro MCP server this refers to is retired.
 
 **Context.** The spec made WaniKani and Bunpro optional and Bunpro fragile (ADR-010), which
 means "the tutor is not using my reviews" has many possible causes: no token, expired token,
@@ -632,7 +633,7 @@ overrides carry the load and the style column is dropped, not the mechanism.
 
 ## ADR-021 — WaniKani and Bunpro are read-only, enforced at three layers
 
-**Status:** Accepted (2026-09-09) — user directive, not negotiable
+**Status:** Accepted (2026-09-09) — user directive, not negotiable. **Amended by ADR-039 (2026-09-14):** the Bunpro MCP server this refers to is retired.
 
 **Context.** The user's SRS accounts hold years of study state. WaniKani's API can start
 assignments, submit reviews and edit study materials; Bunpro's unofficial surface can do the
@@ -754,7 +755,9 @@ That is the point: one place to configure, and it has a face.
 
 ## ADR-023 — Bunpro MCP server is written in-repo; credential is the Settings→API token only
 
-**Status:** Accepted (2026-09-09) — closes ROADMAP V0.7
+**Status:** Accepted (2026-09-09) — closes ROADMAP V0.7. **Superseded by ADR-039 (2026-09-14)** for
+decision 1: the server is retired. Decisions 2–5 (the Settings→API token only, fail loudly on drift,
+politeness, hardcoded origins) still govern the launch fetch. Reasoning below kept as written.
 
 **Context.** Bunpro has no official API: staff deprecated it in 2024 and removed the docs, and
 have since permitted reverse-engineering of the site's `/api/frontend/*` endpoints with an
@@ -811,7 +814,8 @@ parameter `dangerously_authenticate_using_api_token=true` plus `Origin`/`Referer
 
 ## ADR-024 — SRS APIs are called only at launch and manual refresh; MCP tools read the snapshot
 
-**Status:** Accepted (2026-09-09) — user directive
+**Status:** Accepted (2026-09-09) — user directive. **Amended by ADR-039 (2026-09-14):** points 3
+and 4 describe a server that no longer exists; the fetch policy itself is unchanged.
 
 **Context.** The first design had the Bunpro MCP server call Bunpro live on every tool
 invocation, and the session-start fetch re-ran whenever a 1 h cache expired. Bunpro's API is
@@ -1663,3 +1667,50 @@ which the terminal line and the note make visible rather than silent. Config key
 (ROADMAP 23's live check), the notes leak into her speech, or "produced correctly" turns out to
 need a judgement her `[used:]` mark cannot make — then a cheap model call *after* the turn, in the
 speaking gap, never on the speaking path (ADR-031).
+
+## ADR-039 — The Bunpro MCP server is retired: both SRS sources reach the tutor through the profile only
+
+**Status:** Accepted (2026-09-14) — user decision. Supersedes ADR-023 decision 1; amends ADR-024
+(points 3 and 4), ADR-010, ADR-019 (the `bunpro_mcp` chip) and ADR-021 layer 3.
+
+**Context.** ADR-023 wrote a Bunpro MCP server when the design had it query Bunpro live, so the
+tutor could check what was due mid-lesson. ADR-024 then forbade every fetch outside launch and
+Refresh, which left the server reading the same launch snapshot the orchestrator had already
+rendered into the Student Profile: JLPT progress, due counts, up to fifteen ghosts and the other
+grammar in play, on every turn. What the tools added beyond that was small (a ghost's meaning and
+streak, tomorrow's forecast, the beginner-stage list past the profile's budget). Measured over
+every logged turn to 2026-09-14 (110 turns): the tutor called `search` twice and a Bunpro tool
+**never**. WaniKani, meanwhile, always went snapshot → profile with no tools, and nothing was
+missing for it — the asymmetry was history, not need.
+
+What the server still cost: a second process spawned with every Claude session (and every
+rotation and tutor switch), a readiness wait before the first turn, a status chip for a thing
+that is never used, and a component within reach of the Bunpro data that the Golden Rule has to
+reason about.
+
+**Decision.**
+
+1. **Delete `backend/srs/bunpro_mcp.py`.** `mcp.json` names one server, `search` (ADR-028), and
+   only when SearXNG is configured; with it off the tutor is spawned with no MCP config at all.
+2. **Bunpro is handled exactly like WaniKani:** fetched at launch and on Refresh (ADR-024,
+   unchanged), stored as a snapshot, rendered into the profile, read by the study plan and the
+   page's marks in Python. No model call is added (user rule, 2026-09-12).
+3. **The `bunpro_mcp` status service is removed** from `status.py` and the page. The `bunpro`
+   chip still reports the fetch.
+4. **The Golden Rule gate is not touched.** Its rule 5 checks a file named `srs/bunpro_mcp.py`
+   only if one exists, so it now guards against one being reintroduced with a write tool. No
+   SRS tool of any kind may be added without a new ADR; the prohibition on a fourth tool becomes
+   a prohibition on any.
+5. **If the tutor needs more Bunpro detail, it goes into the profile** — a renderer change within
+   `PROFILE_MAX_TOKENS` — not back into a tool.
+
+**Consequences.** One process, one readiness wait and one chip fewer; the read-only surface is the
+two fetchers on the GET-only client and nothing else. The tutor can no longer fetch a ghost's
+meaning or the forecast on request; neither was ever asked for. M4's acceptance line "Bunpro MCP
+deliberately broken → chip reads `failed`" no longer has a subject and is dropped; "Bunpro absent
+→ `disabled`" stays. `claude_probe` now probes the search server when configured, and a spawn with
+no server otherwise.
+
+**Reversed if:** a lesson needs Bunpro data that cannot fit the profile budget and would be asked
+for mid-conversation — then a read tool over the snapshot comes back under a new ADR, on the terms
+of ADR-023 decisions 2–5 and gate rule 5.

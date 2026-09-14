@@ -155,7 +155,7 @@ def fetch_raw(client: SrsClient) -> dict[str, Any]:
     except a Golden Rule violation, which is never swallowed (spec §0)."""
     raw: dict[str, Any] = {"_errors": {}}
     # Eight calls, ONLY at app launch / manual refresh (spec §5 fetch policy). With
-    # BUNPRO_MIN_INTERVAL_S spacing this fits the 10 s budget. The MCP tools never call Bunpro;
+    # BUNPRO_MIN_INTERVAL_S spacing this fits the 10 s budget. Nothing else calls Bunpro;
     # they read this snapshot. adept and seasoned joined beginner on 2026-09-12 (user: "she must
     # use all the forms I haven't Guru'd or mastered"): those three levels are what is still in
     # the student's SRS rather than settled, and the tutor is asked to work through all of them.

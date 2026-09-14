@@ -51,7 +51,7 @@ def emit(obj) -> None:
 def init(api_key_source: str = "none", session_id: str = SESSION, tools=()) -> None:
     emit({"type": "system", "subtype": "init", "session_id": session_id, "uuid": "u-init",
           "apiKeySource": api_key_source, "model": "claude-fake", "cwd": "/tmp",
-          "tools": list(tools), "mcp_servers": [{"name": "bunpro", "status": "pending"}]})
+          "tools": list(tools), "mcp_servers": [{"name": "search", "status": "pending"}]})
 
 
 def text(s: str) -> None:
@@ -120,7 +120,7 @@ def main() -> int:
             if mode != "no_init":
                 init(api_key_source="ANTHROPIC_API_KEY" if mode == "bad_auth" else "none",
                      session_id="99999999-0000-0000-0000-000000000000" if mode == "wrong_session" else sid,
-                     tools=["mcp__bunpro__get_ghost_reviews"])
+                     tools=["mcp__search__search"])
             if mode in ("bad_auth", "no_init"):
                 wait(30, honour_interrupt=False)
                 return 0
@@ -157,7 +157,7 @@ def main() -> int:
         if mode == "tool_call":
             emit({"type": "assistant", "session_id": SESSION, "uuid": "u-a", "message": {
                 "role": "assistant", "content": [
-                    {"type": "tool_use", "id": "t1", "name": "mcp__bunpro__get_ghost_reviews", "input": {}}]}})
+                    {"type": "tool_use", "id": "t1", "name": "mcp__search__search", "input": {"query": "天気"}}]}})
             emit({"type": "user", "session_id": SESSION, "uuid": "u-u", "message": {
                 "role": "user", "content": [
                     {"type": "tool_result", "tool_use_id": "t1", "content": '{"count": 1}'}]}})

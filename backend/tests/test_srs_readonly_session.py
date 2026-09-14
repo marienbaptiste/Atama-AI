@@ -1,14 +1,17 @@
 """Spec §5 / ADR-021 standing test: a full mocked session — launch fetch of BOTH services through
-profile.build(), then every Bunpro MCP tool — with every outgoing HTTP request recorded. All of
-them are GET, all go to the two pinned hosts, and the client has nothing to write with.
+profile.build(), then the student's manual Refresh — with every outgoing HTTP request recorded. All
+of them are GET, all go to the two pinned hosts, and the client has nothing to write with.
 
 Two recorders: the SrsClient's own transport (what the fetchers send), and the real
-`httpx.HTTPTransport`, patched to record and refuse — so anything that bypassed the mock (the MCP
-server included, which must make no request at all) would show up here instead of on the wire.
+`httpx.HTTPTransport`, patched to record and refuse — so anything that bypassed the mock would show
+up here instead of on the wire.
+
+Until 2026-09-14 step 2 called the three Bunpro MCP tools; that server is retired (ADR-039), and
+the last test here keeps it from quietly coming back as a model-facing tool on SRS data.
 """
 from __future__ import annotations
 
-import asyncio
+import ast
 import json
 from pathlib import Path
 
@@ -16,7 +19,6 @@ import httpx
 import pytest
 
 from backend import constants
-from backend.srs import bunpro_mcp as m
 from backend.srs import profile as profile_api
 from backend.srs.http import ALLOWED_HOSTS, SrsClient
 from backend.status import StatusRegistry
@@ -47,13 +49,6 @@ def recorder(requests: list[httpx.Request]):
     return handler
 
 
-def _payload(result):
-    if isinstance(result, tuple):
-        return result[1] if isinstance(result[1], dict) else json.loads(result[0][0].text)
-    sc = getattr(result, "structuredContent", None)
-    return sc.get("result", sc) if sc else json.loads(result.content[0].text)
-
-
 def test_a_full_mocked_session_sends_only_get_to_the_pinned_hosts(tmp_path, monkeypatch):
     seen: list[httpx.Request] = []
     escaped: list[httpx.Request] = []
@@ -73,13 +68,10 @@ def test_a_full_mocked_session_sends_only_get_to_the_pinned_hosts(tmp_path, monk
     launch_count = len(seen)
     assert launch_count >= 5 + 8   # 5 WaniKani calls + 8 Bunpro calls at least (spec §5, 2026-09-12)
 
-    # 2. The tutor's mid-session tool calls: all three, reading the snapshot the launch wrote.
-    monkeypatch.setattr(m, "_snapshot_path", tmp_path / "bunpro.json")
-    for tool in m.READ_TOOLS:
-        out = _payload(asyncio.run(m.server.call_tool(tool, {})))
-        assert "error" not in out, (tool, out)
-        assert out["synced_at"] and out["age_minutes"] is not None
-    assert len(seen) == launch_count, "MCP tools must make no request at all (ADR-024)"
+    # 2. The student presses Refresh (ADR-024's only other caller): the same fetch, forced again.
+    again = profile_api.build("wk-token", "bp-token", tmp_path, 3600, 10, reg, overrides, force=True)
+    assert again.sources == {"wanikani": "ok", "bunpro": "ok"}, (again.sources, again.errors)
+    assert len(seen) == 2 * launch_count, "a Refresh is exactly one more launch fetch, nothing else"
 
     # 3. Every request, every layer: GET, pinned hosts, no redirects followed, nothing escaped.
     assert seen and all(r.method == "GET" for r in seen), sorted({r.method for r in seen})
@@ -100,3 +92,36 @@ def test_the_client_has_nothing_to_write_with():
                                  "put_", "patch_", "mark_", "reset_", "assign_")) for n in dir(c))
     with pytest.raises(AttributeError):
         c.post  # noqa: B018 - the attribute must not exist
+
+
+def _tool_server_imports(source: str) -> list[str]:
+    """Every import in `source` that would make it an MCP server: the `mcp` library, or our own
+    readiness helper (`backend.mcp_ready`), however it is spelled."""
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names = [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or ""] + [f"{node.module or ''}.{a.name}" for a in node.names]
+        else:
+            continue
+        found += [n for n in names if n == "mcp" or n.startswith("mcp.") or n.split(".")[-1] == "mcp_ready"]
+    return found
+
+
+def test_the_tool_server_check_catches_every_spelling():
+    assert _tool_server_imports("import mcp") == ["mcp"]
+    assert _tool_server_imports("from mcp.server.mcpserver import MCPServer")
+    assert _tool_server_imports("from backend import mcp_ready")
+    assert _tool_server_imports("import backend.mcp_ready")
+    assert _tool_server_imports("from backend.srs import bunpro\nimport httpx") == []
+
+
+def test_no_srs_module_is_a_tool_server():
+    """ADR-039: WaniKani and Bunpro reach the tutor through the profile only. Nothing under srs/
+    may import an MCP library or build a server a model could call."""
+    srs = Path(__file__).resolve().parents[1] / "srs"
+    offenders = {path.name: hits for path in sorted(srs.rglob("*.py"))
+                 if (hits := _tool_server_imports(path.read_text(encoding="utf-8")))}
+    assert offenders == {}
+    assert not (srs / "bunpro_mcp.py").exists()

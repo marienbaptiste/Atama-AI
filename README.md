@@ -19,7 +19,7 @@ no accounts: one user, local files. **It never writes to your SRS accounts.**
 > pre-commit hook all run a gate that fails on any write call or any setter-shaped name in the
 > SRS code. The same transport refuses to send a token to any host but `api.wanikani.com` or
 > `api.bunpro.jp`, because the origins are constants rather than settings. There is no bypass.
-> Details: spec §0, ADR-021, ADR-023.
+> Details: spec §0, ADR-021, ADR-023, ADR-039.
 
 > **Status: M3, the page.** M0 to M2 are built (M2 declared done by the user, ADR-034) and M4's
 > code is complete. You talk to the Vite + TypeScript page in `frontend/`. What is not done is
@@ -73,10 +73,10 @@ What it gives you:
 - **Emotion end to end.** The tutor tags sentences `[happy]`, `[thinking]`, `[surprised]`,
   `[serious]`, `[encouraging]`, `[proud]` or `[confused]`. The tag drives the VOICEVOX voice style
   and the avatar's face together, when that sentence plays.
-- **Read-only SRS.** WaniKani and Bunpro are never written to. Enforced at token, client and tool
-  level rather than by a prompt.
-- **Status bar.** You can see whether WaniKani, Bunpro, the Bunpro MCP, Claude, VOICEVOX and
-  Whisper are working, not just configured.
+- **Read-only SRS.** WaniKani and Bunpro are never written to. Enforced at token and client level,
+  and the tutor has no SRS tools at all, rather than by a prompt.
+- **Status bar.** You can see whether WaniKani, Bunpro, Claude, search, VOICEVOX and Whisper
+  are working, not just configured.
 - **A settings page instead of dotfiles.** Tokens, voice, VAD, model and display are configured in
   the app.
 - **A correction policy that respects flow.** Minor errors get a natural recast; errors that break
@@ -109,10 +109,9 @@ Browser (frontend/, Vite + TypeScript)     Python Orchestrator (backend)
         │ SearxNG     │◄──HTTP :8888──┐                │ stdin/stdout
         │ (Docker)    │               │                ▼
         └─────────────┘   ┌───────────┴──┐        claude -p (persistent subprocess,
-  Yahoo! JAPAN RSS ◄─GET──┤ search MCP   │◄───────stream-json in/out, MCP tools)
-  (news_feeds.txt)        │ (1 tool)     │             │
-                          └──────────────┘             └──► Bunpro MCP (3 read tools,
-                                                            reads the SRS snapshot)
+  Yahoo! JAPAN RSS ◄─GET──┤ search MCP   │◄───────stream-json in/out, search tool)
+  (news_feeds.txt)        │ (1 tool)     │
+                          └──────────────┘
 
   run.cmd / up.py  : docker up → wait ready → build the page if stale → orchestrator → open page
   stop.cmd / down.py, or the page's stop button (control quit): tutor, server AND containers
@@ -503,8 +502,8 @@ type, default, group and description, and the settings page is generated from it
 Both sources are optional and fetched in parallel at session start within a 10 s budget. The app
 runs fine with zero, one, or both configured.
 
-**This application never writes to WaniKani or Bunpro.** Not from the orchestrator, not from the
-MCP server, not from Claude. Three independent layers enforce it, and a standing test records every
+**This application never writes to WaniKani or Bunpro.** Not from the orchestrator, not from
+Claude. Three independent layers enforce it, and a standing test records every
 outgoing request in a full mocked session and asserts all are `GET`:
 
 1. **Token scope.** Create your WaniKani token with **no write permissions ticked**
@@ -514,28 +513,24 @@ outgoing request in a full mocked session and asserts all are `GET`:
    token to prove it authenticates.
 2. **Client.** Every SRS module is built on one HTTP client that has a `get()` method and nothing
    else. There is no write method to call.
-3. **Tool surface.** The Bunpro MCP server exposes read tools only (`get_review_queue`,
-   `get_ghost_reviews`, `get_grammar_progress`). A community server with write tools is
-   disqualified unless they can be removed from the surface.
+3. **Tool surface.** The tutor has no SRS tools at all. Its only tool is the news search; your
+   WaniKani and Bunpro data reach it through the Student Profile in its prompt. An SRS tool of any
+   kind would need a new ADR (ADR-039).
 
 **The APIs are contacted only at app launch and when you press Refresh.** Nothing else calls them:
-not a timer, not a conversation turn, not the MCP tools. Each sync stores a snapshot, the status
-chips show `synced HH:MM`, and the Bunpro MCP tools read that snapshot (and tell the tutor how old
-it is) rather than calling Bunpro, so the MCP server holds no token at all.
-
-Why do you still need tokens if Claude uses MCP? MCP is only the transport that lets Claude call a
-tool mid-conversation. The tool still has to authenticate to WaniKani and Bunpro as you. Tokens
-never enter the `claude` process itself, only the MCP server that needs them, through the `env`
-block of its `mcp.json` entry.
+not a timer, not a conversation turn. Each sync stores a snapshot per service
+(`.cache/srs/wanikani.json`, `.cache/srs/bunpro.json`) and the status chips show `synced HH:MM`.
+WaniKani and Bunpro are handled the same way: the snapshot is rendered into the Student Profile,
+and the study plan and the page's marks read it in plain Python. Your tokens are used only by that
+fetch. They never enter the `claude` process and never appear in `mcp.json`.
 
 - **WaniKani** (official, stable). Level, item counts by SRS stage, every vocabulary item still
   below Guru, and about 15 leeches. The rate limit (about 60 req/min) is respected and results are
   fetched at every launch and on Refresh, and stored to disk between them (`SRS_CACHE_TTL_S`, default 0, re-uses a younger snapshot at launch if you set it).
 - **Bunpro** (unofficial, treated as fragile). JLPT progress and the grammar you have not settled
-  yet (ghosts first, then beginner, adept and seasoned) for the static profile, plus a small MCP
-  server written in this repo so Claude can check your review queue mid-conversation, on request or
-  roughly every 15 minutes. The credential is the **Account API Token from Bunpro → Settings →
-  API**; the app never asks for your Bunpro email or password and never reads browser cookies.
+  yet (ghosts first, then beginner, adept and seasoned) for the profile. The credential is the
+  **Account API Token from Bunpro → Settings → API**; the app never asks for your Bunpro email or
+  password and never reads browser cookies.
   Bunpro has no official API, so these endpoints can change without warning. Every response is
   validated and a change shows up as a red chip rather than as wrong data. Every call is wrapped,
   failures log a warning, and the session continues. Bunpro breakage never blocks startup. The
@@ -559,16 +554,16 @@ value is configured:
 
 | Chip         | States                                                                          |
 |--------------|---------------------------------------------------------------------------------|
-| WaniKani     | `disabled` · `syncing` · `ok` (level, synced HH:MM) · `stale` (serving cache) · `error` |
-| Bunpro       | same, for the session-start fetch                                                |
-| Bunpro MCP   | `disabled` · `starting` · `connected` · `failed` · `used` (last call HH:MM, ok/error) |
+| WaniKani     | `disabled` · `syncing` · `ok` (level, synced HH:MM) · `stale` (serving cache) · `error`, for its launch and Refresh fetch |
+| Bunpro       | same, for its launch and Refresh fetch                                           |
 | Claude       | `starting` · `ready` · `thinking` · `rate_limited` · `fallback` · `restarting` · `error` |
+| Search       | `disabled` · `ok` (ready) · `down` (no ready signal) · `used` (the news search MCP server) |
 | VOICEVOX     | `loading` · `warm` (engine version, N styles) · `ok` (up, not preloaded) · `down` |
 | STT          | `loading` · `warm` (model, VRAM MB) · `error`                                    |
 
 `stale` is not an error: the tutor still has a profile, just an older one. Click a chip for detail,
-and hit **resync** to force a re-fetch past the cache TTL. `make doctor` prints the same table and
-the session log header records it, so a bad session can be diagnosed afterwards. Error text is
+and hit **resync** (Refresh) to fetch WaniKani and Bunpro again. `make doctor` prints the same
+table and the session log header records it, so a bad session can be diagnosed afterwards. Error text is
 sanitised before it reaches a chip, so a token never appears there.
 
 ---
@@ -702,7 +697,6 @@ atama-ai/
 │  ├─ tools/            # up, down, check_secrets, hooks, mcp_config, gen_protocol, latency_run, …
 │  ├─ srs/http.py       # GET-only client + ReadOnlyTransport
 │  ├─ srs/wanikani.py  srs/bunpro.py  srs/profile.py  srs/cache.py
-│  ├─ srs/bunpro_mcp.py # stdio MCP server, read tools only
 │  ├─ config.py  constants.py (verified CLI/endpoint findings, dated)
 │  ├─ models.py (pydantic WS protocol)
 │  ├─ data/             # hallucination_blocklist.txt, model_tiers.txt, news_feeds.txt, readings.txt, scenarios.txt
@@ -758,7 +752,7 @@ validation and integration plan behind these lives in [ROADMAP.md](ROADMAP.md).
 | **M1** | SRS fetchers (read-only) + text brain loop  | WaniKani + Bunpro fetchers, profile renderer, persistent claude subprocess, CLI REPL with the real profile in the prompt     | Read-only recording test green; env allowlist; restart/`--resume`; chunker + emotion tests; no built-in tools in `init.tools[]`                |
 | **M2** | Ears & mouth (no avatar)                    | Mic → VAD → Whisper → M1 → VOICEVOX → playback; emotion → voice live; latency + VRAM instrumentation                        | Viseme golden tests; hallucination filter; five emotions audibly distinct; VAD gating test                                                     |
 | **M3** | Face                                        | Full frontend: TalkingHead, lip-sync, emotions (face + voice), listening reactions, status bar, settings drawer, barge-in    | 10 turns on headphones, barge-in < 300 ms; **10 turns on speakers, zero self-interruptions**; 4 emotions distinct; **p90 ≤ 5.0 s**; VRAM ≤ 10 GB |
-| **M4** | Sensei brain                                | Prompt tuning, Bunpro MCP (read tools only), status chips on real signals, resync                                            | ≥ 3 recent unlocks used in 5 minutes; Bunpro absent → `disabled`; broken → `failed`, conversation unaffected; WK offline → `stale`             |
+| **M4** | Sensei brain                                | Prompt tuning, status chips on real signals, resync                                                                          | ≥ 3 recent unlocks used in 5 minutes; Bunpro absent → `disabled`, conversation unaffected; WK offline → `stale`                               |
 | **M5** | Polish                                      | Full settings page, session summary, `--profile` overlay, fresh-machine docs (Linux + WSL2), `make check-secrets`            | Clone → first conversation **without any `.env`**; redaction and read-only tests green                                                 |
 
 ---
@@ -781,14 +775,15 @@ The rules that shape this codebase. Most were expensive to learn. They are docum
 
 - **One persistent process per session.** Never one per turn, because startup latency kills the
   experience.
-- **Isolated** (ADR-016): `--tools ""` (no built-in tools at all, so the three Bunpro MCP tools are
-  the only ones it has), `--strict-mcp-config` (only our MCP servers), an orchestrator-assigned
-  `--session-id`, spawned from an empty cwd **outside the repository** (Claude Code walks up the
-  tree for `CLAUDE.md`), with an **allowlisted env** (`PATH`, home, temp, `LANG`, the OAuth token,
-  and nothing else, so SRS tokens never enter it).
-- **Waits for the MCP server's ready signal before the first turn.** Claude prints `init` before
-  MCP servers connect and never announces the connection, so our server writes a marker on
-  `notifications/initialized`. Sending a turn early means a tutor with no tools.
+- **Isolated** (ADR-016): `--tools ""` (no built-in tools at all, so the news search is the only tool
+  it has, and only when SearXNG is configured; there are no SRS tools), `--strict-mcp-config` (only
+  our MCP server, or none), an orchestrator-assigned `--session-id`, spawned from an empty cwd
+  **outside the repository** (Claude Code walks up the tree for `CLAUDE.md`), with an
+  **allowlisted env** (`PATH`, home, temp, `LANG`, the OAuth token, and nothing else, so SRS tokens
+  never enter it).
+- **Waits for the search server's ready signal before the first turn** (when search is on).
+  Claude prints `init` before MCP servers connect and never announces the connection, so our server
+  writes a marker on `notifications/initialized`. Sending a turn early means a tutor with no search.
 - **Assert `init.apiKeySource == "none"`.** Anything else means API billing, so refuse to run.
 - **Restart with `--resume <session_id>`** if the process dies, with the same cwd and env.
 - **Parse stdout line by line as JSON.** Log and skip unknown event types, and never crash on one.
@@ -899,8 +894,9 @@ Store Python and the configured `CLAUDE_CWD` is under `%LOCALAPPDATA%`, which th
 virtualises, so other processes cannot see the directory. Leave `CLAUDE_CWD` empty (default
 `~/.atama-ai/claude-cwd`) or point it anywhere outside both AppData and the repo.
 
-**Bunpro MCP chip stuck on `failed`.** Bunpro's API is unofficial and changes. Check the sanitised
-error in the chip, then the session log. The conversation continues without it.
+**Bunpro chip on `error` or `stale`.** Bunpro's API is unofficial and changes. Check the sanitised
+error in the chip, then the session log. The conversation continues without Bunpro data in the
+profile; press Refresh once it is fixed.
 
 ---
 

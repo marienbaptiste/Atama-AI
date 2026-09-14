@@ -2,7 +2,7 @@
 
     python -m backend.tools.latency_run                    # 20 turns, current settings
     python -m backend.tools.latency_run --turns 10 --effort low --model haiku
-    python -m backend.tools.latency_run --no-mcp           # without the search / Bunpro tools
+    python -m backend.tools.latency_run --no-mcp           # without the search tool
 
 ROADMAP subsystem 10, Validate: "a scripted 20-turn conversation produces the p50/p90 report".
 The student side is replayed; the tutor side is the real thing:
@@ -262,7 +262,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--turns", type=int, default=20)
     parser.add_argument("--effort", choices=("low", "medium", "high", "xhigh", "max"))
     parser.add_argument("--model", help="model alias for this run only, e.g. sonnet / haiku / opus")
-    parser.add_argument("--no-mcp", action="store_true", help="run without the search and Bunpro tools")
+    parser.add_argument("--no-mcp", action="store_true", help="run without the search tool")
     args = parser.parse_args(argv)
     try:
         return asyncio.run(main_async(args))

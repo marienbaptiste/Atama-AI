@@ -50,13 +50,13 @@ def test_no_configured_secret_reaches_logs_or_cache(tmp_path, monkeypatch):
     # 2. Brain and tool errors through the registry, re-persisted.
     registry.report("brain", "error", "spawn failed",
                     last_error=f"child env WANIKANI_TOKEN={WK}; header Authorization: Bearer {WK}")
-    registry.report("bunpro_mcp", "failed", registry.sanitize(f"HTTP 401 for Token token={BP}"))
+    registry.report("bunpro", "error", registry.sanitize(f"HTTP 401 for Token token={BP}"))
     registry.dump(cache_dir / "srs" / "status.json")
 
     # 3. The turn log (the Anki mine) with a tool error, sanitised at the boundary.
     mem = Memory(root=cache_dir / "memory", sessions=log_dir / "sessions", session_id="redaction")
     mem.record_turn(student="こんにちは", tutor_sentences=[{"text": "はい。", "emotion": "happy"}],
-                    tools=[{"name": "get_ghost_reviews", "args": {}, "ok": False,
+                    tools=[{"name": "search", "args": {}, "ok": False,
                             "error": registry.sanitize(f"bunpro: HTTP 401 for /user: Token token={BP}")}])
     assert mem.log_path().is_file()
 

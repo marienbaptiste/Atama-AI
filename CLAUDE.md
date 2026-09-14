@@ -1,12 +1,13 @@
 # Working on atama-AI
 
 > **GOLDEN RULE (spec §0): NEVER set or write anything through the WaniKani or Bunpro API
-> keys.** Read-only, always, everywhere — orchestrator, fetchers, MCP server, tests, scripts.
+> keys.** Read-only, always, everywhere — orchestrator, fetchers, MCP servers, tests, scripts.
 > Do not write a function in `backend/srs/` whose name starts with `set_`, `write_`, `update_`,
 > `create_`, `delete_`, `submit_`, `start_`, `post_`, `put_`, `patch_`, `mark_`, `reset_` or
 > `assign_`, whatever it does. Do not import an HTTP library anywhere in `srs/` except
-> `srs/http.py`. Do not add a fourth MCP tool. Do not add any URL literal to `srs/` other than
-> the two pinned origins, and never make a base URL configurable. Do not touch
+> `srs/http.py`. Do not add an SRS tool of any kind (the Bunpro MCP server was retired,
+> ADR-039). Do not add any URL literal to `srs/` other than the two pinned origins, and never
+> make a base URL configurable. Do not touch
 > `backend/tools/readonly_gate.py`.
 > The gate runs on every `make test` / `make run` / `make doctor` / commit and has no bypass —
 > if it fails, fix the code, never the gate. If a task seems to require a write, stop and tell
@@ -19,11 +20,12 @@ other documents to open, when, and what each one is authoritative for.
 brain is the `claude` CLI running headless as a persistent subprocess.
 
 **Current state: M0 done, M1 done, M2 declared done by the user (2026-09-10, ADR-034). M4 then M3 by user directive: M4's code is complete (its gates are live checks, not met); M3's frontend is built (2026-09-11, `frontend/`) — gate M3a met, M3b–M3f are live checks, not met.** The page's message types are generated: after changing `backend/models.py`, run `python -m backend.tools.gen_protocol`. The read-only gate, config/settings store, status registry,
-GET-only SRS client, WaniKani + Bunpro fetchers, profile renderer, Bunpro MCP server, sentence
+GET-only SRS client, WaniKani + Bunpro fetchers, profile renderer, sentence
 chunker, prompt assembly, the `Brain` interface with its Claude CLI provider, the text REPL and
 **`make doctor`** (`backend/tools/doctor.py`, written 2026-09-12; `--live`, `--skip-claude`)
-all exist with tests (`make test`). Verified live: Sensei answers in character, uses the MCP
-tools, and weaves in the student's ghost reviews. **The orchestrator is split (2026-09-12):**
+all exist with tests (`make test`). Verified live: Sensei answers in character, uses the search
+tool, and weaves in the student's ghost reviews. The Bunpro MCP server was retired on 2026-09-14
+(ADR-039): both SRS sources reach her through the Student Profile only. **The orchestrator is split (2026-09-12):**
 `backend/repl.py` is the CLI entry only; `backend/orchestrator.py` holds the `Lesson` (wiring,
 rotation, resync, persona switch), `backend/page_control.py` the browser control dispatch, and
 `backend/terminal.py` the console rendering. What was fixed today but not yet seen on the real
@@ -113,11 +115,11 @@ These come from spec §4, §5, §11 and §14 and are not negotiable without aski
 Read-only, enforced at token, client and tool level (ADR-021), and verified at every
 compilation by `backend/tools/readonly_gate.py`: first target of `make test`, prerequisite of
 `make run` and `make doctor`, import-time self-check, runtime `ReadOnlyTransport`, frontend
-`prebuild` grep, pre-commit hook. The SRS HTTP client has only `get()`. The Bunpro MCP server
-exposes exactly three read tools. No setter-shaped name in `srs/`. No write tool behind any
+`prebuild` grep, pre-commit hook. The SRS HTTP client has only `get()`. No SRS tool is exposed
+to the model (ADR-039). No setter-shaped name in `srs/`. No write tool behind any
 flag, ever. Never edit the gate. **Never call the SRS APIs outside app launch and manual
-Refresh** (ADR-024): no timers, no per-turn fetches; the MCP server reads the snapshot and
-holds no token.
+Refresh** (ADR-024): no timers, no per-turn fetches; only the orchestrator reads the snapshot,
+and no MCP server holds a token.
 
 **Never fabricate an external interface.** Not CLI flags, not endpoint schemas, not library
 signatures. Verify against `claude --help`, VOICEVOX's live `/docs` OpenAPI, the TalkingHead
