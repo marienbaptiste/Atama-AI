@@ -376,13 +376,15 @@ Allow mic access, and start talking.
 
 `*.glb` is git-ignored, so a fresh clone has no face until you fetch one. Each persona names its
 own file (`prompts/minami.md` declares `<!-- avatar: minami.glb -->`), so the filename is the whole
-wiring.
+wiring. The default tutor is みなみ先生 (`minami`), and hers is the face the fetch provides; a
+persona whose own file is missing borrows hers, and `make doctor` warns that its own is missing.
 
 It must be a **full-body GLB** with a Mixamo-compatible rig and **both** blendshape sets, **ARKit
 (52)** and **Oculus visemes (15)**. TalkingHead needs all of them. This is the part that fails
 quietly: an avatar missing them loads, renders perfectly, and never moves its mouth.
 
-Fetch the known-good default (TalkingHead's reference avatar, CC BY-NC 4.0):
+Fetch the known-good default (TalkingHead's reference avatar, CC BY-NC 4.0). It is saved under the
+name the configured persona declares, so `frontend/public/minami.glb` for the default tutor:
 
 ```bash
 python -m backend.tools.get_avatar
@@ -401,10 +403,7 @@ python -m backend.tools.check_avatar
 ```
 
 ```
-frontend/public/avatar.glb  (4.7 MB, 72 morph targets)
-  Oculus visemes : 15/15   ok
-  ARKit (sampled): 10/10   ok
-Usable by TalkingHead.
+minami   minami.glb         4.7 MB   72 morphs  visemes 15/15  arkit 10/10  ok
 ```
 
 If anything is missing it names it and says how to re-export. It already caught an example avatar
@@ -580,7 +579,8 @@ Bring your own GLB from **Ready Player Me** or **Avaturn**. It must include **AR
 viseme blendshapes**, which RPM exports include by default. Follow the export parameters in the
 TalkingHead README (Appendix A).
 
-Place it at `frontend/public/avatar.glb` (git-ignored).
+Place it in `frontend/public/` (git-ignored) under the name its persona declares: `minami.glb` for
+the default tutor.
 
 The avatar is framed waist-up in a full-viewport canvas, blinks every 2 to 6 s, sways subtly, and
 tracks the camera with `lookAt`. While you speak it takes an attentive pose and nods on your pauses,
@@ -656,18 +656,18 @@ and rare or above-level kanji is written in kana so TTS reads it correctly.
 
 ### Who is teaching you
 
-Four tutors ship in [`prompts/`](prompts/). Each file is one person and the voice they are written
-for, so `TUTOR_PERSONA` picks both:
+Four tutors ship in [`prompts/`](prompts/). Each file is one person, the voice they are written for
+and the face they wear, so `TUTOR_PERSONA` picks all three:
 
 | `TUTOR_PERSONA` | who | voice |
 |---|---|---|
-| `tanaka` (default) | たなか先生, 50, ex-engineer. Quiet, dry, explains by example, waits for you to finish. | 麒ヶ島宗麟 |
+| `tanaka` | たなか先生, 50, ex-engineer. Quiet, dry, explains by example, waits for you to finish. | 麒ヶ島宗麟 |
 | `hayashi` | はやし先生, 28. Fast, cheerful, teaches what people actually say now. | 栗田まろん |
-| `minami` | みなみ先生, 40s, linguistics. Warm, literary, loves word origins. | No.7 |
+| `minami` (default) | みなみ先生, 40s, linguistics. Warm, literary, loves word origins. | No.7 |
 | `mori` | ゆい, 19, **not a teacher.** A student at a 語学交換 circle who corrects only when she genuinely does not follow you, for practice where being corrected every sentence is the problem. | 冥鳴ひまり |
 
-Adding your own is adding one file: write the character, put `<!-- voice: NN -->` at the top, and
-set `TUTOR_PERSONA` to its name. The declaration is stripped before the file reaches the model.
+Adding your own is adding one file: write the character, put `<!-- voice: NN -->` and
+`<!-- avatar: name.glb -->` at the top, and set `TUTOR_PERSONA` to its name. The declarations are stripped before the file reaches the model.
 `VOICEVOX_SPEAKER=-1` (the default) means "ask the persona"; set a real style id to override it
 while auditioning.
 
@@ -1000,8 +1000,8 @@ appears. The exact credit depends on which persona is configured (`TUTOR_PERSONA
 
 | persona | voice | required credit |
 |---------|-------|-----------------|
-| `tanaka` (default) | style 53 | `VOICEVOX:麒ヶ島宗麟` |
-| `minami` | style 29 | `VOICEVOX:No.7` |
+| `tanaka` | style 53 | `VOICEVOX:麒ヶ島宗麟` |
+| `minami` (default) | style 29 | `VOICEVOX:No.7` |
 | `hayashi` | style 67 | `VOICEVOX:栗田まろん` |
 | `mori` | style 14 | `VOICEVOX:冥鳴ひまり` |
 

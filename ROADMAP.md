@@ -1203,7 +1203,8 @@ ignored path actually ignored via `git check-ignore`, and the §5b status table 
 
 Add to that list, from what later milestones turned up:
 
-- **the avatar** — `frontend/public/avatar.glb` present and passing `check_avatar`; a fresh clone
+- **the avatar** — the persona's declared GLB (`frontend/public/minami.glb` for the default tutor)
+  present and passing `check_avatar`; a fresh clone
   has no face and nothing currently tells the user that until the frontend silently fails.
 - **audio devices** — at least one input and one output on a host API that can actually be opened
   at the fixed rates (see `CAPTURE_HOSTAPIS`); on Windows a device may enumerate and still be
