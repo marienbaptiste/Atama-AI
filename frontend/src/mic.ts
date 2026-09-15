@@ -1,9 +1,9 @@
 /** The student's side of the turn (spec §8/§9): push-to-talk, and barge-in.
  *
- *  The microphone itself is captured by the orchestrator (backend/audio.py: device choice and
- *  unplug recovery live there, spec §9), so this module owns no audio — it owns the key. Holding
- *  SPACE (or the button) is `control: start`, releasing it `stop`: the release IS the end of the
- *  turn, no silence window involved.
+ *  The microphone itself is capture.ts (the page captures it and streams it for the whole lesson,
+ *  ADR-040), so this module owns no audio — it owns the key. Holding SPACE (or the button) is
+ *  `control: start`, releasing it `stop`: the release IS the end of the turn, no silence window
+ *  involved. The server buffers the frames it receives between the two edges.
  *
  *  Barge-in, push-to-talk: a press while she talks is unambiguous, so the page stops her HERE,
  *  before the server has even heard of it, and the server's `bargein` then confirms and closes the
@@ -43,6 +43,8 @@ export interface TalkDeps {
   /** Stop her now if she is talking or about to; true if there was anything to stop. */
   interrupt(): boolean;
   deadLink(): void;
+  /** A press, before anything is sent: the gesture a refused microphone permission waits for. */
+  pressed?(): void;
 }
 
 export class Talk {
@@ -88,6 +90,7 @@ export class Talk {
       return;
     }
     if (on === this.talking) return;
+    if (on) this.d.pressed?.();
     if (on && this.d.mode() === "ptt" && this.d.interrupt()) {
       const ms = performance.now() - at;
       this.stops.push(ms);

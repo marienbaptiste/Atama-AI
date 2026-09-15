@@ -16,11 +16,13 @@ export interface Field {
   choices: string[]; locked: string; options: string[] | null; live: boolean; label?: string;
 }
 type Kind = "secret" | "toggle" | "select" | "device" | "number" | "text" | "slider" | "steps"
-  | "segmented" | "cards" | "persona";
+  | "segmented" | "cards" | "persona" | "mic";
 /** [value, title, subtitle, face letter] */
 export type Option = [string, string, string?, string?];
 interface Item {
   key?: string; label?: string; help?: string; kind?: Kind; raw?: boolean;
+  /** A setting of the page's own, not the server's: the microphone (ADR-040), applied at once. */
+  local?: "mic";
   action?: string; button?: string; meter?: boolean;
   min?: number; max?: number; step?: number; lo?: string; hi?: string; fmt?: (v: number) => string;
   options?: Option[];
@@ -82,10 +84,11 @@ const TABS: Tab[] = [
   ] },
   { id: "sound", label: "Sound", sections: [
     { title: "Devices", items: [
-      { key: "AUDIO_INPUT_DEVICE", label: "Microphone", kind: "device", meter: true,
-        help: "Unplug it any time — she switches to the system default, and back when it returns." },
-      { key: "AUDIO_OUTPUT_DEVICE", label: "Speakers", kind: "device",
-        help: "For the terminal voice only. On this page she plays through your browser's sound output." },
+      //: The page's own microphone (ADR-040): the browser captures it, so the choice is a device of
+      //: this machine, remembered in this browser, and applies the moment it is picked. She plays
+      //: through the browser's sound output. The terminal lesson's devices are under Advanced.
+      { local: "mic", label: "Microphone", kind: "mic", meter: true,
+        help: "Applies at once. Unplug it any time — she switches to the default, and back when it returns. She speaks through your browser's sound output." },
     ] },
     { title: "Talking", items: [
       { key: "TURN_MODE", label: "How you talk", kind: "segmented", options: [["ptt", "Hold SPACE"], ["vad", "Hands-free"]],
@@ -125,6 +128,11 @@ export interface SettingsDeps {
   connected(): boolean;
   personas(): Option[];
   opened(open: boolean): void;
+  /** The page's microphones (capture_web.ts `listMics`), the chosen id ("" = default), and the
+   *  choice — applied by the page itself, never sent to the server (ADR-040). */
+  mics(): Option[];
+  mic(): string;
+  setMic(id: string): void;
 }
 
 let deps: SettingsDeps;
@@ -243,7 +251,7 @@ function sectionsFor(tab: Tab): Section[] {
   return tab.sections.map(sec => ({
     title: sec.title,
     items: sec.secrets ? fields.filter(f => f.secret).map(f => ({ key: f.key, label: f.label || human(f.key), help: f.description }))
-      : sec.items.filter(it => it.action || (it.key && FIELD[it.key])),
+      : sec.items.filter(it => it.action || it.local || (it.key && FIELD[it.key])),
   })).filter(sec => sec.items.length);
 }
 
@@ -303,6 +311,7 @@ const CONTROLS: Record<Kind, (s: Field, it: Item, v: unknown, off: boolean, opti
     const opts = deps.personas();
     return opts.length ? CONTROLS.cards(s, it, v, off, opts) : CONTROLS.text(s, it, v, off);
   },
+  mic: (_s, it) => micItem(it),                       // never reached: `item` renders it whole
 };
 
 function actionItem(it: Item): string {
@@ -311,8 +320,21 @@ function actionItem(it: Item): string {
     + `<button type="button" class="act" data-action="${esc(it.action)}">${esc(it.button || "Run")}</button></div></div>`;
 }
 
+/** The page's microphone picker: the browser's list, the page's choice, no Save (ADR-040). */
+function micItem(it: Item): string {
+  const cur = deps.mic();
+  const opts: Option[] = [["", "System default"], ...deps.mics()];
+  if (cur && !opts.some(o => o[0] === cur)) opts.push([cur, "chosen microphone  (not connected)"]);
+  return `<div class="field" data-local="mic"><div class="ftop"><div class="flabel"><div class="fname">${esc(it.label)}</div>`
+    + `<div class="fdesc">${esc(it.help || "")}</div></div>`
+    + `<select class="device" data-local="mic">` + opts.map(([v, l]) =>
+      `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(l)}</option>`).join("") + "</select></div>"
+    + (it.meter ? '<div class="meter" title="Microphone level"><i id="lvl"></i></div>' : "") + "</div>";
+}
+
 function item(it: Item): string {
   if (it.action) return actionItem(it);
+  if (it.local === "mic") return micItem(it);
   const s = FIELD[it.key!];
   const pin = (SETTINGS!.pinned as Record<string, string>)[s.key], lock = s.locked, off = !!(pin || lock);
   const kind = it.kind || kindOf(s);
@@ -384,6 +406,9 @@ function bindControls(body: HTMLElement): void {
       change(k, v);
     });
   });
+  body.querySelectorAll<HTMLSelectElement>("select[data-local='mic']").forEach(el => {
+    el.onchange = () => deps.setMic(el.value);        // the page's own: applied now, nothing to save
+  });
   body.querySelectorAll<HTMLElement>(".raw .fdesc").forEach(el => { el.onclick = () => el.classList.toggle("full"); });
   body.querySelectorAll<HTMLButtonElement>("[data-action]").forEach(b => {
     b.onclick = () => { if (deps.action(b.dataset.action as "resync")) resyncProgress("syncing"); };
@@ -404,5 +429,5 @@ function footer(text?: string): void {
   ($("ssave") as HTMLButtonElement).disabled = !n || !deps.connected();
   $("sstate").textContent = text
     || (n ? `${n} ${n === 1 ? "change" : "changes"} not saved yet`
-          : "Tutor, microphone and speakers apply at once; the rest the next time you start.");
+          : "Tutor and microphone apply at once; the rest the next time you start.");
 }

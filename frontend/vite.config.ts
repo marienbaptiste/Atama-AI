@@ -16,6 +16,10 @@ export default defineConfig({
     port: 5173,
     proxy: { "/ws": { target: `ws://${BACKEND}`, ws: true } },
   },
+  // The capture worklet (src/capture_worklet.ts, loaded with `?worker&url`) must be an ES module:
+  // AudioWorklet.addModule takes module scripts, and an IIFE bundle would reference globals the
+  // worklet scope does not have.
+  worker: { format: "es" },
   build: {
     outDir: "dist",
     emptyOutDir: true,

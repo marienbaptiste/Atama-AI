@@ -40,7 +40,7 @@ describe("dispatch", () => {
 // A press that met a dropped or reconnecting socket used to send nothing and still show "Session
 // ended", while the tutor and the containers ran on. Now it is re-sent until the server goes away.
 import { afterEach, beforeEach, vi } from "vitest";
-import { Link, RETRY_MS, STOP_ATTEMPTS } from "./ws";
+import { BACKLOG_BYTES, Link, RETRY_MS, STOP_ATTEMPTS } from "./ws";
 
 class FakeSocket {
   static OPEN = 1;
@@ -51,7 +51,7 @@ class FakeSocket {
   onclose: (() => void) | null = null;
   onmessage: ((e: { data: string }) => void) | null = null;
   constructor(readonly url: string) { FakeSocket.all.push(this); }
-  send(data: string) { this.sent.push(data); }
+  send(data: string | ArrayBuffer) { this.sent.push(data as string); }
   close() { this.readyState = 3; this.onclose?.(); }
   accept() { this.readyState = 1; this.onopen?.(); }       // the server answers
   refuse() { this.readyState = 3; this.onclose?.(); }      // nobody listening
@@ -120,5 +120,39 @@ describe("the stop button", () => {
     }
     expect(events.unreachable).toBe(1);
     expect(events.closes).not.toContain(false);           // never "Session ended"
+  });
+});
+
+// ------------------------------------------------------------------ microphone frames (ADR-040)
+describe("microphone frames", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeSocket.all = [];
+    vi.stubGlobal("WebSocket", FakeSocket);
+    vi.stubGlobal("window", globalThis);
+  });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+  const noop = { open() {}, close() {} };
+
+  it("go out on an open socket and are dropped, not queued, without one", () => {
+    const link = new Link({} as never, noop, "ws://x");
+    link.start();
+    const frame = new ArrayBuffer(1024);
+    expect(link.sendBytes(frame)).toBe(false);                 // still connecting
+    FakeSocket.all[0].accept();
+    expect(link.sendBytes(frame)).toBe(true);
+    expect(FakeSocket.all[0].sent.length).toBe(1);
+    FakeSocket.all[0].close();                                 // the link dropped
+    expect(link.sendBytes(frame)).toBe(false);
+    expect(FakeSocket.all[0].sent.length).toBe(1);
+  });
+
+  it("are dropped once the socket has stopped draining", () => {
+    const link = new Link({} as never, noop, "ws://x");
+    link.start();
+    const socket = FakeSocket.all[0];
+    socket.accept();
+    (socket as unknown as { bufferedAmount: number }).bufferedAmount = BACKLOG_BYTES + 1;
+    expect(link.sendBytes(new ArrayBuffer(1024))).toBe(false);
   });
 });

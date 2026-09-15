@@ -236,6 +236,11 @@ class Lesson:
             # failed load costs a launch and not a live session.
             await self._abort()
             return False
+        if self.args.browser:
+            # ADR-040: the page captures the microphone, and asks the browser for it once the
+            # page is touched. There is no local device to prove here.
+            print(f"{DIM}microphone: the page's - allow it in the browser when asked{RESET}")
+            return True
         if not await check_microphone(cfg):
             await self._abort()
             return False
@@ -782,6 +787,8 @@ async def listen(lesson: Lesson) -> None:
     loop = VoiceLoop(
         turn_mode=cfg.TURN_MODE,
         brain=lesson.brain, stt=stt, vad=vad, voice=voice, input_device=cfg.AUDIO_INPUT_DEVICE,
+        # ADR-040: with a page the page captures the microphone; without one this process does.
+        mic_source="browser" if hub is not None else "local",
         on_level=show_level,
         on_state=lambda s: print(f"\r{DIM}[{s}]{RESET}" + " " * 50, end="", flush=True) if s != "listening" else None,
         on_transcript=lambda t: print(
@@ -910,8 +917,11 @@ async def listen(lesson: Lesson) -> None:
         if hub is not None:
             aloop.create_task(hub.push_settings())
 
-    watch = DeviceWatch(devices_changed)
-    await watch.start()
+    # The watcher serves the local microphone (spec §9). With a page, the page has the microphone
+    # and its own `devicechange` (ADR-040): nothing here to watch, no child process to run.
+    watch = DeviceWatch(devices_changed) if hub is None else None
+    if watch is not None:
+        await watch.start()
 
     if hub is not None:
         page = page_control.PageControl(hub, loop, rotator=rotator, resync=lesson.resync,
@@ -920,7 +930,7 @@ async def listen(lesson: Lesson) -> None:
         sender.start()
     vram_task = aloop.create_task(watch_vram(cfg, gpu, page))
 
-    device = cfg.AUDIO_INPUT_DEVICE or "system default"
+    device = "the page's microphone" if hub is not None else (cfg.AUDIO_INPUT_DEVICE or "system default")
     keys = terminal.ptt_keys(loop, aloop) if loop.ptt else None
     if loop.ptt:
         print(f"\n{BOLD}Push to talk on {device}.{RESET} {BOLD}SPACE{RESET} to start speaking, "
@@ -934,7 +944,8 @@ async def listen(lesson: Lesson) -> None:
         pass
     finally:
         loop.stop()
-        await watch.close()
+        if watch is not None:
+            await watch.close()
         vram_task.cancel()
         if sender is not None:
             sender.stop()

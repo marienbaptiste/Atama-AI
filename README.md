@@ -123,8 +123,11 @@ to talk, press it again to interrupt her, and hold **ALT GR** mid-sentence to th
 are recording (the right-hand ALT, because Chrome keeps SPACE with the left one). Nothing is
 transcribed and nothing is sent: let SPACE go, press it again, start over.
 
-Your **microphone is captured by the orchestrator** (sounddevice, with unplug recovery), not by
-the browser, so step 1 below is not yet how it works.
+Your **microphone is captured by the page** (ADR-040, 2026-09-15): the browser asks for it the
+first time you click or press a key, and sends it to the tutor over the same socket her voice
+comes back on. Pick which one under Settings → Sound; it applies at once and is remembered in
+this browser. Unplug it and she falls back to the default until it returns; refuse it and the
+next SPACE press asks again. The mic chip in the status bar says which it is.
 
 **The conversation panel** (ADR-036, Settings → Display) puts the tutor on the left and the
 conversation on the right as a chat:
@@ -164,9 +167,10 @@ lesson.
 
 ### One turn, end to end
 
-1. The orchestrator captures the microphone (sounddevice, 16 kHz mono); the page only holds the
-   turn open — **hold SPACE** — with `control: start` / `stop` over the WebSocket. No audio goes
-   from browser to server.
+1. The page captures the microphone (`getUserMedia` with echo cancellation, an AudioWorklet,
+   16 kHz mono PCM16) and streams it to the orchestrator as binary WebSocket frames for the whole
+   lesson; it holds the turn open — **hold SPACE** — with `control: start` / `stop` on the same
+   socket. (A lesson started from the terminal without the page captures with sounddevice.)
 2. Releasing the key ends the turn. (In `TURN_MODE=vad`, Silero VAD ends it after
    `VAD_SILENCE_MS` of silence instead, 900 ms by default.)
 3. faster-whisper transcribes with `language="ja"`.
@@ -278,7 +282,7 @@ portable: VOICEVOX is the CPU Docker image, the VAD and the avatar are CPU and W
 |---|---|
 | **Windows 10/11 + NVIDIA** | Supported, and the machine it is developed on. Launch with the `run` and `stop` scripts in the repo root. |
 | **Windows + WSL2 + NVIDIA** | Supported. See [Windows + WSL2](#windows--wsl2). The backend lives on the WSL2 side. |
-| **Linux + NVIDIA** | Supported, and the reference topology in the spec (§15): everything on the host, `make run`. Nothing in the code is Windows-only; `run.cmd` and `stop.cmd` wrap `python -m backend.tools.up` and `down`. |
+| **Linux + NVIDIA** | Supported, and the reference topology in the spec (§15): everything on the host, `make run`. Nothing in the code is Windows-only; `run.cmd` and `stop.cmd` wrap `python -m backend.tools.up` and `down`. The backend's own audio (the terminal voice and the terminal lesson's microphone) goes through PortAudio's ALSA host API and needs the system library: `sudo apt install libportaudio2`. The page's microphone and playback need only the browser. Not yet run on a Linux machine (ROADMAP live checks). |
 | **macOS, or any machine without an NVIDIA GPU** | **Not supported today.** CTranslate2 has no Metal backend and the STT device is not configurable, so it would fall back to CPU, which the latency budget does not survive at `large-v3`. |
 
 Making it work on a Mac is possible rather than promised: it needs a second STT backend
@@ -291,6 +295,8 @@ and the latency gate re-measured. The rest of the stack already runs there.
 - Node 20+ (builds the avatar page; `make run` and the `run` script do it for you)
 - Docker, with the engine running (VOICEVOX and SearXNG are containers; both images are pinned)
 - An NVIDIA GPU with CUDA available to CTranslate2
+- On Linux, `libportaudio2` (the sounddevice wheel does not bundle PortAudio there) — only for
+  the backend's own audio; the page needs nothing extra
 - The `claude` CLI, logged in. See [Claude login](#claude-login).
 - A GLB avatar. See [The avatar](#the-avatar).
 - Headphones for the first session, recommended but not required. See
@@ -417,9 +423,10 @@ its mouth.
   to show up in the latency budget.
 - **On Windows:** only the browser. WSL2 forwards `localhost`, so `http://localhost:5173` works,
   and because everything is bound to loopback it stays off the LAN.
-- The mic is captured by the **backend** (sounddevice), not the browser, so under WSL2 the backend
-  needs an audio device it can open — WSL2 has none by default. This topology is documented, not
-  verified; the machine this is developed on is native Windows.
+- The mic is captured by the **page** (ADR-040), which runs in the Windows browser, so WSL2 needs
+  no audio device: capture and playback are both browser-side. A lesson started from the terminal
+  without the page still captures with sounddevice, and WSL2 has no device for that by default.
+  This topology is documented, not verified; the machine this is developed on is native Windows.
 
 ---
 
@@ -479,11 +486,12 @@ returns (spec §9). The page shows the microphone's state under the talk button.
 | Account & tokens   | WaniKani token, Bunpro API key, Claude OAuth token, masked                   |
 | Brain              | Claude model, effort level, fallback model, per-turn timeout, memory and rotation, today's targets (`STUDY_*`) |
 | Voice              | VOICEVOX speaker override, speed, pitch, intonation, pause scale             |
-| Sound              | Turn mode (push-to-talk / hands-free), microphone and output device, VAD window and thresholds, barge-in sensitivity |
+| Sound              | Turn mode (push-to-talk / hands-free), the page's microphone (applied at once, remembered per browser), VAD window and thresholds, barge-in sensitivity |
 | Display            | Subtitles (JP / off), furigana, chat panel, explanation language, status heartbeat |
-| Advanced           | Ports and bind address, cache and log dirs, STT confidence thresholds, latency and VRAM warning thresholds, service URLs and timeouts |
+| Advanced           | Ports and bind address, cache and log dirs, STT confidence thresholds, latency and VRAM warning thresholds, service URLs and timeouts, the terminal lesson's audio devices (`AUDIO_INPUT_DEVICE`, `AUDIO_OUTPUT_DEVICE`) |
 
-Today the microphone and output pickers and the tutor persona apply live; every other change
+Today the page's microphone picker (its own, never sent to the server), the tutor persona and the
+terminal lesson's device keys apply live; every other change
 applies at the next launch (the model respawn with `--resume` and the live re-fetch on a token
 change are the design, not yet built). There are no per-service Test buttons: the status chips
 and `make doctor` answer "does it work".
@@ -724,7 +732,10 @@ Message types are defined once in `backend/models.py` and generated into
 
 **client to server:** `control` (`start`, `stop`, `cancel`, `resync`, `quit`, `new_topic`,
 `ready`), `settings` (partial update of any key, secrets included), `explain`
-(`{kind, text, context, lang}`). No audio: the backend captures the microphone.
+(`{kind, text, context, lang}`), `mic_status` (`{state, detail}` — the page's microphone: `ok`,
+`fallback`, `missing`, `lost`, `denied`, `off`). **Audio is the one binary frame:** PCM16
+little-endian, 16 kHz, mono, any length (ADR-040). The first page to send audio holds the
+microphone until it leaves; another page's audio is ignored and that page is told.
 
 **server to client:** `state` (`listening` | `thinking` | `speaking`, with the turn epoch),
 `stt_partial` (reserved, never emitted), `stt_final`, `speak` (`{audio_b64, visemes[], vtimes[],
@@ -737,7 +748,9 @@ so far, sent to a page that connects; `state` carries `spoken`), `error`. Gramma
 Each page has its own send queue: `mic_level` is coalesced to the newest, everything else is
 delivered in order, and a page that stops reading is closed so it reconnects. If a page drops
 while holding the talk key, the hold is cancelled server-side; losing window focus cancels it on
-the page.
+the page. The page's capture keeps running through a reconnect — frames that meet a closed
+socket are dropped, and the page re-reports its microphone on the next open; if the page that
+was sending audio goes away, the microphone reads `missing` until a page sends again.
 
 ---
 

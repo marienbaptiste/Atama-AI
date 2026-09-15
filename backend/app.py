@@ -1,9 +1,9 @@
 """The orchestrator's web face: static files plus one WebSocket (spec §8).
 
-Minimal on purpose. The conversation still runs where it already worked — mic, VAD, Whisper, the
-Claude subprocess, VOICEVOX — and this only moves the *output* into the browser so TalkingHead
-can lip-sync it. The student still pushes to talk; they simply watch her answer instead of
-listening to a terminal.
+Minimal on purpose. The conversation still runs where it already worked — VAD, Whisper, the
+Claude subprocess, VOICEVOX — and this moves both ends of the audio into the browser: her voice
+goes out as `speak` messages so TalkingHead can lip-sync it, and the student's microphone comes
+in as binary frames (ADR-040, `Hub.audio`). The page pushes to talk and watches her answer.
 
 Loopback only, always (ADR-017). The socket carries every transcript, her audio and the settings
 panel, so binding it anywhere else is a privacy hole rather than a convenience. Binding to
@@ -17,6 +17,7 @@ import asyncio
 import base64
 import contextlib
 import ipaddress
+import json
 import socket
 import sys
 import traceback
@@ -130,6 +131,16 @@ class Hub:
         #: hold for it: the voice loop refuses a new press while one is open, so an unfinished
         #: hold would otherwise wedge the microphone until a restart (found 2026-09-12).
         self._holder: WebSocket | None = None
+        #: The page whose audio feeds the lesson (ADR-040): the first to send a binary frame, until
+        #: its socket closes. Any other page's audio is ignored, and that page is told once.
+        self._mic_page: WebSocket | None = None
+        self._told_off: set[WebSocket] = set()
+        #: Called with each binary audio frame (PCM16 16 kHz mono) from the microphone page.
+        self.on_audio: Callable[[bytes], None] | None = None
+        #: Called with (state, detail) when the page reports its microphone (`mic_status`).
+        self.on_mic: Callable[[str, str], None] | None = None
+        #: Called when the microphone page leaves: the loop hears nothing until a page sends again.
+        self.on_mic_left: Callable[[], None] | None = None
         #: The last status per service, replayed to a page that connects later: a microphone
         #: that went missing before the tab opened would otherwise show nothing at all.
         self.last_status: dict[str, dict[str, Any]] = {}
@@ -300,6 +311,43 @@ class Hub:
             # so the next press starts clean instead of being refused.
             self._holder = None
             self._relay("cancel")
+        self._told_off.discard(ws)
+        if self._mic_page is ws:
+            # The microphone left with its page (ADR-040): the loop is told, and the next page to
+            # send audio — a reload, usually — takes over.
+            self._mic_page = None
+            self._told_off.clear()
+            if self.on_mic_left is not None:
+                self.on_mic_left()
+
+    def audio(self, ws: WebSocket, data: bytes) -> None:
+        """A binary frame from a page: its microphone, PCM16 16 kHz mono (ADR-040). Never raises —
+        a page that sends nonsense, or one that is not the microphone page, costs nothing."""
+        if ws not in self._clients or not data:
+            return
+        if self._mic_page is None:
+            self._mic_page = ws
+        if ws is not self._mic_page:
+            if ws not in self._told_off:
+                self._told_off.add(ws)
+                self.spawn(self.send(models.ServiceStatus(
+                    service="microphone", state="off",
+                    detail="another page has the microphone - close it to use this one").model_dump(),
+                    to={ws}))
+            return
+        if self.on_audio is not None:
+            try:
+                self.on_audio(data)
+            except Exception:  # noqa: BLE001 - one bad frame must not end the socket or the lesson
+                traceback.print_exc()
+
+    def mic_status(self, ws: WebSocket, state: str, detail: str) -> None:
+        """The page's word on its own microphone. Only the microphone page's counts — or any page's
+        while none has sent audio yet, because a page that was refused permission never will."""
+        if self._mic_page is not None and ws is not self._mic_page:
+            return
+        if self.on_mic is not None:
+            self.on_mic(state, detail)
 
     def mark_ready(self, ws: WebSocket) -> None:
         if ws in self._clients:
@@ -574,9 +622,15 @@ def build(hub: Hub, port: int = DEFAULT_PORT) -> Starlette:
         try:
             await hub.welcome(ws)
             while True:
+                frame = await ws.receive()
+                if frame["type"] == "websocket.disconnect":
+                    raise WebSocketDisconnect(frame.get("code", 1000))
+                if frame.get("bytes") is not None:
+                    hub.audio(ws, frame["bytes"])   # the one binary message: microphone audio (ADR-040)
+                    continue
                 try:
-                    raw = await ws.receive_json()
-                except (ValueError, KeyError):   # not JSON, or not a text frame: say so, carry on
+                    raw = json.loads(frame.get("text") or "")
+                except ValueError:                  # not JSON: say so, carry on
                     await hub.send(models.Error(message="unrecognised message: not JSON").model_dump(),
                                    to={ws})
                     continue
@@ -591,6 +645,8 @@ def build(hub: Hub, port: int = DEFAULT_PORT) -> Starlette:
                         hub.control(ws, message.action)
                     elif isinstance(message, models.Explain):
                         hub.spawn(hub.answer(ws, message))
+                    elif isinstance(message, models.MicStatus):
+                        hub.mic_status(ws, message.state, message.detail)
                     elif isinstance(message, models.SettingsUpdate):
                         # A file write, off the event loop: a turn in flight must not wait on it.
                         echo = await asyncio.to_thread(settings_view.apply, message.values)

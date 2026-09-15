@@ -1735,3 +1735,82 @@ no server otherwise.
 **Reversed if:** a lesson needs Bunpro data that cannot fit the profile budget and would be asked
 for mid-conversation — then a read tool over the snapshot comes back under a new ADR, on the terms
 of ADR-023 decisions 2–5 and gate rule 5.
+
+---
+
+## ADR-040 — The page captures the microphone; audio is a binary frame on the socket
+
+**Status:** Accepted (2026-09-15) — user decision. Supersedes the ADR-006 amendment of 2026-09-12
+(the capture half only: the server-side VAD and the server's ownership of turn-taking stand, and
+the AudioWorklet path ADR-006 first described is now the one that is built). Amends ADR-018 (the
+`getUserMedia` echo-cancellation layer applies again), and spec §2, §8, §9 and §15. ADR-017
+(loopback only) is **not** amended.
+
+**Context.** Since 2026-09-12 the orchestrator captured the microphone with sounddevice and the
+page only held the turn open. That worked, and it carried the device recovery of spec §9. The user
+asked for the other design on 2026-09-15: her voice already plays in the browser, so the student's
+voice should be captured there too — then everything the student touches is on the page, and the
+page can move to another machine later without the backend needing a sound card. Two smaller
+gains come with it: Chrome's echo cancellation (the layer ADR-018 wanted, which sounddevice could
+not give), and a microphone under WSL2, where the backend has no audio device.
+
+Two things were reviewed on the way and are decided here as well: the local audio path had a
+Windows-only list of usable PortAudio host APIs, which would have hidden every device on Linux,
+the reference topology; and the requirements the user restated mid-task — auto reconnect, auto
+repair, settings that stay relevant, no crash on a dropped link — apply to the new path in full.
+
+**Decision.**
+
+1. **With a page attached** (`--browser`, which `make run` passes), **the page captures the
+   microphone**: `getUserMedia` with `echoCancellation`, `noiseSuppression`, `autoGainControl` and
+   one channel, an AudioWorklet that resamples to 16 kHz and cuts 512-sample PCM16 frames
+   (`frontend/src/pcm.ts`, pure and tested; `capture_worklet.ts`; `capture.ts` the state machine),
+   sent as **binary WebSocket frames**. The server (`Hub.audio`) hands the bytes to
+   `VoiceLoop.feed_pcm16`, which reframes them and offers them to the same queue the sounddevice
+   thread fed. Nothing downstream — VAD, push-to-talk buffer, STT, barge-in — changes.
+2. **The binary frame is the one non-JSON message.** It has no `type` and is not in the generated
+   TypeScript; `backend/models.py` documents it beside the unions. Format: PCM16 little-endian,
+   16 kHz, mono, any length. The one new JSON client message is `mic_status` `{state, detail}`.
+3. **One microphone per lesson.** The first page to send audio holds it until its socket closes;
+   audio from any other page is ignored and that page is told once (`service_status: microphone =
+   off`). A reload is a new socket after the old one closed, so it takes over.
+4. **Recovery lives in the page**, with spec §9's states: chosen device missing → the default
+   (`fallback`), back on `devicechange`; none → `missing`, tried every 2 s and on `devicechange`;
+   the track ends → `lost`, reopened; permission refused → `denied`, tried again on the next talk
+   press. The chosen device is remembered per browser (`localStorage`), not in `settings.json`: it
+   is a device of the machine the page runs on.
+5. **Reconnect keeps the microphone.** Capture runs on regardless of the socket; a frame that meets a
+   closed or reconnecting socket is dropped (`Link.sendBytes` returns false), and on the next open the
+   page re-sends its `mic_status`. Server-side, the page that goes mid-hold still has its hold
+   cancelled (`Hub.leave`), and if it was the microphone page the loop is told (`mic_gone`) and the
+   status reads `missing` until a page sends again. A frame the loop cannot use — odd length, a page
+   that is not the holder, a loop not running — is dropped, never raised on.
+6. **Settings stay relevant.** The Sound tab's Microphone picker is the page's own (from
+   `enumerateDevices`, applied at once, no Save); `AUDIO_INPUT_DEVICE` and `AUDIO_OUTPUT_DEVICE`
+   become terminal-lesson settings and move to Advanced → Audio with descriptions that say so. The
+   server's `mic_level` meter is unchanged: it measures the frames it receives, whichever source.
+7. **The local path stays for the terminal.** `python -m backend.repl --listen` without `--browser`
+   captures with sounddevice as before, with §9's recovery and the device watcher; `make doctor`'s
+   microphone check is that path's. With a page, the launch skips the local microphone check and
+   starts no watcher.
+8. **Linux host APIs.** `USABLE_HOSTAPIS` (an allowlist of MME and DirectSound) becomes a
+   **blocklist** of the two APIs measured to fail on Windows (WASAPI, WDM-KS) plus a preference
+   order for ranking duplicates (MME, DirectSound, ALSA, PulseAudio, JACK, OSS). Unknown APIs are
+   usable. ALSA's aliases of the default device are hidden from the pickers like the Sound Mapper.
+   The README's Linux setup names `libportaudio2`, which the sounddevice wheel does not bundle there.
+9. **Still loopback only.** Moving the page to another machine is a separate ADR — a bind other
+   than loopback, TLS, and an authenticated origin — and this design is what makes that ADR
+   possible, not a reason to open the socket now.
+
+**Consequences.** About 32 KB/s on a localhost socket, nothing. Capture latency: one 128-sample
+quantum plus one 512-sample frame, ~40 ms, inside the §10 budget's noise. The AudioWorklet
+requires a secure context: `http://127.0.0.1` and `http://localhost` qualify; a page served over
+plain HTTP from another host would not, which the future ADR must meet with TLS anyway. Two paths
+now capture audio, each with its own tests; the terminal one is unchanged code. What is unproven
+until a live run: the worklet's frames arriving in order and at rate in the user's browser, the
+reload mid-hold, the microphone unplugged mid-lesson in the page, and the Linux ALSA rates
+(ROADMAP live checks).
+
+**Reversed if:** the page's frames prove unreliable in a real browser (drops, gaps the VAD sees as
+utterance ends), or the M2b silence check or M3b barge-in gate fail because of the capture path —
+then the terminal's sounddevice path is one flag away.

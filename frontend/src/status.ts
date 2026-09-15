@@ -114,8 +114,9 @@ export function onMeters(m: MetersMsg, vramCapGb: number): void {
 }
 
 // ------------------------------------------------------------------ microphone
-//: Unplugged, missing, back, or on the default instead of the chosen one (spec §9).
-const MIC_DOT: Record<string, string> = { ok: GREEN, fallback: AMBER, missing: RED, lost: RED };
+//: Unplugged, missing, back, on the default instead of the chosen one, or refused by the browser
+//: (spec §9; the page's own states since ADR-040). `off` and unknown states show no colour.
+const MIC_DOT: Record<string, string> = { ok: GREEN, fallback: AMBER, missing: RED, lost: RED, denied: RED };
 
 export function showMic(state: string, detail: string): void {
   $("m-mic").querySelector<HTMLElement>(".dot")!.style.background = MIC_DOT[state] || OFF;

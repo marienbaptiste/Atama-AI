@@ -89,6 +89,11 @@ class VoiceLoop:
     vad: VoiceActivityDetector
     voice: SpeechQueue
     input_device: str | int | None = None
+    #: Where the frames come from (ADR-040). "local": this process opens the microphone on its own
+    #: thread (`_capture`, sounddevice, spec §9) — a lesson without a page. "browser": the page
+    #: captures and streams PCM16 over the socket, handed in through `feed_pcm16`. One source per
+    #: lesson, never both; everything after the frame queue is the same.
+    mic_source: str = "local"
     #: "vad" — silence ends the turn. "ptt" — you do, by releasing the key (spec §9).
     #: Under ptt the VAD still runs: it drives the level meter and barge-in detection. It simply
     #: stops deciding when a turn ends, which is the only judgement it gets wrong.
@@ -142,14 +147,19 @@ class VoiceLoop:
     _ptt_open: bool = field(default=False, init=False)
     _ptt_buf: list = field(default_factory=list, init=False)
     timings: list[TurnTiming] = field(default_factory=list, init=False)
+    #: Browser source: the tail of the last chunk that did not fill a frame, waiting for the next.
+    _pending: np.ndarray = field(default_factory=lambda: np.zeros(0, dtype=np.float32), init=False)
 
     # ------------------------------------------------------------------ public
     async def run(self) -> None:
         loop = asyncio.get_running_loop()
         self._frames = asyncio.Queue(maxsize=200)
         self._stop.clear()
-        self._mic = threading.Thread(target=self._capture, args=(loop,), daemon=True)
-        self._mic.start()
+        if self.mic_source == "local":
+            self._mic = threading.Thread(target=self._capture, args=(loop,), daemon=True)
+            self._mic.start()
+        else:
+            self._mic = None                 # the page's frames arrive through feed_pcm16
         self._state("listening")
         beat = asyncio.create_task(self._heartbeat()) if os.environ.get("ATAMA_DEBUG_LOOP") else None
         try:
@@ -303,7 +313,11 @@ class VoiceLoop:
         `changed`: the settings panel picked a different device — use it now. Otherwise this is
         the device watcher saying the list changed, which only matters while we are on the
         system default because the chosen device was missing: it may be back.
+
+        Nothing to do with the browser source: the page picks and reopens its own microphone.
         """
+        if self.mic_source != "local":
+            return
         if changed:
             self.input_device = device
             self._wake.set()
@@ -312,6 +326,43 @@ class VoiceLoop:
 
     def stop(self) -> None:
         self._stop.set()
+        if self._mic is None and self._frames is not None:
+            # No capture thread to post the sentinel (browser source): wake `run()` ourselves.
+            try:
+                self._frames.put_nowait(None)
+            except asyncio.QueueFull:
+                pass                          # run() checks _stop on its next frame anyway
+
+    # ------------------------------------------------------------ the page's microphone
+    def feed_pcm16(self, data: bytes) -> None:
+        """Audio from the page (ADR-040): PCM16 little-endian, 16 kHz, mono, any length. Cut into
+        the VAD's frames and offered exactly as the thread's are; a partial frame waits for the
+        next bytes. Runs on the event loop and never raises — a page that sends nonsense, or
+        sends before the loop runs, costs nothing."""
+        if self._frames is None or self._stop.is_set() or self.mic_source != "browser":
+            return
+        usable = len(data) - (len(data) % 2)
+        if usable <= 0:
+            return
+        samples = np.frombuffer(data, dtype="<i2", count=usable // 2).astype(np.float32) / 32768.0
+        buf = np.concatenate((self._pending, samples)) if self._pending.size else samples
+        n = vad_frame_samples()
+        whole = (len(buf) // n) * n
+        for start in range(0, whole, n):
+            self._offer(np.array(buf[start:start + n], dtype=np.float32))
+        self._pending = np.array(buf[whole:], dtype=np.float32)
+
+    def mic_reported(self, state: str, detail: str) -> None:
+        """The page's word on its microphone (`mic_status`), kept where the terminal's diagnostics
+        and the stop-press report look (`mic_state`, `capture_error`)."""
+        self.mic_state = state
+        self.capture_error = detail if state in ("missing", "lost", "denied") else ""
+
+    def mic_gone(self) -> None:
+        """The page that was sending audio left: drop the partial frame and say so. Its hold, if
+        any, is cancelled by the hub on the page's behalf (`Hub.leave`)."""
+        self._pending = np.zeros(0, dtype=np.float32)
+        self.mic_reported("missing", "the page with the microphone went away - waiting for it to come back")
 
     # ------------------------------------------------------------------- inner
     def _capture(self, loop: asyncio.AbstractEventLoop) -> None:

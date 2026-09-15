@@ -10,8 +10,10 @@ has no handler (gate M3a).
 Frozen at M2 on purpose (ROADMAP subsystem 7): M3 is then pure frontend against a fixed contract.
 One addition at M3 (2026-09-11): `state.turn`, the barge-in epoch (see `Speak.turn`).
 Pruned on 2026-09-12: types that nothing sent or nothing handled (`audio_chunk` — the orchestrator
-captures the microphone itself, spec §9; `settings_test`; `assistant_text`; `emotion`;
+captured the microphone itself then; `settings_test`; `assistant_text`; `emotion`;
 `srs_profile`; `control: bargein_ack`) are gone rather than kept as a contract nobody honours.
+Added 2026-09-15 (ADR-040): the page captures the microphone again — as a BINARY frame, not a JSON
+`audio_chunk` (see `AUDIO_FRAME_FORMAT` below) — and reports it with `mic_status`.
 
 Two conventions worth knowing before adding a message:
 
@@ -82,6 +84,25 @@ class Explain(_Msg):
     context: str = ""
     #: Explanation language (EXPLAIN_LANGUAGE); a translation is always English.
     lang: Literal["en", "ja"] = "en"
+
+
+class MicStatus(_Msg):
+    """The page's own microphone (ADR-040): the page captures it, so only the page knows. The
+    states are spec §9's — ok | fallback (chosen device gone, on the default) | missing (none) |
+    lost (ended mid-lesson) | denied (permission refused) | off (stopped, or another page has
+    it). Relayed as `service_status: microphone` to the terminal and every page."""
+
+    type: Literal["mic_status"] = "mic_status"
+    state: Literal["ok", "fallback", "missing", "lost", "denied", "off"]
+    detail: str = ""
+
+
+#: THE ONE NON-JSON MESSAGE (ADR-040): the page streams its microphone as binary WebSocket frames —
+#: PCM16 little-endian, 16 kHz, mono, any length; the server cuts them into the VAD's 512-sample
+#: frames (`VoiceLoop.feed_pcm16`). It has no `type` and no model, so it is not in the generated
+#: TypeScript; `backend/app.py` hands `bytes` frames to `Hub.audio` before any JSON parsing.
+AUDIO_FRAME_RATE = 16000
+AUDIO_FRAME_FORMAT = "pcm16le/16000/mono"
 
 
 
@@ -347,7 +368,7 @@ class Error(_Msg):
 
 # ------------------------------------------------------------------------ unions
 ClientMessage = Annotated[
-    Union[Control, SettingsUpdate, Explain],
+    Union[Control, SettingsUpdate, Explain, MicStatus],
     Field(discriminator="type"),
 ]
 

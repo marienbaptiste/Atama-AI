@@ -556,3 +556,78 @@ def test_quiet_over_floor_and_the_ceiling_are_the_stts_and_the_loops_own():
     assert loop.quiet_rms() == 0.02                   # the configured ceiling, not the module constant
     loop._floor = 0.005
     assert loop.quiet_rms() == pytest.approx(0.01)    # floor x the configured factor
+
+
+# ------------------------------------------------------------- the page's microphone (ADR-040)
+def browser_loop():
+    loop, brain, voice, vad, states = loop_with(accepted())
+    loop.mic_source = "browser"
+    loop._frames = asyncio.Queue(maxsize=200)
+    return loop
+
+
+def pcm(values):
+    return np.asarray(values, dtype="<i2").tobytes()
+
+
+def test_the_pages_bytes_are_cut_into_vad_frames_across_chunks():
+    """Whatever the page sends, the VAD sees exactly 512 samples at a time (spec §8/§9)."""
+    loop = browser_loop()
+    loop.feed_pcm16(pcm([1000] * 300))
+    assert loop._frames.qsize() == 0 and len(loop._pending) == 300
+    loop.feed_pcm16(pcm([1000] * 300))
+    assert loop._frames.qsize() == 1 and len(loop._pending) == 88
+    frame = loop._frames.get_nowait()
+    assert len(frame) == 512 and frame.dtype == np.float32
+    assert abs(float(frame[0]) - 1000 / 32768) < 1e-6
+    loop.feed_pcm16(pcm([0] * (424 + 1024)))
+    assert loop._frames.qsize() == 3 and len(loop._pending) == 0
+
+
+def test_a_stray_byte_and_an_empty_frame_cost_nothing():
+    loop = browser_loop()
+    loop.feed_pcm16(b"")
+    loop.feed_pcm16(b"\x01")                              # half a sample: nothing, no exception
+    loop.feed_pcm16(pcm([5] * 512) + b"\x07")             # the odd byte goes, the frame stays
+    assert loop._frames.qsize() == 1 and len(loop._pending) == 0
+
+
+def test_the_terminals_loop_ignores_the_pages_bytes():
+    loop, *_ = loop_with(accepted())
+    loop._frames = asyncio.Queue()
+    loop.feed_pcm16(pcm([1] * 512))
+    assert loop._frames.qsize() == 0
+
+
+def test_the_page_leaving_drops_the_partial_frame_and_says_so():
+    loop = browser_loop()
+    loop.feed_pcm16(pcm([1] * 100))
+    loop.mic_gone()
+    assert len(loop._pending) == 0 and loop.mic_state == "missing" and "went away" in loop.capture_error
+    loop.mic_reported("ok", "USB mic")
+    assert loop.mic_state == "ok" and loop.capture_error == ""
+    loop.mic_reported("denied", "refused")
+    assert loop.capture_error == "refused"
+
+
+def test_stop_wakes_a_loop_fed_by_the_page():
+    """No capture thread posts the end-of-stream sentinel for the browser source; stop() must,
+    or run() would sit on an empty queue for ever after the last page went."""
+    async def run():
+        loop, *_ = loop_with(accepted())
+        loop.mic_source = "browser"
+        task = asyncio.create_task(loop.run())
+        await asyncio.sleep(0.01)
+        assert loop._mic is None                          # no thread was started
+        loop.feed_pcm16(pcm([0] * 512))
+        await asyncio.sleep(0.01)
+        assert loop.frames_seen == 1
+        loop.stop()
+        await asyncio.wait_for(task, 1.0)
+    asyncio.run(run())
+
+
+def test_reopen_mic_is_the_terminals_only():
+    loop = browser_loop()
+    loop.reopen_mic("USB", changed=True)
+    assert loop.input_device is None and not loop._wake.is_set()

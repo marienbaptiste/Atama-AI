@@ -25,7 +25,10 @@ chunker, prompt assembly, the `Brain` interface with its Claude CLI provider, th
 **`make doctor`** (`backend/tools/doctor.py`, written 2026-09-12; `--live`, `--skip-claude`)
 all exist with tests (`make test`). Verified live: Sensei answers in character, uses the search
 tool, and weaves in the student's ghost reviews. The Bunpro MCP server was retired on 2026-09-14
-(ADR-039): both SRS sources reach her through the Student Profile only. **The orchestrator is split (2026-09-12):**
+(ADR-039): both SRS sources reach her through the Student Profile only. **The page captures the
+microphone since 2026-09-15 (ADR-040, user decision):** `frontend/src/capture.ts` streams 16 kHz
+PCM16 as binary WebSocket frames into `VoiceLoop.feed_pcm16`; the sounddevice path stays for a
+terminal lesson without the page. Its live checks (ROADMAP live checks 12 and 13) are pending. **The orchestrator is split (2026-09-12):**
 `backend/repl.py` is the CLI entry only; `backend/orchestrator.py` holds the `Lesson` (wiring,
 rotation, resync, persona switch), `backend/page_control.py` the browser control dispatch, and
 `backend/terminal.py` the console rendering. What was fixed today but not yet seen on the real

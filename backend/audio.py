@@ -55,10 +55,24 @@ def _sd():
 #:   Windows WDM-KS      in 16k FAIL        out 24k FAIL   "Blocking API not supported yet" —
 #:                                                         sounddevice's blocking read/write is
 #:                                                         unsupported on this host API.
-#: Ranked best-first; anything absent is unusable and is never auto-selected.
-USABLE_HOSTAPIS = ("MME", "Windows DirectSound")
-CAPTURE_HOSTAPIS = USABLE_HOSTAPIS
-PLAYBACK_HOSTAPIS = USABLE_HOSTAPIS
+#: Those two are a BLOCKLIST (2026-09-15, ADR-040 point 8). It used to be an allowlist of MME and
+#: DirectSound, which hid every device on Linux — where PortAudio reports ALSA, PulseAudio, JACK
+#: or OSS and none of the four above exist. An API not named here is usable.
+UNUSABLE_HOSTAPIS = ("Windows WASAPI", "Windows WDM-KS")
+#: Best-first among the duplicates of one device. Windows first (measured above), then Linux's in
+#: the order that is most likely to open at our rates: ALSA's plug layer resamples, PulseAudio and
+#: PipeWire (which answers as PulseAudio or through ALSA) resample too. NOT VERIFIED ON LINUX yet
+#: (ROADMAP live checks): open a stream at 16 kHz in and 24 kHz out there, then pin the finding.
+#: An API absent here is usable and ranked last.
+PREFERRED_HOSTAPIS = ("MME", "Windows DirectSound", "ALSA", "PulseAudio", "JACK Audio Connection Kit", "OSS")
+CAPTURE_HOSTAPIS = PREFERRED_HOSTAPIS
+PLAYBACK_HOSTAPIS = PREFERRED_HOSTAPIS
+
+
+def hostapi_usable(api: str) -> bool:
+    """A device on this host API can be opened at our rates. No API name at all (a stub, or a
+    platform that does not report them) means nothing can be ruled out."""
+    return not api or api not in UNUSABLE_HOSTAPIS
 
 #: A lost or missing device is looked for again this often.
 RETRY_S = 2.0
@@ -71,8 +85,11 @@ PROBE_S = 5.0
 #: That an open mapper stream FOLLOWS a live change of the OS default is Windows' wave-mapper
 #: behaviour and has not been observed here yet.
 MAPPER_PREFIX = "Microsoft Sound Mapper"
-#: DirectSound's own alias for the default device; like the mapper, not a device to pick by name.
-DEFAULT_ALIASES = ("Primary Sound Driver", "Primary Sound Capture Driver")
+#: Aliases of the default device, not devices to pick by name: DirectSound's on Windows, and on
+#: Linux ALSA's `default` and the server plugs (`pulse`, `pipewire`) and mixers (`dmix`, `dsnoop`)
+#: that PortAudio lists beside the real cards (2026-09-15, unverified on a live ALSA box).
+DEFAULT_ALIASES = ("Primary Sound Driver", "Primary Sound Capture Driver",
+                   "default", "sysdefault", "pulse", "pipewire", "dmix", "dsnoop")
 
 
 @dataclass(frozen=True)
@@ -112,15 +129,13 @@ def list_devices(kind: str | None = None) -> list[Device]:
     out: list[Device] = []
     for index, info in enumerate(sd.query_devices()):
         api = apis[info["hostapi"]] if apis and isinstance(info.get("hostapi"), int) else ""
-        for want, channels_key, default_index, allowed in (
-                ("input", "max_input_channels", defaults[0], CAPTURE_HOSTAPIS),
-                ("output", "max_output_channels", defaults[1], PLAYBACK_HOSTAPIS)):
+        for want, channels_key, default_index in (
+                ("input", "max_input_channels", defaults[0]),
+                ("output", "max_output_channels", defaults[1])):
             channels = int(info.get(channels_key) or 0)
             if channels <= 0 or (kind and kind != want):
                 continue
-            # No host-api information (a stub, or a platform that does not report them) means we
-            # cannot rule anything out — assume usable rather than hiding every device.
-            usable = (not api) or (api in allowed)
+            usable = hostapi_usable(api)
             out.append(Device(index=index, name=str(info.get("name", f"device {index}")), kind=want,
                               channels=channels, samplerate=int(info.get("default_samplerate") or 0),
                               is_default=(index == default_index), hostapi=api, usable=usable))

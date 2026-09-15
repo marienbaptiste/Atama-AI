@@ -45,6 +45,7 @@ CLIENT_SAMPLES = {
     "control": {"action": "new_topic"},
     "settings": {"values": {"SUBTITLES": "off"}},
     "explain": {"kind": "grammar", "text": "〜たら", "context": "雨が降ったら。", "lang": "ja"},
+    "mic_status": {"state": "fallback", "detail": "using the default (Headset)"},
 }
 
 

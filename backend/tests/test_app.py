@@ -693,3 +693,96 @@ def test_your_own_line_carries_the_grammar_you_used(monkeypatch):
     asyncio.run(hub.transcript("週末に日本語を勉強しようと思う。", accepted=False, reason="noise"))
     assert sent[1]["grammar"] == []
     assert hub.history[0]["grammar"][0]["point"] == "〜ようと思う"
+
+
+# ---------------------------------------------------------------- the page's microphone (ADR-040)
+def test_binary_frames_reach_the_loop_from_the_first_page_to_send_only(masked):
+    hub, got = app.Hub(), []
+    hub.on_audio = got.append
+    with connect(hub) as client:
+        with client.websocket_connect("/ws", headers=PAGE) as a, client.websocket_connect("/ws", headers=PAGE) as b:
+            a.receive_json(); b.receive_json()
+            a.send_bytes(b"\x01\x02" * 512)
+            b.send_bytes(b"\x03\x04" * 512)               # a second tab: ignored, and told once
+            told = b.receive_json()
+            assert (told["type"], told["service"], told["state"]) == ("service_status", "microphone", "off")
+            b.send_bytes(b"\x03\x04" * 512)
+            b.send_json({"type": "shout"})                 # a round trip: nothing else came for b
+            assert b.receive_json()["type"] == "error"
+            a.send_json({"type": "shout"})
+            assert a.receive_json()["type"] == "error"
+    assert got == [b"\x01\x02" * 512]
+
+
+def test_the_microphone_page_leaving_hands_it_to_the_next_page_that_sends():
+    async def run():
+        hub, got, left = app.Hub(), [], []
+        hub.on_audio = got.append
+        hub.on_mic_left = lambda: left.append(True)
+        a, b = Page(), Page()
+        hub.attach(a); hub.attach(b)
+        hub.audio(a, b"\x01\x00")
+        hub.audio(b, b"\x02\x00")
+        assert got == [b"\x01\x00"]
+        hub.leave(a)
+        assert left == [True]
+        hub.audio(b, b"\x03\x00")
+        assert got == [b"\x01\x00", b"\x03\x00"]
+        hub.leave(b)
+        assert left == [True, True]
+        hub.leave(b)                                       # gone already: nothing more
+        assert left == [True, True]
+    asyncio.run(run())
+
+
+def test_a_page_that_leaves_mid_hold_with_the_microphone_cancels_the_hold_and_frees_the_mic():
+    async def run():
+        hub, actions, left = app.Hub(), [], []
+        hub.on_control = actions.append
+        hub.on_mic_left = lambda: left.append(True)
+        page = Page()
+        hub.attach(page)
+        hub.control(page, "start")
+        hub.audio(page, b"\x00\x00")
+        hub.leave(page)
+        assert actions == ["start", "cancel"] and left == [True]
+    asyncio.run(run())
+
+
+def test_mic_status_is_relayed(masked):
+    hub, said = app.Hub(), []
+    hub.on_mic = lambda s, d: said.append((s, d))
+    with connect(hub) as client, client.websocket_connect("/ws", headers=PAGE) as ws:
+        ws.receive_json()
+        ws.send_json({"type": "mic_status", "state": "denied", "detail": "refused"})
+        ws.send_json({"type": "shout"})
+        assert ws.receive_json()["type"] == "error"
+    assert said == [("denied", "refused")]
+
+
+def test_only_the_microphone_pages_word_counts_once_one_has_sent():
+    async def run():
+        hub, said = app.Hub(), []
+        hub.on_mic = lambda s, d: said.append(s)
+        a, b = Page(), Page()
+        hub.attach(a); hub.attach(b)
+        hub.mic_status(b, "denied", "before anyone sends: every page's word counts")
+        hub.audio(a, b"\x00\x00")
+        hub.mic_status(b, "lost", "not the microphone page: ignored")
+        hub.mic_status(a, "ok", "the microphone page")
+        assert said == ["denied", "ok"]
+    asyncio.run(run())
+
+
+def test_a_frame_the_loop_chokes_on_does_not_end_the_socket(masked):
+    hub = app.Hub()
+
+    def explode(data):
+        raise ValueError("bad frame")
+
+    hub.on_audio = explode
+    with connect(hub) as client, client.websocket_connect("/ws", headers=PAGE) as ws:
+        ws.receive_json()
+        ws.send_bytes(b"\x00\x01")
+        ws.send_json({"type": "shout"})
+        assert ws.receive_json()["type"] == "error"       # still connected, still answering

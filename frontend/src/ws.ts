@@ -17,6 +17,10 @@ export const RETRY_MS = 2_000;
 /** Reconnects a stop press may try, while the server has not had it yet, before the page says it
  *  could not reach the tutor (about 10 s at RETRY_MS). */
 export const STOP_ATTEMPTS = 5;
+/** Microphone frames still unsent on the socket beyond which new ones are dropped instead of
+ *  queued (about 8 s of audio): a socket that far behind is dead in all but name, and live audio
+ *  is worth nothing late. The watchdog above closes it. */
+export const BACKLOG_BYTES = 256 * 1024;
 
 const KNOWN = new Set<string>(SERVER_TYPES);
 
@@ -89,6 +93,14 @@ export class Link {
   send(msg: ClientMessage): boolean {
     if (!this.open || !this.socket) return false;
     this.socket.send(JSON.stringify(msg));
+    return true;
+  }
+
+  /** One microphone frame (ADR-040), the socket's one binary message. False — and the frame is
+   *  dropped — when there is no open socket or it has stopped draining (BACKLOG_BYTES). */
+  sendBytes(frame: ArrayBuffer): boolean {
+    if (!this.open || !this.socket || (this.socket.bufferedAmount ?? 0) > BACKLOG_BYTES) return false;
+    this.socket.send(frame);
     return true;
   }
 

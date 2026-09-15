@@ -145,6 +145,13 @@ class PageControl:
         # The terminal binding stays live as well — either can drive the same turn.
         hub.on_control = self.from_browser
         hub.on_settings = self.settings_saved
+        if getattr(loop, "mic_source", "local") == "browser":
+            # ADR-040: the page captures the microphone. Its frames go straight into the loop; its
+            # word on the microphone (`mic_status`) and its departure are reported like the local
+            # device's changes were (spec §9).
+            hub.on_audio = loop.feed_pcm16
+            hub.on_mic = self.mic_reported
+            hub.on_mic_left = self.mic_left
 
         # The browser was getting audio and nothing else: no transcript, no state. Silence after
         # a press then looked the same as a broken microphone, when it might equally be a
@@ -162,6 +169,19 @@ class PageControl:
 
         loop.on_state = on_state
         loop.on_transcript = on_transcript
+
+    def mic_reported(self, state: str, detail: str) -> None:
+        """The page's microphone changed (ADR-040): the loop's diagnostics, the terminal, and every
+        page — a second tab sees whose microphone it is."""
+        self.loop.mic_reported(state, detail)
+        terminal.note("microphone " + state, detail, bold=state in ("missing", "lost", "denied"), pad=10)
+        self.status_soon("microphone", state, detail)
+
+    def mic_left(self) -> None:
+        """The page that was sending audio went away; the loop hears nothing until one sends again."""
+        self.loop.mic_gone()
+        terminal.note("microphone missing", self.loop.capture_error, bold=True, pad=10)
+        self.status_soon("microphone", "missing", self.loop.capture_error)
 
     def settings_saved(self, keys: list[str]) -> None:
         # settings_view.LIVE: devices and the tutor take effect now; the rest at next launch.
@@ -273,14 +293,17 @@ class PageControl:
         terminal.say(CR + DIM + "[browser: stop] " + str(frames) + " frames ("
                      + format(seconds, ".1f") + "s, rms " + format(rms, ".5f") + ") -> "
                      + ("turn started" if started else "NO TURN")
-                     + "  mic_alive=" + str(loop._mic.is_alive() if loop._mic else False)
+                     + "  mic=" + (("page:" + (loop.mic_state or "unreported")) if getattr(loop, "mic_source", "local") == "browser"
+                                   else ("alive" if loop._mic is not None and loop._mic.is_alive() else "dead"))
                      + " frames_seen=" + str(loop.frames_seen)
                      + (" err=" + loop.capture_error if loop.capture_error else "")
                      + RESET + " " * 10)
         if not loop.ptt:
             return
         if frames == 0:
-            self.ack("empty", "no audio arrived from the microphone")
+            self.ack("empty", "no audio arrived from the microphone"
+                     + (" - the page sent none; is it allowed in the browser?"
+                        if getattr(loop, "mic_source", "local") == "browser" else ""))
         elif rms < audio_mod.SILENT_RMS:
             # Digital silence: the device is open but muted (boom up, mute button, or
             # Windows privacy). Sending it anyway only earns a discarded hallucination.

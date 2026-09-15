@@ -3,6 +3,8 @@
  *  fail while one is missing (gate M3a). */
 import "./style.css";
 import { Avatar, type CastEntry } from "./avatar";
+import { Capture, type MicState } from "./capture";
+import { listMics, onDevicesChanged, webOpener } from "./capture_web";
 import { Chat } from "./chat";
 import { applyHistory, lastGoal, loadingCaption } from "./history";
 import { pointCardHtml, wordCardHtml } from "./levels";
@@ -313,8 +315,10 @@ function bargedIn(): void {
 const link = new Link(handlers, {
   open() {
     for (const id of ["topic", "quit"]) $<HTMLButtonElement>(id).disabled = false;
-    // A reconnect is a new socket: tell the server again that this page can play sound.
+    // A reconnect is a new socket: tell the server again that this page can play sound, and
+    // what its microphone is doing — the capture ran on while the link was down (ADR-040).
     if (unlocked) link.send({ type: "control", action: "ready" });
+    if (lastMic) link.send({ type: "mic_status", ...lastMic });
     live("connected — hold SPACE, or the button, and speak", "on");
     if (!welcomed && !hasSpoken) chat.loading("getting everything ready…");   // until her first sentence lands
     welcomed = true;
@@ -336,11 +340,42 @@ const link = new Link(handlers, {
   stale() { log("no word from the server for 12 s — reconnecting", "err"); },
 });
 
+// ------------------------------------------------------------------ the microphone (ADR-040)
+//: The page captures it and streams it for the whole lesson; capture.ts decides the states, the
+//: browser is behind capture_web.ts. The choice is this machine's, remembered in this browser.
+const MIC_KEY = "atama.mic";
+let micOptions: [string, string][] = [];
+let lastMic: { state: MicState; detail: string } | null = null;
+
+async function refreshMics(): Promise<void> {
+  micOptions = await listMics();
+  settings.refresh();
+}
+
+const capture = new Capture({
+  open: webOpener(),
+  send: frame => link.sendBytes(frame),
+  report: (state, detail) => {
+    // The chip now, from the page's own knowledge; the log line comes back from the server as
+    // `service_status: microphone`, once, for every page.
+    lastMic = { state, detail };
+    status.showMic(state, detail);
+    link.send({ type: "mic_status", state, detail });
+    void refreshMics();                               // labels appear once permission is given
+  },
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+  clearTimeout: id => window.clearTimeout(id),
+  busy: () => talk.talking,
+});
+try { capture.chosen = localStorage.getItem(MIC_KEY) || ""; } catch { /* private window */ }
+onDevicesChanged(() => { void refreshMics(); void capture.devicesChanged(); });
+
 const talk = new Talk({
   send: action => link.send({ type: "control", action }),
   connected: () => link.open,
   blocked: () => settings.isOpen(),
   mode: () => mode,
+  pressed: () => void capture.retryIfDenied(),        // the gesture a refused permission waits for
   interrupt: () => {
     // She is talking, or about to (thinking): stop her here, and drop the rest of this turn
     // however late it arrives. The server's `bargein` then confirms (spec §8).
@@ -361,6 +396,12 @@ settings.initSettings({
     return [c.id, name, sub + (c.own_face ? "" : " · stand-in face"), name.charAt(0)];
   }),
   opened: on => { if (on) talk.press(false); },
+  mics: () => micOptions,
+  mic: () => capture.chosen,
+  setMic: id => {
+    try { localStorage.setItem(MIC_KEY, id); } catch { /* private window */ }
+    void capture.setDevice(id);
+  },
 });
 
 //: Same as saying 「話題を変えて」: she drops the subject, interrupting herself if need be.
@@ -405,6 +446,7 @@ onFirstTouch(() => {
   status.startTimer();
   void avatarReady.then(a => a.unlock());
   link.send({ type: "control", action: "ready" });
+  void capture.start();                               // the same gesture opens the microphone
 });
 
 // Direct links: #settings or #settings/sound, and #mood=happy to preview the kaomoji.

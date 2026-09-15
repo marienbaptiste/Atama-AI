@@ -304,3 +304,41 @@ def test_devices_without_hostapi_information_stay_usable(fake_sd):
     """A backend that does not report host APIs must not have every device hidden."""
     assert all(d.usable for d in audio_mod.list_devices())
     assert audio_mod.resolve_device("Audeze", "input") == 1
+
+
+# ----------------------------------------------------- host APIs (Linux, ADR-040 point 8)
+LINUX_APIS = [{"name": "ALSA"}, {"name": "OSS"}, {"name": "JACK Audio Connection Kit"}]
+#: What PortAudio lists on a typical ALSA box: the cards, ALSA's aliases of the default, and JACK.
+LINUX_DEVICES = [
+    {"name": "HDA Intel PCH: ALC3204 Analog (hw:0,0)", "hostapi": 0, "max_input_channels": 2, "max_output_channels": 2, "default_samplerate": 44100},
+    {"name": "USB Audio: - (hw:1,0)", "hostapi": 0, "max_input_channels": 1, "max_output_channels": 0, "default_samplerate": 48000},
+    {"name": "sysdefault", "hostapi": 0, "max_input_channels": 128, "max_output_channels": 128, "default_samplerate": 48000},
+    {"name": "pulse", "hostapi": 0, "max_input_channels": 32, "max_output_channels": 32, "default_samplerate": 44100},
+    {"name": "default", "hostapi": 0, "max_input_channels": 32, "max_output_channels": 32, "default_samplerate": 44100},
+    {"name": "system", "hostapi": 2, "max_input_channels": 2, "max_output_channels": 2, "default_samplerate": 48000},
+]
+
+
+@pytest.fixture
+def linux_sd(monkeypatch):
+    sd = FakeSd()
+    monkeypatch.setattr(sd, "query_devices",
+                        lambda index=None, kind=None: LINUX_DEVICES[index] if isinstance(index, int) else LINUX_DEVICES)
+    sd.query_hostapis = lambda: LINUX_APIS
+    monkeypatch.setattr(audio_mod, "_sd", lambda: sd)
+    return sd
+
+
+def test_linux_host_apis_are_usable_and_alsa_is_preferred(linux_sd):
+    """The old allowlist named MME and DirectSound and hid every device on Linux (2026-09-15)."""
+    devices = audio_mod.list_devices("input")
+    assert devices and all(d.usable for d in devices)
+    assert audio_mod.resolve_device("USB Audio", "input") == 1
+    assert audio_mod.resolve_device("system", "input") == 5          # JACK: usable, ranked last
+
+
+def test_alsas_aliases_of_the_default_are_not_offered_as_devices(linux_sd):
+    from backend import settings_view
+    options = settings_view.device_options(fresh=True)
+    assert options["input"] == ["HDA Intel PCH: ALC3204 Analog (hw:0,0)", "USB Audio: - (hw:1,0)", "system"]
+    assert options["output"] == ["HDA Intel PCH: ALC3204 Analog (hw:0,0)", "system"]

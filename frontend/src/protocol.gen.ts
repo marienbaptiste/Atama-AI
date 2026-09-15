@@ -2,7 +2,7 @@
 // backend/tests/test_models.py fails while this file is out of date. After changing a message:
 //   .venv/Scripts/python -m backend.tools.gen_protocol
 
-export const CLIENT_TYPES = ["control", "settings", "explain"] as const;
+export const CLIENT_TYPES = ["control", "settings", "explain", "mic_status"] as const;
 export const SERVER_TYPES = ["state", "stt_partial", "stt_final", "speak", "history", "bargein", "service_status", "settings", "mic_level", "meters", "timing", "explanation", "error"] as const;
 export const RESERVED_TYPES = ["stt_partial"] as const;
 export type ClientType = (typeof CLIENT_TYPES)[number];
@@ -73,6 +73,13 @@ export interface ExplainMsg {
   text: string;
   context?: string;
   lang?: "en" | "ja";
+}
+
+/** The page's own microphone (ADR-040): the page captures it, so only the page knows. The states are spec §9's — ok | fallback (chosen device gone, on the default) | missing (none) | lost (ended mid-lesson) | denied (permission refused) | off (stopped, or another page has it). Relayed as `service_status: microphone` to the terminal and every page. */
+export interface MicStatusMsg {
+  type: "mic_status";
+  state: "ok" | "fallback" | "missing" | "lost" | "denied" | "off";
+  detail?: string;
 }
 
 // ------------------------------------------------------------------ server -> client
@@ -200,5 +207,5 @@ export interface ErrorMsg {
   fatal: boolean;
 }
 
-export type ClientMessage = ControlMsg | SettingsUpdateMsg | ExplainMsg;
+export type ClientMessage = ControlMsg | SettingsUpdateMsg | ExplainMsg | MicStatusMsg;
 export type ServerMessage = StateMsg | SttPartialMsg | SttFinalMsg | SpeakMsg | HistoryMsg | BargeInMsg | ServiceStatusMsg | SettingsMsg | MicLevelMsg | MetersMsg | TimingMsg | ExplanationMsg | ErrorMsg;

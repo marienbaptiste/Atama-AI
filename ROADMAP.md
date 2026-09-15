@@ -772,8 +772,9 @@ avatar's own voice through the speakers must **not** trigger it (ADR-018).
 
 - **Test** — State-machine tests: `speaking` + `bargein` → `listening`; the flushed queue emits
   nothing afterwards; undelivered text is recorded in the turn log. Client-side: `getUserMedia`
-  is requested with `echoCancellation: true`, `noiseSuppression: true`, `autoGainControl: false`
-  (assert the constraints object).
+  is requested with `echoCancellation: true`, `noiseSuppression: true`, `autoGainControl: true`
+  (the browser's AGC is the only gain stage the page has; `capture_web.ts`, ADR-040 — the
+  constraints live in the untested browser adapter, so read them there rather than asserting).
 - **Validate** — Live, two runs: on headphones, interrupt the avatar 10 times and measure
   client-side stop latency; on laptop speakers at normal volume, hold a 10-turn conversation
   **without** interrupting and count self-interruptions.
@@ -791,8 +792,9 @@ sentence of a closed epoch however late it arrives, including one still decoding
 (`speech.test.ts`, `test_app.py`). Push-to-talk: the page stops her on the key event itself
 (`mic.ts`), before the server hears of it, and logs key-to-silence for every barge-in with the
 session's worst — that log line is the M3b measurement. Hands-free: the server VAD decides (its
-thresholds, subsystem 3) and the page stops on `bargein`. The `getUserMedia` constraints test does
-not apply while the orchestrator captures the microphone (spec §2 "where the build stands"). Both
+thresholds, subsystem 3) and the page stops on `bargein`. **Since 2026-09-15 the page captures the
+microphone** (ADR-040), so the `getUserMedia` echo-cancellation layer of ADR-018 is asked for
+again (`capture_web.ts`); the speakers run of M3b is where it is measured. Both
 live runs — 10 interruptions on headphones, 10 turns on speakers — are **not yet run**.
 
 ### 9. Avatar & frontend — `frontend/src/{avatar,ui,main,status}.ts` — **M3**
@@ -832,6 +834,20 @@ expression settles at the end of the turn, the next tag cancels a pending releas
 amendment) and `audio_only.test.ts` (the audio-only fallback when TalkingHead or the GLB cannot
 load: sentences still play in order and reach the chat as their audio starts). **Gate M3c (the
 live 10-turn acceptance) is not met.**
+
+**2026-09-15 — the microphone moved into the page (ADR-040, user decision).** `src/capture.ts`
+is the state machine (spec §9's states — ok, fallback, missing, lost, denied, off — the chosen
+device remembered per browser, reopen on `devicechange`, never under a held key; 8 tests against
+a fake browser), `src/pcm.ts` the pure resampler and 512-sample framer (5 tests, including
+chunk-invariance, which found a carry bug on the first run), `src/capture_worklet.ts` the
+AudioWorklet (bundled by Vite as its own ES chunk) and `src/capture_web.ts` the thin
+`getUserMedia` adapter, untested by design. Audio goes out as binary frames (`Link.sendBytes`,
+dropped when the socket is closed or eight seconds behind); the page reports `mic_status`, and
+re-reports it on every reconnect. Server side: `Hub.audio` (first page to send holds the
+microphone; a second tab is told once; the holder leaving frees it), `VoiceLoop.feed_pcm16`
+(reframes any byte length; a stray byte or a frame that raises never ends the socket), and the
+Sound tab's picker is the page's own. The terminal lesson keeps the sounddevice path. 97 Vitest
+tests; the backend suite green. What is not proven is the live part: see the pending checks.
 
 ### 10. Latency instrumentation — cross-cutting — **M2 onward, enforced at M3**
 
@@ -1544,6 +1560,22 @@ M3b–M3f, M4c and M4d all remain not met).
    containers ran on (seen live: the app was still up, py-spy showed the mic thread reading). The
    server side was verified live the same day: the quit message closed the socket in 1 s and took
    the containers down. Not yet seen: a real press through a real reconnect.
+12. **The page's microphone, live** (ADR-040, 2026-09-15) — in order: the browser asks for the
+   microphone on the first click and the chip goes green with the device's name; the terminal's
+   `[loop] frames=` heartbeat (`ATAMA_DEBUG_LOOP=1`) shows ~31 frames a second from the page;
+   a held SPACE is transcribed correctly (the same Whisper, now on the browser's AEC/NS/AGC
+   audio — compare a few transcripts against the sounddevice path if they look worse);
+   unplug the headset mid-lesson → `lost`, then `ok` on the default within 2 s, and back on
+   replug; refuse the permission, then allow it in the address bar and press SPACE → `ok`;
+   reload the page mid-hold → the hold is cancelled, the new page takes the microphone, the next
+   press works; open a second tab → it shows `off` with the reason and the first tab keeps
+   talking; pull the network (or kill and restart the tutor) → the page reconnects, the chip
+   comes back from the page's own report, and the next press works. Also: the level meter in
+   Settings → Sound moves, since it is still fed by the server from the frames it receives.
+13. **Linux audio, live** (ADR-040 point 8) — on an ALSA machine with `libportaudio2`: `make
+   doctor` lists devices; `python -m backend.repl --listen` (no page) opens the microphone at
+   16 kHz and `--speak` plays at 24 kHz; the Advanced → Audio pickers show the cards and not
+   `default`/`pulse`; then pin the host-API finding in `backend/audio.py` with the date.
 
 ## Integration order
 
