@@ -37,7 +37,7 @@ no accounts: one user, local files. **It never writes to your SRS accounts.**
 - [Hard requirements](#hard-requirements)
 - [Getting started](#getting-started)
 - [Claude login](#claude-login)
-- [Settings](#settings)
+- [Settings](#settings) · [your phone, keep awake](#your-phone-and-keeping-the-computer-awake)
 - [SRS integration (read-only)](#srs-integration-read-only)
 - [Status bar](#status-bar)
 - [The avatar](#the-avatar)
@@ -160,7 +160,9 @@ conversation on the right as a chat:
 | Frontend (dev)  | `:5173`  | `localhost`   |
 
 **Loopback only.** The WebSocket carries the tutor's audio, your transcripts and your study marks,
-and nothing listens on the LAN. `make doctor` fails if anything does. The socket also refuses any
+and nothing listens on the LAN — with one deliberate exception you turn on yourself: the phone
+page (Settings → Remote, ADR-041), HTTPS on this machine's own address, admitted only with the key
+from its QR code. `make doctor` fails if anything else does. The socket also refuses any
 page that is not its own: the handshake's `Origin` must be `127.0.0.1`, `localhost` or `[::1]` at
 the app's port (or the Vite dev server), so another site open in your browser cannot drive the
 lesson.
@@ -488,13 +490,46 @@ returns (spec §9). The page shows the microphone's state under the talk button.
 | Voice              | VOICEVOX speaker override, speed, pitch, intonation, pause scale             |
 | Sound              | Turn mode (push-to-talk / hands-free), the page's microphone (applied at once, remembered per browser), VAD window and thresholds, barge-in sensitivity |
 | Display            | Subtitles (JP / off), furigana, chat panel, explanation language, status heartbeat |
-| Advanced           | Ports and bind address, cache and log dirs, STT confidence thresholds, latency and VRAM warning thresholds, service URLs and timeouts, the terminal lesson's audio devices (`AUDIO_INPUT_DEVICE`, `AUDIO_OUTPUT_DEVICE`) |
+| Remote             | Keep this computer awake while the tutor runs; the phone page (on/off, port) and the QR code that opens it |
+| Advanced           | Ports and bind address, cache and log dirs, STT confidence thresholds, latency and VRAM warning thresholds, service URLs and timeouts, the terminal lesson's audio devices (`AUDIO_INPUT_DEVICE`, `AUDIO_OUTPUT_DEVICE`), the phone page's address (`REMOTE_HOST`) |
 
-Today the page's microphone picker (its own, never sent to the server), the tutor persona and the
-terminal lesson's device keys apply live; every other change
+Today the page's microphone picker (its own, never sent to the server), the tutor persona, the
+terminal lesson's device keys, keep-awake and the phone page apply live; every other change
 applies at the next launch (the model respawn with `--resume` and the live re-fetch on a token
 change are the design, not yet built). There are no per-service Test buttons: the status chips
 and `make doctor` answer "does it work".
+
+### Your phone, and keeping the computer awake
+
+Both live under **Settings → Remote** (ADR-041). Everything — Whisper, VOICEVOX, the Claude
+subprocess — stays on the computer; the phone only opens the page.
+
+- **Keep this computer awake** blocks system sleep while the tutor runs (Windows
+  `SetThreadExecutionState`, Linux `systemd-inhibit`, macOS `caffeinate`). The display may still
+  turn off; the page holds its own screen wake lock during a lesson, on the desktop only when this
+  is on, on a phone always.
+- **Serve the page to my phone** starts a second listener on this machine's own network address
+  (`REMOTE_HOST` empty = the default route's; never `0.0.0.0`), **HTTPS only**, on `REMOTE_PORT`
+  (8443), with a self-signed certificate made once into `~/.atama-ai/remote/`. Only private
+  networks (10.x, 172.16–31.x, 192.168.x): a public address, or a client from one, is refused. A
+  phone gets a socket only with the **session key** in the QR code — a new key every time the
+  tutor starts, kept in memory only, never in a file. The URL is `https://<address>:<port>/?k=<key>`;
+  the key is stored in the phone's browser and dropped from the address bar, so a reconnect works
+  and a relaunch means scanning again. **New key** replaces it within the run. The code is shown
+  only on a page open on the computer, never on a phone, and a phone cannot change secrets or the
+  Remote settings.
+- **The first time on the phone** you have to accept the certificate, because a browser shares its
+  microphone only on HTTPS it trusts: Android Chrome — *Advanced → Proceed*; iPhone — open the
+  page, let Safari download the profile, install it under Settings → Profile Downloaded, then
+  Settings → General → About → Certificate Trust Settings → enable it. The certificate's
+  fingerprint is printed beside the code to compare. Then tap the page: she starts, and the talk
+  button is held by touch.
+- On a phone the page runs in **mobile mode** (a coarse pointer on a narrow screen; `#m=1` in the
+  URL forces it on any browser for a look): the status bar, New topic, Stop and the Activity card
+  sit in the hamburger menu, the conversation opens from it as an overlay and her sentences show
+  as subtitles while it is closed. The desktop page is unchanged.
+- Same Wi-Fi only. `make doctor` still requires the loopback port and the containers to answer
+  nowhere else; the phone port is the one deliberate exception. Never on a public network.
 
 Secrets never come back to the browser. Once stored, the page only ever sees
 `{set: true, hint: "…abcd"}`.
@@ -877,6 +912,15 @@ use headphones. If it happens on headphones in `vad` mode, that is a bug worth f
 
 **Replies are being billed to the API.** See the two items above, and check that nothing in your
 shell profile exports `ANTHROPIC_API_KEY`.
+
+**Transcripts are poor from the page (or the phone).** Hear what Whisper hears: start with
+`ATAMA_DUMP_UTTERANCES=1` in the environment and every utterance is written to `logs/utterances/`
+as a 16 kHz WAV, with its rms and peak printed on the console. Muffled or hissy audio there means
+the capture path; clean audio with a bad transcript means Whisper or the room. The microphone
+chip's tooltip (and Settings → Sound) says how the audio is made: a `16000 Hz context` means the
+browser resamples the microphone itself; any other rate means the page's own low-pass and
+interpolation are doing it. Noise suppression and automatic gain are deliberately off for the
+page's microphone (2026-09-16): both make speech worse for a recogniser.
 
 **VOICEVOX chip says `down`.** Run `docker compose up -d`, then check
 `http://127.0.0.1:50021/docs`.

@@ -47,8 +47,16 @@ export interface LinkEvents {
   unreachable?(): void;
 }
 
+/** Where the phone link's key is kept (ADR-041): read from `?k=` once, then only from here. */
+export const REMOTE_KEY = "atama.remote-key";
+
 export function defaultUrl(): string {
-  return (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws";
+  const secure = location.protocol === "https:";
+  let key = "";
+  if (secure) {                                   // only the phone link is keyed, and it is TLS
+    try { key = localStorage.getItem(REMOTE_KEY) || ""; } catch { /* private window */ }
+  }
+  return (secure ? "wss://" : "ws://") + location.host + "/ws" + (key ? "?k=" + encodeURIComponent(key) : "");
 }
 
 export class Link {

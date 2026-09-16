@@ -413,3 +413,95 @@ mark.gp:hover,mark.gp:focus,mark.vw:hover,mark.vw:focus{box-shadow:inset 0 0 0 1
 #word-pop b{color:var(--ink)}
 #word-pop .rd{font:600 15px/1.4 var(--jp);color:var(--ink);margin:2px 0 4px}
 #word-pop .stage{margin-top:6px;font-size:11.5px;color:#8b93a1}
+
+/* ---- the phone page's card (Settings -> Remote, ADR-041): the code centred on its own, the
+   words under it, everything on the card's own axis (user, 2026-09-16). */
+.qr{display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:12px;text-align:center}
+.qrbox{width:236px;height:236px;padding:8px;box-sizing:border-box;border-radius:20px;background:#fff;
+       border:1px solid #e3e6eb;box-shadow:0 2px 8px rgba(0,0,0,.08);display:grid;place-items:center;flex:none}
+.qrbox svg{display:block;width:100%;height:100%;shape-rendering:crispEdges}
+.qrside{max-width:520px;font-size:12.5px;color:var(--sub);line-height:1.5;display:flex;flex-direction:column;
+        align-items:center;gap:6px}
+.qrside b{color:var(--ink);font-size:13.5px}
+.qrside p{margin:0}
+.qrside code{display:block;word-break:break-all;font-size:11.5px;padding:6px 10px;border-radius:8px}
+.qrside small{color:#8b93a1;word-break:break-all}
+.qrside .act{margin-top:4px}
+
+/* ---- mobile mode (ADR-041). Everything here needs body.mobile, which mobile.ts sets only for a
+   coarse pointer on a narrow screen (or #m=1): the desktop page never gets any of it. */
+.mobile-only{display:none}
+body.mobile .mobile-only{display:grid;place-items:center}
+body.mobile{--chat-w:0px}
+body.mobile #stage{right:0;bottom:0}
+body.mobile.study #chat{display:none}
+body.mobile.study.chat-open #chat{display:flex;top:0;left:0;right:0;bottom:0;width:auto;height:auto;border-radius:0}
+body.mobile #chat header{padding-top:max(16px,env(safe-area-inset-top))}
+body.mobile #chat-close{margin-left:auto;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);
+        background:#fff;color:var(--ink);cursor:pointer}
+body.mobile #chat-close svg{width:14px;height:14px}
+body.mobile #dock{left:50%;bottom:max(24px,env(safe-area-inset-bottom));width:calc(100vw - 32px);box-sizing:border-box;
+        justify-content:center;border-radius:30px;transform:translateX(-50%)}
+body.mobile #talk{flex:1;justify-content:center;padding:18px 20px;font-size:16px}
+body.mobile #talk svg{width:22px;height:22px}
+body.mobile #live{bottom:8px;left:50%;transform:translateX(-50%);max-width:92vw;white-space:nowrap;overflow:hidden;
+        text-overflow:ellipsis;font-size:11px;text-align:center}
+body.mobile #hint{bottom:118px}
+body.mobile #setup{bottom:118px}
+body.mobile #start{padding:24px;text-align:center}
+#menu-btn{position:fixed;top:max(14px,env(safe-area-inset-top));left:14px;z-index:14;width:46px;height:46px;border-radius:15px;
+        border:1px solid rgba(255,255,255,.9);background:var(--pill);box-shadow:var(--shadow);display:grid;
+        place-items:center;cursor:pointer;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+#menu-btn svg{width:24px;height:24px}
+#menu-scrim{position:fixed;inset:0;z-index:15;background:rgba(0,0,0,.4)}
+/* The drawer: the same frosted glass as the settings panel (user, 2026-09-16: the glass back, the
+   hamburger button gone while anything from the menu is up). Three sections with small labels,
+   and every action is a tile with a name; the tiles are white, so the words read on the glass. */
+#menu{position:fixed;top:0;left:0;bottom:0;z-index:16;width:min(340px,86vw);overflow:auto;box-sizing:border-box;
+        padding:max(14px,env(safe-area-inset-top)) 14px 24px;display:flex;flex-direction:column;gap:8px;
+        background:var(--glass);backdrop-filter:blur(28px) saturate(1.4);-webkit-backdrop-filter:blur(28px) saturate(1.4);
+        border-right:1px solid rgba(255,255,255,.85);color:var(--ink);box-shadow:0 0 40px rgba(0,0,0,.45)}
+/* The hamburger hides whenever something it opened is showing: the drawer, the conversation
+   overlay or the settings panel. */
+body.menu-open #menu-btn,body.chat-open #menu-btn,body.settings-open #menu-btn{display:none}
+#menu header{display:flex;align-items:center;justify-content:space-between;font:800 17px system-ui;padding:2px 4px 8px;
+        border-bottom:1px solid var(--line);margin-bottom:4px}
+#menu-close{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:#fff;
+        display:grid;place-items:center;cursor:pointer}
+#menu-close svg{width:14px;height:14px}
+#menu h4{margin:10px 4px 2px;font:700 11px system-ui;letter-spacing:.08em;text-transform:uppercase;color:var(--sub)}
+.menu-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.menu-tile,body.mobile #menu-lesson .round{display:flex;align-items:center;gap:10px;width:auto;height:auto;
+        padding:13px 12px;border-radius:14px;border:1px solid #e3e6eb;background:#fff;font:600 13.5px system-ui;
+        color:var(--ink);cursor:pointer;text-align:left;opacity:1;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.menu-tile svg,body.mobile #menu-lesson .round svg{width:22px;height:22px;flex:none}
+body.mobile #menu-lesson .round::after{content:attr(aria-label)}
+body.mobile #menu-lesson .round:disabled{opacity:.45}
+body.mobile #meters{position:static;transform:none;flex-wrap:wrap;left:auto;max-width:none;box-shadow:none;
+        background:#fff;border:1px solid #e3e6eb;border-radius:14px;padding:8px;gap:6px;backdrop-filter:none}
+body.mobile #cog{display:none}
+body.mobile #activity{position:static;width:auto;max-height:none;box-shadow:none;border:1px solid #e3e6eb;
+        border-radius:14px;background:#fff;backdrop-filter:none}
+/* The start screen: its words on a solid card, not floating over the stage (user, 2026-09-16). */
+body.mobile #start > div{background:rgba(18,20,24,.94);padding:30px 26px;border-radius:26px;margin:0 20px;
+        box-shadow:0 18px 50px rgba(0,0,0,.5)}
+
+/* The conversation on a phone while its overlay is closed (user, 2026-09-16): the SAME bubbles
+   as the panel — hers left, yours right, marks, furigana, the 訳 button — floating over her with
+   no panel behind them, and only the last three, so she stays in view. */
+body.mobile.study:not(.chat-open) #chat{display:flex;top:auto;left:8px;right:8px;bottom:118px;width:auto;height:auto;
+        max-height:46vh;background:none;border:none;box-shadow:none;border-radius:0;overflow:visible;
+        backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:none}
+body.mobile.study:not(.chat-open) #chat header{display:none}
+body.mobile.study:not(.chat-open) #chat-list{overflow:visible;padding:0 4px;justify-content:flex-end;gap:8px}
+body.mobile.study:not(.chat-open) #chat-list .msg:not(:nth-last-child(-n+3)){display:none}
+body.mobile.study:not(.chat-open) #chat-list .msg{pointer-events:auto;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+body.mobile.study #subs{display:none!important}
+/* The grammar, word and translation cards on a phone: never wider than the screen. */
+body.mobile .pop{max-width:calc(100vw - 24px)}
+/* The overlay's list ends above the dock, so the newest bubble is never under the talk button. */
+body.mobile.chat-open #chat-list{padding-bottom:calc(150px + env(safe-area-inset-bottom))}
+/* The overlay's header on a phone: the − / + first, the close button at the far right (user,
+   2026-09-16), the opposite of the order they were added in. */
+body.mobile #chat header .tsize{order:1;margin-left:auto}
+body.mobile #chat header #chat-close{order:2;margin-left:8px}

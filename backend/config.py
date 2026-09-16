@@ -122,6 +122,11 @@ SCHEMA: tuple[Setting, ...] = (
     Setting("AUDIO_INPUT_DEVICE", "", str, "audio", "Microphone for a lesson WITHOUT the page (--listen in the terminal), by name. Empty = system default. If it is unplugged, or not there at launch, the app uses the system default and switches back when it returns (spec §9). On the avatar page the browser captures the microphone - pick it in Settings -> Sound (ADR-040)"),
     Setting("AUDIO_OUTPUT_DEVICE", "", str, "audio", "Speakers/headphones for the terminal voice (--speak without the page), by name. Empty = system default. If they are unplugged, or not there at launch, the app uses the system default and switches back when they return (spec §9). On the avatar page her voice plays through the browser, which follows the OS default output"),
     Setting("STATUS_HEARTBEAT_S", 30, int, "display", "service_status heartbeat", low=1),
+    # Remote and power (ADR-041, user request 2026-09-16). Both off by default.
+    Setting("KEEP_AWAKE", False, bool, "remote", "Keep this computer from sleeping while the tutor runs (Windows: SetThreadExecutionState; Linux: systemd-inhibit; macOS: caffeinate). System sleep only - the display may still turn off; the page keeps its own screen awake during a lesson"),
+    Setting("REMOTE_ENABLED", False, bool, "remote", "Serve the page to a phone on this private network: HTTPS with a self-signed certificate on REMOTE_HOST:REMOTE_PORT, admitted only with the session key in the QR code (Settings -> Remote) - a new key at every launch, never stored. Off = this computer only (ADR-017)"),
+    Setting("REMOTE_HOST", "", str, "remote", "Address the phone page listens on. Empty = this machine's own network address (the default route's). One private-network address of this machine (10.x, 172.16-31.x, 192.168.x) - never 0.0.0.0, never loopback, never a public address"),
+    Setting("REMOTE_PORT", 8443, int, "remote", "Port of the phone page (HTTPS)", low=1, high=65535),
     # Files
     Setting("SETTINGS_FILE", "settings.json", str, "advanced", "Config store (git-ignored; mode 0600 where the OS has modes - Windows relies on the profile's ACLs)"),
     Setting("LOG_DIR", "logs", str, "advanced", "Session logs"),

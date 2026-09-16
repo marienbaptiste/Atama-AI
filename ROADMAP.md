@@ -1428,6 +1428,29 @@ is a substring of the point's name in the transcript: crude, and a false lapse o
 back sooner. If the tutor under-credits `[used:]`, nothing progresses — the first thing to look at
 if the live check shows no rotation.
 
+### 24. Remote and mobile — `backend/remote.py`, `backend/keep_awake.py`, `frontend/src/mobile.ts` — **user request 2026-09-16 (ADR-041)**
+
+**Contract:** `KEEP_AWAKE` blocks system sleep from launch to close, live; `REMOTE_ENABLED` serves
+the same page and the same hub to a phone on the LAN over HTTPS, admitting a socket only with the
+listener's own Origin and the key from the QR code; a phone may not change secrets or the remote
+settings; the QR is shown to pages on loopback only; the desktop page is unchanged and mobile mode
+switches on for a coarse pointer on a narrow screen.
+
+- **Test** — `test_keep_awake.py` (the Windows flags set and cleared, an inhibitor held and
+  released on Linux, a missing tool or an OS error reported and never raised); `test_remote.py`
+  (a wildcard or loopback address refused; the certificate made once, reused for the same address
+  and renewed for a new one; the URL and the QR; `apply` starting with a generated key, idle when
+  unchanged, stopping when turned off, an error on the card when the listener will not start; a
+  socket off loopback refused without the exact Origin and key and admitted with them; a phone's
+  settings change filtered with the refused keys named; the code pushed to loopback pages only);
+  `mobile.test.ts` (the decision, and the hash override). 4 + 11 + 2 tests.
+- **Validate** — Smoke-tested 2026-09-16: the real listener came up on `192.168.68.55:8443`, served
+  the page over TLS (HTTP 200) and stopped cleanly. Everything a phone does is a live check (below).
+- **Integrate** — `Lesson.build` applies keep-awake and starts the listener; `PageControl` applies
+  both live from the panel and rotates the key; `Lesson.close` stops both.
+
+**Status 2026-09-16 — built, not used from a phone yet.**
+
 ## Next session — what is left (set 2026-09-12; items 3 and 4 were done the same day)
 
 **1. One real lesson on the new page, first.** Refresh study data at the start (Settings → Account)
@@ -1563,8 +1586,13 @@ M3b–M3f, M4c and M4d all remain not met).
 12. **The page's microphone, live** (ADR-040, 2026-09-15) — in order: the browser asks for the
    microphone on the first click and the chip goes green with the device's name; the terminal's
    `[loop] frames=` heartbeat (`ATAMA_DEBUG_LOOP=1`) shows ~31 frames a second from the page;
-   a held SPACE is transcribed correctly (the same Whisper, now on the browser's AEC/NS/AGC
-   audio — compare a few transcripts against the sounddevice path if they look worse);
+   a held SPACE is transcribed correctly — **first seen 2026-09-16: poor.** Two causes fixed the
+   same day, both unproven live: the fallback downsampler had no low-pass (aliasing into the
+   speech band; now a windowed sinc, and the browser is asked for a 16 kHz context first so it
+   resamples itself), and noise suppression + automatic gain were on (now off; echo cancellation
+   stays). To judge what Whisper actually hears, run with `ATAMA_DUMP_UTTERANCES=1`: every
+   utterance lands in `logs/utterances/` as a WAV with its rms and peak on the console — listen
+   to one, and compare a few transcripts against the terminal path (`--listen` without the page);
    unplug the headset mid-lesson → `lost`, then `ok` on the default within 2 s, and back on
    replug; refuse the permission, then allow it in the address bar and press SPACE → `ok`;
    reload the page mid-hold → the hold is cancelled, the new page takes the microphone, the next
@@ -1576,6 +1604,15 @@ M3b–M3f, M4c and M4d all remain not met).
    doctor` lists devices; `python -m backend.repl --listen` (no page) opens the microphone at
    16 kHz and `--speak` plays at 24 kHz; the Advanced → Audio pickers show the cards and not
    `default`/`pulse`; then pin the host-API finding in `backend/audio.py` with the date.
+14. **The phone, live** (ADR-041) — turn on Settings → Remote → Serve; the console prints the
+   address and the card shows the code; scan it on Android and on an iPhone: the certificate
+   warning (Android) / profile (iPhone) once, the key gone from the address bar after load, the
+   page in mobile mode (hamburger, big talk button), the microphone granted on tap and a turn
+   transcribed from the phone, her voice back on the phone, the screen staying on; a second scan
+   after **New key** works and the old link does not; a settings change from the phone lands and
+   a token change from it is refused with the message; the desktop page unchanged meanwhile.
+15. **Keep awake, live** — turn it on, leave the laptop for longer than its sleep timeout during
+   a lesson, and it is still there; turn it off and the timeout applies again.
 
 ## Integration order
 

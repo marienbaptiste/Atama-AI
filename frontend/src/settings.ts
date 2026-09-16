@@ -8,7 +8,7 @@
  *
  *  Sign-in fields are listed from the schema (`secret`), never by key: spec §0's build-time grep
  *  fails on the SRS token key names anywhere in frontend/src, and the server supplies the labels. */
-import type { SettingsMsg } from "./protocol.gen";
+import type { RemoteMsg, SettingsMsg } from "./protocol.gen";
 import { $, esc } from "./ui";
 
 export interface Field {
@@ -21,8 +21,9 @@ type Kind = "secret" | "toggle" | "select" | "device" | "number" | "text" | "sli
 export type Option = [string, string, string?, string?];
 interface Item {
   key?: string; label?: string; help?: string; kind?: Kind; raw?: boolean;
-  /** A setting of the page's own, not the server's: the microphone (ADR-040), applied at once. */
-  local?: "mic";
+  /** A setting of the page's own, not the server's: the microphone (ADR-040), applied at once;
+   *  or the phone page's QR card (ADR-041), drawn from the server's `remote` message. */
+  local?: "mic" | "qr";
   action?: string; button?: string; meter?: boolean;
   min?: number; max?: number; step?: number; lo?: string; hi?: string; fmt?: (v: number) => string;
   options?: Option[];
@@ -31,13 +32,14 @@ interface Section { title: string; items: Item[]; secrets?: boolean }
 interface Tab { id: string; label: string; sections: Section[]; advanced?: boolean }
 
 const PAL: Record<string, string> = { account: "#e8453c", brain: "#3b82f6", voice: "#f59e0b",
-  sound: "#14b8c4", display: "#8b5cf6", advanced: "#7b8494" };
+  sound: "#14b8c4", display: "#8b5cf6", remote: "#22a355", advanced: "#7b8494" };
 const ICON: Record<string, string> = {
   account:  '<circle cx="8" cy="15" r="4"/><path d="M11 12 20 3M16 7l3 3M18.5 4.5l2 2"/>',
   brain:    '<path d="M12 3l2.2 6.8L21 12l-6.8 2.2L12 21l-2.2-6.8L3 12l6.8-2.2z"/>',
   voice:    '<path d="M4 5h16v10H9l-5 4z"/><path d="M9 9v2M12 8v4M15 9v2"/>',
   sound:    '<path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/>',
   display:  '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
+  remote:   '<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/><path d="M3 9a4 4 0 0 1 0 6M21 9a4 4 0 0 0 0 6"/>',
   advanced: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
 };
 const times = (v: number) => v.toFixed(2) + "×";
@@ -112,19 +114,36 @@ const TABS: Tab[] = [
         help: "When the conversation panel is off." },
     ] },
   ] },
+  { id: "remote", label: "Remote", sections: [
+    { title: "Power", items: [
+      { key: "KEEP_AWAKE", label: "Keep this computer awake", kind: "toggle",
+        help: "While the tutor runs, the computer does not go to sleep. The screen may still dim; this page keeps it on during a lesson." },
+    ] },
+    { title: "Your phone", items: [
+      { key: "REMOTE_ENABLED", label: "Serve the page to my phone", kind: "toggle",
+        help: "On the same Wi-Fi only. The tutor, the voices and the listening stay on this computer; the phone opens this page with the code below." },
+      { key: "REMOTE_PORT", label: "Port", kind: "number", help: "Where the phone page listens (HTTPS)." },
+      { local: "qr", label: "Scan to open on your phone" },
+    ] },
+  ] },
   { id: "advanced", label: "Advanced", advanced: true, sections: [] },
 ];
 const ITEM: Record<string, Item> = {};
 TABS.forEach(t => t.sections.forEach(sec => sec.items.forEach(it => { if (it.key) ITEM[it.key] = it; })));
 //: Advanced lists every key not curated above, under the config group it belongs to.
 const RAW_GROUPS: [string, string][] = [["model", "Brain"], ["voice", "Voice"], ["speech", "Listening"],
-  ["audio", "Audio"], ["display", "Display"], ["advanced", "System"], ["account", "Account"]];
+  ["audio", "Audio"], ["display", "Display"], ["remote", "Remote"], ["advanced", "System"], ["account", "Account"]];
+//: Sign-ins are the secrets of the account group; the phone key is a secret too, but it belongs
+//: to the Remote tab's card, and the first-run card must not ask for it.
+const signIn = (f: Field) => f.secret && f.group !== "remote";
 const FACES = ["#f59e0b", "#3b82f6", "#e8453c", "#22a355", "#8b5cf6"];
 const WIDE = new Set<Kind>(["slider", "steps", "cards", "persona"]);
 
+export type Action = "resync" | "remote_rotate";
+
 export interface SettingsDeps {
   send(values: Record<string, unknown>): boolean;
-  action(name: "resync"): boolean;
+  action(name: Action): boolean;
   connected(): boolean;
   personas(): Option[];
   opened(open: boolean): void;
@@ -137,6 +156,8 @@ export interface SettingsDeps {
 
 let deps: SettingsDeps;
 let SETTINGS: SettingsMsg | null = null;
+//: The phone page's card (ADR-041): sent by the server, with the code only to a page on the computer.
+let REMOTE: RemoteMsg | null = null;
 let FIELD: Record<string, Field> = {};
 let pending: Record<string, unknown> = {};
 let fieldErrors: Record<string, string> = {};
@@ -171,6 +192,7 @@ export function openSettings(on: boolean, tab?: string): void {
   deps.opened(on);
   $("scrim").classList.toggle("open", on);
   $("settings").classList.toggle("open", on);
+  document.body.classList.toggle("settings-open", on);   // the phone's hamburger hides meanwhile
   $("settings").setAttribute("aria-hidden", on ? "false" : "true");
   if (on) render();
   // Closing leaves focus on whatever was clicked last. Let go of it, so the next SPACE is
@@ -212,14 +234,20 @@ export function onSettings(msg: SettingsMsg): void {
 export function unsetSecrets(): string[] {
   const vals = values();
   return ((SETTINGS?.fields as unknown as Field[]) || [])
-    .filter(f => f.secret && !(vals[f.key] as { set?: boolean } | undefined)?.set)
+    .filter(f => signIn(f) && !(vals[f.key] as { set?: boolean } | undefined)?.set)
     .map(f => f.label || human(f.key));
 }
 
 /** True when NOTHING has been configured: a genuine first run, not a half-filled account. */
 export function nothingConfigured(): boolean {
-  const secrets = ((SETTINGS?.fields as unknown as Field[]) || []).filter(f => f.secret);
+  const secrets = ((SETTINGS?.fields as unknown as Field[]) || []).filter(signIn);
   return secrets.length > 0 && unsetSecrets().length === secrets.length;
+}
+
+/** The phone page changed (started, stopped, a new key): redraw its card if it is up. */
+export function onRemote(m: RemoteMsg): void {
+  REMOTE = m;
+  if (open) render();
 }
 
 export function showLevel(percent: number, speech: number): void {
@@ -250,7 +278,7 @@ function sectionsFor(tab: Tab): Section[] {
     })).filter(sec => sec.items.length);
   return tab.sections.map(sec => ({
     title: sec.title,
-    items: sec.secrets ? fields.filter(f => f.secret).map(f => ({ key: f.key, label: f.label || human(f.key), help: f.description }))
+    items: sec.secrets ? fields.filter(signIn).map(f => ({ key: f.key, label: f.label || human(f.key), help: f.description }))
       : sec.items.filter(it => it.action || it.local || (it.key && FIELD[it.key])),
   })).filter(sec => sec.items.length);
 }
@@ -332,9 +360,40 @@ function micItem(it: Item): string {
     + (it.meter ? '<div class="meter" title="Microphone level"><i id="lvl"></i></div>' : "") + "</div>";
 }
 
+/** An SVG with a viewBox, whatever the server sent: without one the drawing keeps its pixel size
+ *  and sits in the top-left of any bigger box (seen 2026-09-16 with a tutor still running the
+ *  older code that set only width and height). */
+export function scalable(svg: string): string {
+  if (/viewBox=/.test(svg)) return svg;
+  const m = /<svg([^>]*?)\swidth="(\d+)"([^>]*?)\sheight="(\d+)"/.exec(svg);
+  return m ? svg.replace(m[0], `<svg viewBox="0 0 ${m[2]} ${m[4]}"${m[1]} width="${m[2]}"${m[3]} height="${m[4]}"`) : svg;
+}
+
+/** The phone page's card (ADR-041): the QR, the address, the certificate to compare, a new key. */
+function qrItem(it: Item): string {
+  let body: string;
+  if (!REMOTE) {
+    body = '<p class="shint">Connect to the tutor to see the code.</p>';
+  } else if (!REMOTE.enabled) {
+    body = '<p class="shint">Turn on “Serve the page to my phone” and save: the code appears here.</p>';
+  } else if (REMOTE.url) {
+    body = `<div class="qr"><div class="qrbox">${scalable(REMOTE.qr_svg)}</div><div class="qrside"><b>Scan with your phone</b>`
+      + "<p>Same Wi-Fi as this computer. The first time, accept the certificate — Android: "
+      + "Advanced → proceed; iPhone: install the profile, then trust it under Settings → General → "
+      + "About → Certificate Trust Settings — then tap the page to start. Without that step the "
+      + "phone will not share its microphone.</p>"
+      + `<code>${esc(REMOTE.url)}</code><small>certificate ${esc(REMOTE.fingerprint)}</small>`
+      + '<button type="button" class="act" data-action="remote_rotate">New key</button></div></div>';
+  } else {
+    body = `<p class="shint">${esc(REMOTE.detail)}</p>`;
+  }
+  return `<div class="field" data-local="qr"><div class="fname">${esc(it.label)}</div>${body}</div>`;
+}
+
 function item(it: Item): string {
   if (it.action) return actionItem(it);
   if (it.local === "mic") return micItem(it);
+  if (it.local === "qr") return qrItem(it);
   const s = FIELD[it.key!];
   const pin = (SETTINGS!.pinned as Record<string, string>)[s.key], lock = s.locked, off = !!(pin || lock);
   const kind = it.kind || kindOf(s);
@@ -411,7 +470,10 @@ function bindControls(body: HTMLElement): void {
   });
   body.querySelectorAll<HTMLElement>(".raw .fdesc").forEach(el => { el.onclick = () => el.classList.toggle("full"); });
   body.querySelectorAll<HTMLButtonElement>("[data-action]").forEach(b => {
-    b.onclick = () => { if (deps.action(b.dataset.action as "resync")) resyncProgress("syncing"); };
+    b.onclick = () => {
+      const action = b.dataset.action as Action;
+      if (deps.action(action) && action === "resync") resyncProgress("syncing");
+    };
   });
 }
 

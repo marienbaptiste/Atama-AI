@@ -9,24 +9,59 @@
  *  have. `channelCount: 1` is a request, not a guarantee; the worklet reads channel 0 either way. */
 import workletUrl from "./capture_worklet.ts?worker&url";
 import type { MicSource } from "./capture";
-import { PROCESSOR } from "./pcm";
+import { PROCESSOR, RATE } from "./pcm";
+
+//: One AudioContext for capture, created INSIDE a user gesture (`prepareAudio` from the first
+//: touch) and resumed on every talk press: a phone browser suspends a context made outside one,
+//: and a suspended context never runs the worklet — the microphone opens and nothing arrives.
+let ctx: AudioContext | null = null;
+
+/** A 16 kHz context when the browser will give one — then the browser resamples the microphone
+ *  itself, with its own proper filter, and the worklet passes samples through. Chrome, Firefox
+ *  and Safari all take the option; one that refuses it gets the default rate and pcm.ts's own
+ *  low-pass + interpolation (2026-09-16: an unfiltered downsample made Whisper markedly worse). */
+function makeContext(): AudioContext {
+  try {
+    return new AudioContext({ sampleRate: RATE });
+  } catch {
+    return new AudioContext();
+  }
+}
+
+export function prepareAudio(): void {
+  try {
+    ctx ??= makeContext();
+    void ctx.resume().catch(() => { /* the next gesture */ });
+  } catch { /* no Web Audio: capture reports it when it opens */ }
+}
+
+export function resumeAudio(): void {
+  if (ctx && ctx.state !== "running") void ctx.resume().catch(() => { /* the next gesture */ });
+}
 
 export function webOpener(): (deviceId: string) => Promise<MicSource> {
-  let ctx: AudioContext | null = null;
   let module: Promise<void> | null = null;
   return async deviceId => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      const e = new Error("this browser has no getUserMedia (an insecure origin, or too old)");
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      const e = new Error(window.isSecureContext
+        ? "this browser has no getUserMedia (too old)"
+        : "this page is not a secure context, so the browser will not share the microphone - open "
+          + "it over https and accept the certificate (Settings → Remote on the computer)");
       e.name = "NotSupportedError";
       throw e;
     }
+    // Echo cancellation yes (her voice comes out of the same device, ADR-018); noise suppression
+    // and automatic gain NO: both are tuned for a human listener on a call and they smear the
+    // consonants and pump the level, which a recogniser hears as a worse speaker (2026-09-16;
+    // ADR-006's original constraints had gain control off for the same reason). Whisper and the
+    // server's own room-floor measurement do better on the raw microphone.
     const audio: MediaTrackConstraints = {
-      channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+      channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: false,
       ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
     };
     const stream = await navigator.mediaDevices.getUserMedia({ audio });
     try {
-      ctx ??= new AudioContext();
+      ctx ??= makeContext();
       module ??= ctx.audioWorklet.addModule(workletUrl);
       await module;
     } catch (e) {
@@ -40,8 +75,12 @@ export function webOpener(): (deviceId: string) => Promise<MicSource> {
     source.connect(node);
     node.connect(ctx.destination);          // silent output; keeps the node rendering everywhere
     const track = stream.getAudioTracks()[0];
+    const settings = track?.getSettings?.() || {};
     return {
-      label: track?.label || "microphone",
+      // The label says how the audio is being made, so a bad transcript can be traced: the
+      // context's rate (16000 = the browser resamples; else pcm.ts does) and the track's own.
+      label: (track?.label || "microphone") + ` · ${ctx.sampleRate} Hz context`
+        + (settings.sampleRate ? `, mic ${settings.sampleRate} Hz` : ""),
       onFrame: cb => { node.port.onmessage = e => cb(e.data as ArrayBuffer); },
       onEnded: cb => { if (track) track.onended = cb; },
       stop: () => {

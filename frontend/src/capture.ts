@@ -117,13 +117,13 @@ export class Capture {
     try {
       src = await this.d.open(this.chosen);
     } catch (e) {
-      if (DENIED.has(errorName(e))) return this.denied(gen);
+      if (DENIED.has(errorName(e))) return this.denied(gen, e);
       if (this.chosen) {
         try {
           src = await this.d.open("");
           fell = true;
         } catch (e2) {
-          if (DENIED.has(errorName(e2))) return this.denied(gen);
+          if (DENIED.has(errorName(e2))) return this.denied(gen, e2);
         }
       }
     }
@@ -149,8 +149,10 @@ export class Capture {
              fell ? `the chosen microphone is not connected - using the default (${source.label})` : source.label);
   }
 
-  private denied(gen: number): void {
+  private denied(gen: number, e?: unknown): void {
     if (gen !== this.gen) return;
-    this.set("denied", "the browser refused the microphone - allow it in the address bar, then press SPACE");
+    // A browser that cannot ask at all (no secure context) says why; a refusal says what to do.
+    const why = errorName(e) === "NotSupportedError" ? String((e as Error).message) : "";
+    this.set("denied", why || "the browser refused the microphone - allow it for this page, then hold to talk again");
   }
 }

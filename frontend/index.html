@@ -59,7 +59,11 @@
 
 <!-- the conversation beside the tutor (spec §8b, ADR-036) -->
 <aside id="chat" aria-label="Conversation">
-  <header><b>Conversation</b></header>
+  <header><b>Conversation</b>
+    <button id="chat-close" class="mobile-only" aria-label="Close the conversation">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </header>
   <div id="chat-list" role="log" aria-live="polite"></div>
 </aside>
 <div id="gp-pop" class="pop" hidden></div>
@@ -122,6 +126,33 @@
     </div>
   </details>
 </details>
+
+<!-- mobile mode only (ADR-041): the hamburger and its drawer. mobile.ts moves the status bar,
+     New topic, Stop and the Activity card in here on a phone; the desktop page never shows it. -->
+<button id="menu-btn" hidden aria-label="Menu">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#2b2f36" stroke-width="2.4" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+</button>
+<div id="menu-scrim" hidden></div>
+<nav id="menu" hidden aria-label="Menu">
+  <header><b id="menu-brand"></b>
+    <button id="menu-close" aria-label="Close the menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#6b7380" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </header>
+  <h4>Lesson</h4>
+  <div id="menu-lesson" class="menu-grid">
+    <button type="button" id="menu-chat" class="menu-tile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>
+      <span>Conversation</span></button>
+    <button type="button" id="menu-settings" class="menu-tile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#6b7380" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="6.2"/><circle cx="12" cy="12" r="2.3"/><path stroke-width="3" d="M12 5.4V2.6M18.6 12h2.8M12 18.6v2.8M5.4 12H2.6"/></svg>
+      <span>Settings</span></button>
+  </div>
+  <h4>Status</h4>
+  <div id="menu-status"></div>
+  <h4>Activity</h4>
+  <div id="menu-activity"></div>
+</nav>
 
 <div id="scrim" aria-hidden="true"></div>
 <section id="settings" role="dialog" aria-label="Settings" aria-hidden="true">

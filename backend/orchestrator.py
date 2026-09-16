@@ -24,6 +24,7 @@ from backend import brain as brain_api
 from backend import config, page_control, prompt, terminal
 from backend import explain as explain_api
 from backend import memory as memory_api
+from backend import remote as remote_api
 from backend import model_tiers
 from backend import session as session_api
 from backend import study as study_api
@@ -33,6 +34,7 @@ from backend import vram as vram_mod
 from backend.brain import (BrainError, Compacting, RateLimited, TextDelta, Thinking, ToolCall, ToolOutcome,
                            TurnComplete)
 from backend.chunker import SentenceChunker
+from backend.keep_awake import KeepAwake
 from backend.speaker import SpeechQueue
 from backend.srs import profile as profile_api
 from backend.status import registry
@@ -92,6 +94,9 @@ class Lesson:
         self.explainer = explain_api.Explainer(cfg)
         self.hub = None
         self.server_task: asyncio.Task | None = None
+        #: ADR-041: the phone page's listener (off unless REMOTE_ENABLED) and the power setting.
+        self.remote = remote_api.RemoteServer()
+        self.keep_awake = KeepAwake()
         self.voice: SpeechQueue | None = None
         self.stt = None
         self.brain = None
@@ -126,8 +131,11 @@ class Lesson:
                   f"everything loads…{RESET}", flush=True)
             self.summary = asyncio.create_task(summarise(cfg, self.mem, limit=1))
 
+        if bool(cfg.KEEP_AWAKE):
+            print(f"{DIM}power: {self.keep_awake.set(True)}{RESET}")
         if self.args.browser:
             await self._open_page()
+            await self.remote_changed()          # the phone page, if it is turned on
         if self.args.speak:
             await self._open_voice()
         if self.args.listen and self.voice is not None and not await self._load_listening():
@@ -178,9 +186,35 @@ class Lesson:
         # which a page plays only once clicked, so the gauge sat empty until then (2026-09-14).
         asyncio.get_running_loop().create_task(self._first_vram())
         print(f"{BOLD}avatar:{RESET} {url}")
+        hub.remote_info = lambda: self.remote.info(config.load())
         if getattr(self.args, "show", False):
             import webbrowser
             webbrowser.open(url)
+
+    async def remote_changed(self) -> None:
+        """Settings → Remote changed, or the launch: start, move or stop the phone page to match
+        (ADR-041). Never raises; the panel's card and the console say what happened."""
+        if self.hub is None:
+            return
+        cfg = config.load()
+        was = self.remote.url
+        await self.remote.apply(self.hub, cfg)
+        if self.remote.error:
+            terminal.note("phone", self.remote.error, bold=True, pad=10)
+        elif self.remote.running and self.remote.url != was:
+            print(f"{BOLD}phone:{RESET} https://{self.remote.host}:{self.remote.port}  "
+                  f"{DIM}(scan the code in Settings → Remote; certificate {self.remote.fingerprint[:23]}…){RESET}")
+        elif not self.remote.running and was:
+            terminal.note("phone", "page off", pad=10)
+        await self.hub.push_remote()
+
+    async def rotate_remote_key(self) -> None:
+        """A new key for the phone page; the listener is restarted so the old one stops working."""
+        if self.hub is None:
+            return
+        self.remote.rotate()
+        await self.remote.stop(self.hub)
+        await self.remote_changed()
 
     async def _open_voice(self) -> None:
         # --- mouth (spec §7): synthesis of sentence N+1 overlaps playback of N -------
@@ -491,9 +525,15 @@ class Lesson:
             await self.voice.aclose()
         if self.brain is not None:
             await self.brain.aclose()
+        remote = getattr(self, "remote", None)      # a partially built lesson has neither
+        if self.hub is not None and remote is not None:
+            await remote.stop(self.hub)
         if self.server_task is not None:
             from backend import app as web
             await web.shutdown(self.server_task)
+        keep_awake = getattr(self, "keep_awake", None)
+        if keep_awake is not None:
+            keep_awake.set(False)
         await stop_containers(self.hub)
         # Her memory of today, LAST (user, 2026-09-14): everything else is already down and said so,
         # so this is the only thing left on the console and the one thing a Ctrl+C would skip.
@@ -925,7 +965,10 @@ async def listen(lesson: Lesson) -> None:
 
     if hub is not None:
         page = page_control.PageControl(hub, loop, rotator=rotator, resync=lesson.resync,
-                                        switch_persona=lesson.switch_persona)
+                                        switch_persona=lesson.switch_persona,
+                                        remote_changed=lesson.remote_changed,
+                                        rotate_key=lesson.rotate_remote_key,
+                                        keep_awake=lesson.keep_awake.set)
         page.attach()
         sender.start()
     vram_task = aloop.create_task(watch_vram(cfg, gpu, page))

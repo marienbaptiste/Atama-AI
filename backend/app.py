@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import hmac
 import ipaddress
 import json
 import socket
@@ -141,6 +142,15 @@ class Hub:
         self.on_mic: Callable[[str, str], None] | None = None
         #: Called when the microphone page leaves: the loop hears nothing until a page sends again.
         self.on_mic_left: Callable[[], None] | None = None
+        #: The phone page (ADR-041): set by backend/remote.py while its listener runs. A socket
+        #: from off loopback is admitted only with this exact Origin and this key (`?k=`).
+        self.remote_origin: str | None = None
+        self.remote_key: str | None = None
+        #: Pages that came in that way. They may not change secrets or the remote settings, and
+        #: never receive the QR code.
+        self._remote: set[WebSocket] = set()
+        #: The `remote` message for a page on loopback (RemoteServer.info), or None before wiring.
+        self.remote_info: Callable[[], dict[str, Any]] | None = None
         #: The last status per service, replayed to a page that connects later: a microphone
         #: that went missing before the tab opened would otherwise show nothing at all.
         self.last_status: dict[str, dict[str, Any]] = {}
@@ -301,9 +311,32 @@ class Hub:
         await ws.accept()
         self.attach(ws)
 
+    def admit_remote(self, origin: str | None, key: str | None, client_host: str | None = None) -> bool:
+        """A client off loopback (ADR-041): from a private network, with the phone listener's own
+        Origin, and with this run's session key."""
+        from backend.remote import is_private_client
+        if self.remote_origin is None or self.remote_key is None or origin is None:
+            return False
+        if not is_private_client(client_host):
+            return False
+        return (origin.strip().lower() == self.remote_origin
+                and hmac.compare_digest(str(key or ""), self.remote_key))
+
+    def is_remote(self, ws: WebSocket) -> bool:
+        return ws in self._remote
+
+    async def push_remote(self) -> None:
+        """The QR card changed (started, stopped, a new key): every page on loopback hears."""
+        if self.remote_info is None:
+            return
+        local = {ws for ws in self._clients if ws not in self._remote}
+        if local:
+            await self.send(models.Remote(**self.remote_info()).model_dump(), to=local)
+
     def leave(self, ws: WebSocket) -> None:
         client = self._clients.pop(ws, None)
         self._ready.discard(ws)
+        self._remote.discard(ws)
         if client is not None and client.pump is not None and client.pump is not _current_task():
             client.pump.cancel()
         if self._holder is ws:
@@ -589,6 +622,12 @@ class Hub:
         whether a press is an interruption."""
         # The panel is built from this; secrets are already {set, hint} (ADR-022).
         await self.send(models.Settings(**settings_view.snapshot()).model_dump(), to={ws})
+        # The QR card (ADR-041): the code only for a page on this computer; a phone gets the line.
+        if self.remote_info is not None:
+            info = self.remote_info()
+            if ws in self._remote:
+                info = {"enabled": True, "detail": "this page came through the phone link; the code is shown on the computer running the tutor"}
+            await self.send(models.Remote(**info).model_dump(), to={ws})
         for status in list(self.last_status.values()):
             await self.send(status, to={ws})
         if self.last_meters:
@@ -615,10 +654,19 @@ def build(hub: Hub, port: int = DEFAULT_PORT) -> Starlette:
     async def socket(ws: WebSocket) -> None:
         # Before accept: starlette turns a close here into a refused handshake (HTTP 403), so a
         # foreign page never gets a socket at all. 1008 is "policy violation".
-        if not origin_ok(ws.headers.get("origin"), ws.client.host if ws.client else None, allowed):
+        client_host = ws.client.host if ws.client else None
+        origin = ws.headers.get("origin")
+        # Off loopback there is exactly one way in (ADR-041): through the phone listener, with its
+        # own Origin and the key from the QR code. Everything else is ADR-017 as before.
+        remote = not is_loopback(client_host)
+        ok = hub.admit_remote(origin, ws.query_params.get("k"), client_host) if remote \
+            else origin_ok(origin, client_host, allowed)
+        if not ok:
             await ws.close(code=1008)
             return
         await hub.join(ws)
+        if remote:
+            hub._remote.add(ws)
         try:
             await hub.welcome(ws)
             while True:
@@ -648,8 +696,16 @@ def build(hub: Hub, port: int = DEFAULT_PORT) -> Starlette:
                     elif isinstance(message, models.MicStatus):
                         hub.mic_status(ws, message.state, message.detail)
                     elif isinstance(message, models.SettingsUpdate):
+                        values = message.values
+                        if hub.is_remote(ws):
+                            # A phone is a student, not the administrator (ADR-041 point 4).
+                            values, refused = settings_view.for_phone(values)
+                            if refused:
+                                await hub.send(models.Error(
+                                    message=", ".join(refused) + ": change this on the computer "
+                                            "running the tutor, not from a phone").model_dump(), to={ws})
                         # A file write, off the event loop: a turn in flight must not wait on it.
-                        echo = await asyncio.to_thread(settings_view.apply, message.values)
+                        echo = await asyncio.to_thread(settings_view.apply, values)
                         await hub.send(models.Settings(**echo).model_dump(), to={ws})
                         if echo["saved"] and hub.on_settings is not None:
                             hub.on_settings(echo["saved"])

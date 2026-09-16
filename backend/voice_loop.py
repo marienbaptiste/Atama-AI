@@ -14,6 +14,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -449,9 +450,36 @@ class VoiceLoop:
                 return                       # a turn is already in flight; one at a time
             self._turn_task = asyncio.create_task(self._turn(event.audio))
 
+    def _dump(self, audio: np.ndarray) -> None:
+        """ATAMA_DUMP_UTTERANCES=1 (or a directory): every utterance as a 16 kHz WAV under
+        logs/utterances/, so what Whisper heard can be listened to — the honest check on a capture
+        path (2026-09-16, when transcripts from the page's microphone came out poor). Never raises."""
+        where = os.environ.get("ATAMA_DUMP_UTTERANCES", "")
+        if not where:
+            return
+        try:
+            import wave
+            from backend import config
+            folder = (config.REPO_ROOT / "logs" / "utterances") if where == "1" else Path(where)
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / time.strftime("utt-%Y%m%d-%H%M%S.wav")
+            pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype("<i2")
+            with wave.open(str(path), "wb") as w:
+                w.setnchannels(1)
+                w.setsampwidth(2)
+                w.setframerate(SAMPLE_RATE)
+                w.writeframes(pcm.tobytes())
+            rms = float(np.sqrt(np.mean(np.square(audio)))) if len(audio) else 0.0
+            peak = float(np.max(np.abs(audio))) if len(audio) else 0.0
+            print(f"\n[dump] {path.name}: {len(audio) / SAMPLE_RATE:.1f}s rms {rms:.4f} peak {peak:.3f} "
+                  f"source={self.mic_source}", flush=True)
+        except Exception as exc:  # noqa: BLE001 - a debugging aid must never cost a turn
+            print(f"\n[dump] failed: {type(exc).__name__}: {exc}", flush=True)
+
     async def _turn(self, audio: np.ndarray) -> None:
         heard_at = time.monotonic()
         self._state("thinking")
+        self._dump(audio)
 
         started = time.monotonic()
         transcript = await asyncio.to_thread(self.stt.listen, audio, self.quiet_rms())

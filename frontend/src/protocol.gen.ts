@@ -3,7 +3,7 @@
 //   .venv/Scripts/python -m backend.tools.gen_protocol
 
 export const CLIENT_TYPES = ["control", "settings", "explain", "mic_status"] as const;
-export const SERVER_TYPES = ["state", "stt_partial", "stt_final", "speak", "history", "bargein", "service_status", "settings", "mic_level", "meters", "timing", "explanation", "error"] as const;
+export const SERVER_TYPES = ["state", "stt_partial", "stt_final", "speak", "history", "bargein", "service_status", "settings", "mic_level", "meters", "timing", "explanation", "remote", "error"] as const;
 export const RESERVED_TYPES = ["stt_partial"] as const;
 export type ClientType = (typeof CLIENT_TYPES)[number];
 export type ServerType = (typeof SERVER_TYPES)[number];
@@ -57,7 +57,7 @@ export interface HistoryLine {
 /** Turn-taking and session control. */
 export interface ControlMsg {
   type: "control";
-  action: "start" | "stop" | "cancel" | "resync" | "quit" | "new_topic" | "ready";
+  action: "start" | "stop" | "cancel" | "resync" | "quit" | "new_topic" | "ready" | "remote_rotate";
 }
 
 /** Partial update of any key in the `config.py` schema, secrets included (§11). */
@@ -200,6 +200,16 @@ export interface ExplanationMsg {
   error: string;
 }
 
+/** The phone page (ADR-041), for pages on this computer only: whether it is on, the URL the QR code carries (the key included — it is the pairing secret, and a page on loopback is the administrator), the code as inline SVG, the certificate's fingerprint to compare on the phone, and one line of detail. A page on a phone receives it with an empty URL and the detail alone. */
+export interface RemoteMsg {
+  type: "remote";
+  enabled: boolean;
+  url: string;
+  qr_svg: string;
+  fingerprint: string;
+  detail: string;
+}
+
 /** A problem the user should see. An unknown client message produces one of these rather than an exception — a malformed frame must not take the socket down. */
 export interface ErrorMsg {
   type: "error";
@@ -208,4 +218,4 @@ export interface ErrorMsg {
 }
 
 export type ClientMessage = ControlMsg | SettingsUpdateMsg | ExplainMsg | MicStatusMsg;
-export type ServerMessage = StateMsg | SttPartialMsg | SttFinalMsg | SpeakMsg | HistoryMsg | BargeInMsg | ServiceStatusMsg | SettingsMsg | MicLevelMsg | MetersMsg | TimingMsg | ExplanationMsg | ErrorMsg;
+export type ServerMessage = StateMsg | SttPartialMsg | SttFinalMsg | SpeakMsg | HistoryMsg | BargeInMsg | ServiceStatusMsg | SettingsMsg | MicLevelMsg | MetersMsg | TimingMsg | ExplanationMsg | RemoteMsg | ErrorMsg;

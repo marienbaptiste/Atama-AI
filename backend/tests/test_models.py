@@ -39,6 +39,8 @@ SERVER_SAMPLES = {
     "timing": {"stt_ms": 400.0, "first_audio_ms": 3100.0, "p90_ms": 4800.0, "turns": 9},
     "explanation": {"kind": "grammar", "text": "〜たら", "answer": "A condition.", "error": ""},
     "error": {"message": "unrecognised message", "fatal": False},
+    "remote": {"enabled": True, "url": "https://192.168.1.20:8443/?k=abc", "qr_svg": "<svg/>",
+               "fingerprint": "AB:CD", "detail": "serving"},
 }
 
 CLIENT_SAMPLES = {

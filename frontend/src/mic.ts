@@ -45,6 +45,9 @@ export interface TalkDeps {
   deadLink(): void;
   /** A press, before anything is sent: the gesture a refused microphone permission waits for. */
   pressed?(): void;
+  /** Mobile mode (ADR-041): the button is held by touch, there is no key and no ALT GR — the
+   *  words change, and sliding the finger off the button cancels the recording. */
+  touch?(): boolean;
 }
 
 export class Talk {
@@ -79,12 +82,26 @@ export class Talk {
     // is dropped (spec §9b) rather than sent as half a sentence.
     addEventListener("blur", () => this.cancel());
     this.button.addEventListener("pointerdown", e => { e.preventDefault(); this.press(true, e.timeStamp); });
-    addEventListener("pointerup", () => this.press(false));
+    addEventListener("pointerup", e => {
+      // On a phone, letting go OFF the button is the cancel gesture (there is no ALT GR there).
+      if (this.talking && this.d.touch?.() && !this.overButton(e)) { this.cancel(); return; }
+      this.press(false);
+    });
+    // A touch the browser takes back (a scroll, a system gesture) is not a release: what was
+    // captured is dropped, as a lost focus is (ADR-041, the phone). No long-press menu either.
+    addEventListener("pointercancel", () => this.cancel());
+    this.button.addEventListener("contextmenu", e => e.preventDefault());
+  }
+
+  private overButton(e: PointerEvent): boolean {
+    const under = typeof document.elementFromPoint === "function"
+      ? document.elementFromPoint(e.clientX, e.clientY) : null;
+    return under !== null && this.button.contains(under);
   }
 
   press(on: boolean, at: number = performance.now()): void {
     if (!this.d.connected()) {
-      if (on) log("not connected to the tutor — SPACE does nothing until it reconnects", "err");
+      if (on) log("not connected to the tutor — talking does nothing until it reconnects", "err");
       this.talking = false;
       this.render();
       return;
@@ -114,7 +131,7 @@ export class Talk {
     this.talking = false;
     clearTimeout(this.ackTimer);
     this.d.send("cancel");
-    live("dropped - press SPACE to start again");
+    live(this.d.touch?.() ? "dropped" : "dropped - press SPACE to start again");
     this.render();
   }
 
@@ -150,7 +167,9 @@ export class Talk {
     const vad = this.d.mode() === "vad";
     this.button.classList.toggle("hot", this.talking);
     this.button.disabled = !this.d.connected() || vad;
+    const touch = this.d.touch?.() === true;
     this.button.querySelector("span")!.textContent = vad ? "Hands-free — just speak"
-      : this.talking ? "Listening — release to send" : "Hold SPACE to talk";
+      : this.talking ? (touch ? "Listening — let go to send" : "Listening — release to send")
+      : touch ? "Hold to talk" : "Hold SPACE to talk";
   }
 }

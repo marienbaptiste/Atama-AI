@@ -58,7 +58,8 @@ class Control(_Msg):
     #: drops off the socket (backend/app.py `Hub.leave`), so a lost tab never wedges the mic.
     #: `ready`: the page has been touched, so the browser will let it play sound (autoplay
     #: policy). The server holds her voice until a page says so.
-    action: Literal["start", "stop", "cancel", "resync", "quit", "new_topic", "ready"]
+    #: `remote_rotate`: a new key for the phone page (ADR-041); phones must scan the code again.
+    action: Literal["start", "stop", "cancel", "resync", "quit", "new_topic", "ready", "remote_rotate"]
 
 
 class SettingsUpdate(_Msg):
@@ -357,6 +358,20 @@ class Explanation(_Msg):
     error: str = ""
 
 
+class Remote(_Msg):
+    """The phone page (ADR-041), for pages on this computer only: whether it is on, the URL the
+    QR code carries (the key included — it is the pairing secret, and a page on loopback is the
+    administrator), the code as inline SVG, the certificate's fingerprint to compare on the phone,
+    and one line of detail. A page on a phone receives it with an empty URL and the detail alone."""
+
+    type: Literal["remote"] = "remote"
+    enabled: bool = False
+    url: str = ""
+    qr_svg: str = ""
+    fingerprint: str = ""
+    detail: str = ""
+
+
 class Error(_Msg):
     """A problem the user should see. An unknown client message produces one of these rather
     than an exception — a malformed frame must not take the socket down."""
@@ -374,7 +389,7 @@ ClientMessage = Annotated[
 
 ServerMessage = Annotated[
     Union[State, SttPartial, SttFinal, Speak, History, BargeIn, ServiceStatus, Settings, MicLevel,
-          Meters, Timing, Explanation, Error],
+          Meters, Timing, Explanation, Remote, Error],
     Field(discriminator="type"),
 ]
 

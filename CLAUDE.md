@@ -138,7 +138,10 @@ never `--dangerously-skip-permissions`, never `--no-session-persistence`. The cw
 `config.claude_cwd()` — **outside the repo**, never `.cache/` inside it. **Wait for the MCP
 ready marker before the first turn; never `sleep` for it** (ROADMAP findings, 2026-09-09).
 
-**Never bind to `0.0.0.0`.** Loopback only, all three services (ADR-017).
+**Never bind to `0.0.0.0`.** Loopback only, all three services (ADR-017). The one exception is
+the phone page (ADR-041, user decision 2026-09-16): `backend/remote.py` binds one address of this
+machine — never a wildcard, never loopback — HTTPS only, admitting a socket only with its own
+Origin and the key from the QR code; off by default.
 
 **Never read a `.env` and never send a stored secret back to the browser.** The settings page is
 the configuration interface and `config.py`'s schema is the whole key inventory; `ATAMA_*`

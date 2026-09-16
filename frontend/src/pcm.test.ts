@@ -3,11 +3,15 @@ import { FRAME, Pcm16k, RATE } from "./pcm";
 
 const sine = (n: number, rate: number, hz = 440) =>
   Float32Array.from({ length: n }, (_, i) => Math.sin((2 * Math.PI * hz * i) / rate));
-const expected = (k: number, hz = 440) => Math.sin((2 * Math.PI * hz * k) / RATE) * 32767;
+/** The tone as it should come out at 16 kHz, allowing for the resampler's own delay. */
+const expected = (k: number, delayS = 0, hz = 440) => Math.sin(2 * Math.PI * hz * (k / RATE - delayS)) * 32767;
+const peak = (frames: Int16Array[]) => Math.max(...frames.flatMap(f => Array.from(f).map(Math.abs)));
 
 describe("the microphone's samples as the server wants them (ADR-040)", () => {
   it("passes 16 kHz through unchanged, in 512-sample frames", () => {
-    const frames = new Pcm16k(RATE).push(sine(FRAME * 2 + 1, RATE));
+    const p = new Pcm16k(RATE);
+    expect(p.delaySeconds).toBe(0);
+    const frames = p.push(sine(FRAME * 2 + 1, RATE));
     expect(frames.length).toBe(2);
     expect(frames[0].length).toBe(FRAME);
     expect(frames[0][37]).toBe(Math.round(expected(37)));
@@ -15,12 +19,24 @@ describe("the microphone's samples as the server wants them (ADR-040)", () => {
   });
 
   it("resamples 48 kHz to 16 kHz: a 440 Hz tone is still a 440 Hz tone", () => {
-    const frames = new Pcm16k(48_000).push(sine(4800, 48_000));   // 100 ms -> 1600 samples
+    const p = new Pcm16k(48_000);
+    const frames = p.push(sine(4800, 48_000));                       // 100 ms -> 1600 samples
     expect(frames.length).toBe(3);                                  // 3 x 512, 64 left waiting
-    for (let k = 0; k < FRAME; k++) expect(Math.abs(frames[0][k] - expected(k))).toBeLessThan(700);
+    for (let k = 40; k < FRAME; k++) {                              // past the filter's warm-up
+      expect(Math.abs(frames[0][k] - expected(k, p.delaySeconds))).toBeLessThan(700);
+    }
   });
 
-  it("gives the same output however the input is chunked (the read position is carried)", () => {
+  it("removes what would alias: a 12 kHz tone at 48 kHz does not come out as a 4 kHz one", () => {
+    const p = new Pcm16k(48_000);
+    const frames = p.push(sine(48_000, 48_000, 12_000));            // a full second
+    expect(frames.length).toBeGreaterThan(20);
+    expect(peak(frames.slice(1))).toBeLessThan(32767 * 0.03);       // under -30 dB
+    const speech = new Pcm16k(48_000).push(sine(48_000, 48_000, 3_000));   // in the band: kept
+    expect(peak(speech.slice(1))).toBeGreaterThan(32767 * 0.9);
+  });
+
+  it("gives the same output however the input is chunked (filter state and read position are carried)", () => {
     const signal = sine(44_100, 44_100, 300);
     const whole = new Pcm16k(44_100).push(signal).flatMap(f => Array.from(f));
     const chunked = new Pcm16k(44_100);

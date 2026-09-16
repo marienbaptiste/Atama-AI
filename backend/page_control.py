@@ -72,12 +72,19 @@ class PageControl:
     def __init__(self, hub, loop, *, rotator=None,
                  resync: Callable[[], Awaitable[None]] | None = None,
                  switch_persona: Callable[[str], Awaitable[Any]] | None = None,
-                 sanitize: Callable[[str], str] | None = None) -> None:
+                 sanitize: Callable[[str], str] | None = None,
+                 remote_changed: Callable[[], Awaitable[None]] | None = None,
+                 rotate_key: Callable[[], Awaitable[None]] | None = None,
+                 keep_awake: Callable[[bool], str] | None = None) -> None:
         self.hub = hub
         self.loop = loop
         self.rotator = rotator
         self.resync = resync
         self.switch_persona = switch_persona
+        #: ADR-041: the phone listener follows the settings, and the power setting applies live.
+        self.remote_changed = remote_changed
+        self.rotate_key = rotate_key
+        self.keep_awake = keep_awake
         self.sanitize = sanitize or registry.sanitize
         #: Background jobs started from the page. The event loop holds tasks only weakly, so one
         #: nobody references can vanish mid-flight; and one that dies must say so rather than
@@ -193,6 +200,10 @@ class PageControl:
             self.loop.voice.set_device(fresh.AUDIO_OUTPUT_DEVICE)
         if "TUTOR_PERSONA" in keys and self.switch_persona is not None:
             self.in_background(self.change_tutor(str(fresh.TUTOR_PERSONA)), "tutor")
+        if "KEEP_AWAKE" in keys and self.keep_awake is not None:
+            terminal.note("power", self.keep_awake(bool(fresh.KEEP_AWAKE)), pad=10)
+        if any(k.startswith("REMOTE_") for k in keys) and self.remote_changed is not None:
+            self.in_background(self.remote_changed(), "phone page")
 
     # ------------------------------------------------------------------ the panel's jobs
     async def do_resync(self) -> None:
@@ -263,17 +274,21 @@ class PageControl:
             loop.ask(TOPIC_NUDGE)
             self.ack("topic", "finding a new topic...")
             return
+        if action == "remote_rotate":
+            if self.rotate_key is not None:
+                self.in_background(self.rotate_key(), "phone key")
+            return
         if action == "start":
             if not loop.ptt:
                 self.ack("off", "hands-free mode is on - just speak")
                 return
             loop.ptt_begin()
-            self.ack("recording", "listening - release to send, ALT GR to cancel")
+            self.ack("recording", "listening - release to send")   # the page names its cancel gesture
         elif action == "cancel":
             # The student started a sentence and wants it gone. Dropping it here means they can
             # let the talk key go without the microphone's last seconds becoming a turn.
             if loop.ptt_cancel():
-                self.ack("cancelled", "dropped - nothing was sent, press SPACE to start again")
+                self.ack("cancelled", "dropped - nothing was sent, start again when ready")
         elif action == "stop":
             self._stop_pressed()
 
@@ -311,6 +326,6 @@ class PageControl:
         elif started:
             self.ack("sent", f"sent {seconds:.1f}s - she is listening to it")
         elif seconds * 1000 < loop.vad.min_speech_ms:
-            self.ack("short", "too short to send - hold SPACE while you speak")
+            self.ack("short", "too short to send - keep holding while you speak")
         else:
             self.ack("busy", "she is still working on your last turn")

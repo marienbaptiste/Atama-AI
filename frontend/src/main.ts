@@ -4,7 +4,7 @@
 import "./style.css";
 import { Avatar, type CastEntry } from "./avatar";
 import { Capture, type MicState } from "./capture";
-import { listMics, onDevicesChanged, webOpener } from "./capture_web";
+import { listMics, onDevicesChanged, prepareAudio, resumeAudio, webOpener } from "./capture_web";
 import { Chat } from "./chat";
 import { applyHistory, lastGoal, loadingCaption } from "./history";
 import { pointCardHtml, wordCardHtml } from "./levels";
@@ -16,7 +16,17 @@ import { loadSamples, mountRigPanel } from "./rigpanel";
 import * as settings from "./settings";
 import * as status from "./status";
 import { $, APP_NAME, esc, floatWord, hint, live, log, onFirstTouch, setMoodBg, setSubtitles, showEnded, subtitle } from "./ui";
-import { Link, type Handlers } from "./ws";
+import { Mobile } from "./mobile";
+import { Link, REMOTE_KEY, type Handlers } from "./ws";
+
+//: The phone link (ADR-041): the QR's URL carries the key once. Keep it in this browser and take
+//: it out of the address bar before anything else runs — the socket URL is built from storage.
+(() => {
+  const k = new URLSearchParams(location.search).get("k");
+  if (!k) return;
+  try { localStorage.setItem(REMOTE_KEY, k); } catch { /* private window: this visit only */ }
+  history.replaceState(null, "", location.pathname + location.hash);
+})();
 
 //: Plain names for the cast. cast.json comes from the persona files themselves (make_preview).
 const PERSONA_LABELS: Record<string, string> = {
@@ -109,6 +119,7 @@ const handlers: Handlers = {
   meters: m => status.onMeters(m, Number(settings.values().VRAM_WARN_GB) || 10),
   explanation: m => onExplanation(m),
   timing: m => showTiming(m),
+  remote: m => settings.onRemote(m),                //: the phone page's card (ADR-041)
   error: m => log(esc(m.message), "err"),
 };
 
@@ -137,9 +148,12 @@ function onState(s: typeof state, t: number): void {
   if (s === "thinking") { avatar?.thinking(); setGoal(""); }   // the student answered
   else if (s === "listening") { avatar?.listening(); avatar?.player.flush(); }   // her turn is over
   const ptt = mode === "ptt";
+  const touch = mobile.active;                      // a phone: no key, no ALT GR (ADR-041)
   live(s === "thinking" ? "she is thinking…"
-    : s === "speaking" ? (ptt ? "she is speaking — hold SPACE to interrupt" : "she is speaking")
-    : (ptt ? "hold ALT GR to cancel what you are saying" : "your turn — just speak"),
+    : s === "speaking" ? (ptt ? (touch ? "hold to interrupt"
+                                       : "she is speaking — hold SPACE to interrupt") : "she is speaking")
+    : (ptt ? (touch ? "your turn"
+                    : "hold ALT GR to cancel what you are saying") : "your turn — just speak"),
     s === "listening" ? "on" : "");
 }
 
@@ -174,13 +188,39 @@ function onService(m: ServiceStatusMsg): void {
   }
 }
 
+/** The conversation panel replaces the subtitles; with it off, subtitles as configured. On a
+ *  phone the panel is an overlay (ADR-041), so while it is closed her sentences show as subtitles. */
+function applySubtitles(): void {
+  const v = settings.values();
+  const study = v.STUDY_PANEL !== false;
+  const panelShowing = study && !(mobile.active && !mobile.chatOpen);
+  setSubtitles(panelShowing ? "off" : study ? "jp" : v.SUBTITLES);
+}
+
+//: The screen wake lock (ADR-041): on a phone while a lesson runs there, on the desktop only when
+//: KEEP_AWAKE is on — the backend blocks system sleep; the display is the page's.
+let wakeLock: WakeLockSentinel | null = null;
+async function keepScreen(on: boolean): Promise<void> {
+  if (on && !wakeLock && document.visibilityState === "visible" && navigator.wakeLock) {
+    try {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+    } catch { /* not allowed here: the OS will do as it does */ }
+  } else if (!on && wakeLock) {
+    await wakeLock.release().catch(() => undefined);
+    wakeLock = null;
+  }
+}
+const wantScreen = () => unlocked && !link.quitting && (mobile.active || settings.values().KEEP_AWAKE === true);
+document.addEventListener("visibilitychange", () => void keepScreen(wantScreen()));
+
 function onSettings(m: SettingsMsg): void {
   settings.onSettings(m);
   const v = m.values as Record<string, unknown>;
-  // The conversation panel replaces the subtitles; with it off, subtitles as configured.
   const study = v.STUDY_PANEL !== false;
   document.body.classList.toggle("study", study);
-  setSubtitles(study ? "off" : v.SUBTITLES);
+  applySubtitles();
+  void keepScreen(wantScreen());
   chat.setFurigana(String(v.FURIGANA ?? "unknown"));
   explainLang = v.EXPLAIN_LANGUAGE === "ja" ? "ja" : "en";
   mode = String(v.TURN_MODE || "ptt");
@@ -246,7 +286,7 @@ $("goal").onclick = e => {
   if (!goal) return;
   $("goal").classList.remove("has");
   showPop($("goal-pop"), $("goal"), "<small>Your tutor is waiting for you to use</small>"
-    + `<b>${esc(goal)}</b><p>Try it in your answer — hold SPACE and speak.</p>`);
+    + `<b>${esc(goal)}</b><p>Try it in your answer — hold ${mobile.active ? "the button" : "SPACE"} and speak.</p>`);
   $("goal").blur();                                 // or the next SPACE would press it
 };
 
@@ -319,7 +359,7 @@ const link = new Link(handlers, {
     // what its microphone is doing — the capture ran on while the link was down (ADR-040).
     if (unlocked) link.send({ type: "control", action: "ready" });
     if (lastMic) link.send({ type: "mic_status", ...lastMic });
-    live("connected — hold SPACE, or the button, and speak", "on");
+    live(mobile.active ? "connected" : "connected — hold SPACE, or the button, and speak", "on");
     if (!welcomed && !hasSpoken) chat.loading("getting everything ready…");   // until her first sentence lands
     welcomed = true;
     talk.relink();                                  // a hold cut by the last socket is cancelled
@@ -360,6 +400,8 @@ const capture = new Capture({
     // `service_status: microphone`, once, for every page.
     lastMic = { state, detail };
     status.showMic(state, detail);
+    // A phone has no chip to hover and no Activity card in view: trouble goes on the main line.
+    if (mobile.active && state !== "ok" && state !== "fallback") live("microphone " + state, "warn");
     link.send({ type: "mic_status", state, detail });
     void refreshMics();                               // labels appear once permission is given
   },
@@ -375,7 +417,11 @@ const talk = new Talk({
   connected: () => link.open,
   blocked: () => settings.isOpen(),
   mode: () => mode,
-  pressed: () => void capture.retryIfDenied(),        // the gesture a refused permission waits for
+  pressed: () => {                                    // a gesture: what a phone's audio waits for
+    resumeAudio();                                    // an AudioContext left suspended (iOS, Android)
+    void capture.retryIfDenied();
+  },
+  touch: () => mobile.active,
   interrupt: () => {
     // She is talking, or about to (thinking): stop her here, and drop the rest of this turn
     // however late it arrives. The server's `bargein` then confirms (spec §8).
@@ -386,6 +432,20 @@ const talk = new Talk({
   },
   deadLink: () => link.drop(),
 }, $<HTMLButtonElement>("talk"));
+
+//: Mobile mode (ADR-041): a phone gets the hamburger drawer; the desktop page is untouched.
+//: How much higher she sits in mobile mode (setView's cameraY: positive lifts her, avatar.ts).
+const MOBILE_LIFT = 0.15;
+const mobile = new Mobile({
+  onChange: on => {
+    applySubtitles();
+    void keepScreen(wantScreen());
+    talk.render();
+    void avatarReady.then(a => { a.lift = on ? MOBILE_LIFT : 0; a.reframe(); });
+  },
+  openSettings: () => settings.openSettings(true),
+  chatOpened: () => chat.jumpToBottom(),
+});
 
 settings.initSettings({
   send: values => link.send({ type: "settings", values }),
@@ -446,7 +506,11 @@ onFirstTouch(() => {
   status.startTimer();
   void avatarReady.then(a => a.unlock());
   link.send({ type: "control", action: "ready" });
+  // The capture's AudioContext is created and resumed HERE, inside the gesture: made later, after
+  // getUserMedia's await, a phone leaves it suspended and the worklet never runs (ADR-041).
+  prepareAudio();
   void capture.start();                               // the same gesture opens the microphone
+  void keepScreen(wantScreen());
 });
 
 // Direct links: #settings or #settings/sound, and #mood=happy to preview the kaomoji.
@@ -456,11 +520,13 @@ if (location.hash.startsWith("#mood=")) { $("start").hidden = true; setMoodBg(lo
 (async function boot() {
   document.title = APP_NAME;
   $("brand-name").textContent = APP_NAME;
+  $("menu-brand").textContent = APP_NAME;
   $("topic").title = `Ask ${APP_NAME} to drop this subject and find a new one`;
   $("goal").title = "What your tutor wants you to use next";
   status.bindStatus();
   talk.bind();
   talk.render();
+  mobile.start();
   link.start();
   try {
     cast = await (await fetch("cast.json")).json();

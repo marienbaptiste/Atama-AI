@@ -255,6 +255,13 @@ export class Chat {
     if (this.following) this.stick();
   }
 
+  /** The list was just shown (the phone's overlay opening, ADR-041): start at the newest line,
+   *  whatever the scroll position was while it was hidden, and follow again. */
+  jumpToBottom(): void {
+    this.following = true;
+    this.stick();
+  }
+
   private atBottom(): boolean {
     return this.list.scrollHeight - this.list.scrollTop - this.list.clientHeight < FOLLOW_PX;
   }

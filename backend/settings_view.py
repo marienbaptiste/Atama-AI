@@ -41,7 +41,24 @@ LABELS: dict[str, str] = {
 }
 
 #: Keys the running session applies the moment they are saved (the rest: next launch).
-LIVE = frozenset({"AUDIO_INPUT_DEVICE", "AUDIO_OUTPUT_DEVICE", "TUTOR_PERSONA"})
+LIVE = frozenset({"AUDIO_INPUT_DEVICE", "AUDIO_OUTPUT_DEVICE", "TUTOR_PERSONA",
+                  "KEEP_AWAKE", "REMOTE_ENABLED", "REMOTE_HOST", "REMOTE_PORT"})
+
+#: What a page on a phone may not change (ADR-041 point 4): every secret, and the remote group
+#: itself — a student on the LAN is not the administrator of the machine.
+PHONE_REFUSED_GROUPS = frozenset({"remote"})
+
+
+def for_phone(updates: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """(the updates a phone may make, the keys it may not) — refused keys are named, not silently dropped."""
+    allowed, refused = {}, []
+    for key, value in updates.items():
+        setting = config._BY_KEY.get(key)
+        if setting is not None and (setting.secret or setting.group in PHONE_REFUSED_GROUPS):
+            refused.append(key)
+        else:
+            allowed[key] = value
+    return allowed, refused
 
 
 def pinned(environ: dict[str, str] | None = None) -> dict[str, str]:

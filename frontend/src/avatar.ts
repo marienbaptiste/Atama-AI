@@ -83,6 +83,9 @@ export class Avatar {
   private voice: Voice;
   private readonly clock: ExpressionClock;
   framing: Framing = loadFraming();
+  /** A lift on top of the saved framing, never saved: mobile mode raises her (ADR-041), so the
+   *  floating bubbles and the talk button are not over her face (user, 2026-09-16). */
+  lift = 0;
   /** Gesture hold in seconds, and whether the left hand gets a turn (rig panel). */
   holdS = 3;
   varyHands = true;
@@ -295,7 +298,7 @@ export class Avatar {
    *  (it lowers the look-at point) — the opposite of what the name suggests (2026-09-10). */
   reframe(): void {
     const f = this.framing;
-    try { this.head?.setView("upper", { cameraDistance: f.zoom, cameraY: f.high, cameraX: f.offx }); } catch { /* not loaded */ }
+    try { this.head?.setView("upper", { cameraDistance: f.zoom, cameraY: f.high + this.lift, cameraX: f.offx }); } catch { /* not loaded */ }
   }
 
   setFraming(f: Partial<Framing>): void {

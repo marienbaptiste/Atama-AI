@@ -1814,3 +1814,71 @@ reload mid-hold, the microphone unplugged mid-lesson in the page, and the Linux 
 **Reversed if:** the page's frames prove unreliable in a real browser (drops, gaps the VAD sees as
 utterance ends), or the M2b silence check or M3b barge-in gate fail because of the capture path —
 then the terminal's sounddevice path is one flag away.
+
+
+---
+
+## ADR-041 — The phone on the same network, and keeping the computer awake
+
+**Status:** Accepted (2026-09-16) — user decision. Amends ADR-017 (a second listener, on the LAN
+address, HTTPS and keyed; loopback stays the rule for everything else, and the "Reversed if:
+never" of ADR-017 is replaced by this entry) and ADR-013 (a second *device*, still one user, no
+accounts). Builds on ADR-040, which put both ends of the audio in the page for exactly this.
+
+**Context.** The user asked for two things: an option that keeps the laptop from sleeping while
+the console app runs, and the lesson on their phone — open a page on the same Wi-Fi by scanning
+a QR code, with the desktop layout untouched and the phone's clutter folded into a hamburger
+menu. ADR-017 forbade any listener off loopback because the socket carries the microphone, the
+transcripts and the settings panel. That reasoning still holds on a café network; it does not
+require refusing the user's own phone on their own network, provided three things are true: the
+listener is on one deliberate address, the link is encrypted, and nobody without the code gets a
+socket. A phone browser adds a fourth: `getUserMedia` and the AudioWorklet exist only in a secure
+context, so plain HTTP on a LAN address could show the page but never hear the student.
+
+**Decision.**
+
+1. **Keep awake** (`KEEP_AWAKE`, off by default, live): `backend/keep_awake.py` blocks *system*
+   sleep — `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` on Windows,
+   `systemd-inhibit --what=sleep:idle` on Linux, `caffeinate -i` on macOS — from launch to close,
+   in a text or voice lesson alike. The display is left to the page: it requests a **screen wake
+   lock** on the desktop when `KEEP_AWAKE` is on, and on the phone whenever a lesson runs there.
+2. **A second listener, keyed and encrypted** (`REMOTE_ENABLED`, off by default, live):
+   `backend/remote.py` binds `REMOTE_HOST` (empty = the default route's IPv4; a wildcard,
+   loopback or a **public** address is refused with a reason — private networks only, RFC 1918
+   or link-local) on `REMOTE_PORT` (8443) with a self-signed certificate it generates once (SAN =
+   the address, ECDSA P-256, 800 days, `serverAuth`), serving the same Starlette app and the same
+   `Hub`. A socket from a non-loopback client is admitted only if the client is on a private
+   address, its `Origin` is that listener's own, **and** its `?k=` matches the session key in
+   constant time; everything else is refused before the handshake, as ADR-017's origin check does.
+3. **The QR code is the pairing, and the key is per run.** The session key is generated at every
+   launch (`RemoteServer.__init__`), held in memory only — never in `settings.json`, never in a
+   file (user, 2026-09-16) — and replaced by the panel's New key for the rest of the run. The QR
+   (segno, inline SVG) encodes `https://<address>:<port>/?k=<key>` and is sent — as the `remote`
+   message — **only to pages on loopback**. The phone stores the key in its own browser for
+   reconnects and drops it from the address bar; after a relaunch it scans again.
+4. **A phone is a student, not an administrator.** From a remote socket the server refuses
+   changes to any secret and to the `remote` group, and tells the page which keys it refused;
+   everything else (tutor, voice, display, talk mode) it may change like the desktop.
+5. **Mobile mode, not a mobile page.** `frontend/src/mobile.ts` switches the page into mobile
+   mode for a coarse pointer on a narrow screen (or `#m=1`); the desktop page is untouched (user).
+   In that mode the status bar, New topic, Stop and the Activity card are moved into a hamburger
+   drawer, the conversation becomes an overlay opened from it, subtitles show when it is closed,
+   and the talk button is held by touch (`pointercancel` cancels the hold).
+6. **Everything else stays loopback.** VOICEVOX, SearXNG and the loopback page keep ADR-017 as it
+   was; `make doctor`'s LAN check is unchanged and the remote port is the one deliberate exception.
+7. **Dependencies:** `cryptography` (already in the venv, now declared) and `segno` (pure Python,
+   BSD) are added to `pyproject.toml`.
+
+**Consequences.** The user's private network can reach the lesson with the code of this run;
+nobody else can — not a public client, not a phone with yesterday's code — and the code can be
+rotated in one click. The certificate is self-signed, so the phone shows a warning
+once (Android: proceed; iPhone: install and trust the profile in Settings) — documented in the
+README, and the certificate's fingerprint is shown beside the QR so it can be compared. A page on
+the phone hears the student only after that step. Two listeners share one hub, so the lesson is
+the same lesson: a phone and the desktop can both watch it, and the first page to send audio
+holds the microphone (ADR-040). Not built: any discovery of the address by name (mDNS), any
+account, any use off the LAN.
+
+**Reversed if:** the self-signed path proves unusable on the phones actually used (the browser
+refusing the microphone even after trust), in which case the next step is a locally trusted CA
+(mkcert-style), not an open listener.

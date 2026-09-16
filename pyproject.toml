@@ -21,6 +21,9 @@ dependencies = [
     "uvicorn>=0.30",
     "starlette>=0.40",
     "websockets>=13",         # uvicorn serves NO WebSocket without this or wsproto
+    # The phone page (ADR-041): a self-signed certificate for the LAN listener, and the QR code.
+    "cryptography>=42",
+    "segno>=1.6",             # pure Python, BSD; `make(url).svg_inline(...)` verified 2026-09-16
 ]
 
 [project.optional-dependencies]
