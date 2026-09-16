@@ -129,6 +129,28 @@ describe("the page's microphone", () => {
     expect(h.last()).toEqual(["ok", "USB mic"]);
   });
 
+  it("flush answers behind the captured audio, at once with no source, and by timeout with a mute one", async () => {
+    const h = harness();
+    const order: string[] = [];
+    h.cap.flush(() => order.push("nothing open: immediate"));
+    expect(order).toEqual(["nothing open: immediate"]);
+    await h.cap.start();
+    const src = h.opened[0] as FakeSource & { flush?: (cb: () => void) => void; marks: (() => void)[] };
+    src.marks = [];
+    src.flush = cb => { src.marks.push(cb); };           // the audio thread answers later
+    h.cap.flush(() => order.push("after the audio"));
+    expect(order.length).toBe(1);
+    src.emit(2);                                          // frames posted before the marker
+    src.marks[0]();                                       // the marker comes back
+    expect(order).toEqual(["nothing open: immediate", "after the audio"]);
+    expect(h.timers.size).toBe(0);                        // the fallback timer was cleared
+    h.cap.flush(() => order.push("timed out"));           // a marker that never returns
+    await h.tick();
+    expect(order[2]).toBe("timed out");
+    src.marks[1]?.();                                     // late: not a second call
+    expect(order.length).toBe(3);
+  });
+
   it("a new choice from the panel applies at once", async () => {
     const h = harness({ "": "Default mic", usb: "USB mic" });
     await h.cap.start();

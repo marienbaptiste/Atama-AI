@@ -1771,9 +1771,13 @@ repair, settings that stay relevant, no crash on a dropped link — apply to the
 2. **The binary frame is the one non-JSON message.** It has no `type` and is not in the generated
    TypeScript; `backend/models.py` documents it beside the unions. Format: PCM16 little-endian,
    16 kHz, mono, any length. The one new JSON client message is `mic_status` `{state, detail}`.
-3. **One microphone per lesson.** The first page to send audio holds it until its socket closes;
-   audio from any other page is ignored and that page is told once (`service_status: microphone =
-   off`). A reload is a new socket after the old one closed, so it takes over.
+3. **One microphone per lesson — the one whose talk button was pressed last** (amended
+   2026-09-16, user: with the desktop and a phone both open, "when I press the button on either
+   device, it should be this mic"). A `control: start` from any page takes the microphone; before
+   any press, the first page to send audio has it; other pages' audio is ignored until they press,
+   and nothing is said about it — it is room noise from a device nobody is talking into. A page
+   leaving hands it to the next press. The original rule (the first sender keeps it until it
+   leaves, and a second tab is told `off`) stood from 2026-09-15 to 2026-09-16.
 4. **Recovery lives in the page**, with spec §9's states: chosen device missing → the default
    (`fallback`), back on `devicechange`; none → `missing`, tried every 2 s and on `devicechange`;
    the track ends → `lost`, reopened; permission refused → `denied`, tried again on the next talk

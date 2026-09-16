@@ -159,6 +159,7 @@ class PageControl:
             hub.on_audio = loop.feed_pcm16
             hub.on_mic = self.mic_reported
             hub.on_mic_left = self.mic_left
+            hub.on_mic_switch = loop.mic_switched
 
         # The browser was getting audio and nothing else: no transcript, no state. Silence after
         # a press then looked the same as a broken microphone, when it might equally be a

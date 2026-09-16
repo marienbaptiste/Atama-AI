@@ -132,12 +132,15 @@ class Hub:
         #: hold for it: the voice loop refuses a new press while one is open, so an unfinished
         #: hold would otherwise wedge the microphone until a restart (found 2026-09-12).
         self._holder: WebSocket | None = None
-        #: The page whose audio feeds the lesson (ADR-040): the first to send a binary frame, until
-        #: its socket closes. Any other page's audio is ignored, and that page is told once.
+        #: The page whose audio feeds the lesson (ADR-040, amended 2026-09-16): the page whose talk
+        #: button was pressed last — a press on any device takes the microphone — or, before any
+        #: press, the first to send a frame. Other pages' audio is ignored until they press.
         self._mic_page: WebSocket | None = None
-        self._told_off: set[WebSocket] = set()
         #: Called with each binary audio frame (PCM16 16 kHz mono) from the microphone page.
         self.on_audio: Callable[[bytes], None] | None = None
+        #: Called when the microphone moved to another page: whatever half frame the loop was
+        #: holding belongs to the old one.
+        self.on_mic_switch: Callable[[], None] | None = None
         #: Called with (state, detail) when the page reports its microphone (`mic_status`).
         self.on_mic: Callable[[str, str], None] | None = None
         #: Called when the microphone page leaves: the loop hears nothing until a page sends again.
@@ -344,14 +347,21 @@ class Hub:
             # so the next press starts clean instead of being refused.
             self._holder = None
             self._relay("cancel")
-        self._told_off.discard(ws)
         if self._mic_page is ws:
             # The microphone left with its page (ADR-040): the loop is told, and the next page to
-            # send audio — a reload, usually — takes over.
+            # press — or, failing that, to send audio — takes over.
             self._mic_page = None
-            self._told_off.clear()
             if self.on_mic_left is not None:
                 self.on_mic_left()
+
+    def take_mic(self, ws: WebSocket) -> None:
+        """This page's microphone feeds the lesson from now on (a press on any device, ADR-040
+        amendment 2026-09-16). Silent when it already does."""
+        if ws not in self._clients or self._mic_page is ws:
+            return
+        self._mic_page = ws
+        if self.on_mic_switch is not None:
+            self.on_mic_switch()
 
     def audio(self, ws: WebSocket, data: bytes) -> None:
         """A binary frame from a page: its microphone, PCM16 16 kHz mono (ADR-040). Never raises —
@@ -359,15 +369,9 @@ class Hub:
         if ws not in self._clients or not data:
             return
         if self._mic_page is None:
-            self._mic_page = ws
+            self.take_mic(ws)                       # nobody has pressed yet: the first to speak up
         if ws is not self._mic_page:
-            if ws not in self._told_off:
-                self._told_off.add(ws)
-                self.spawn(self.send(models.ServiceStatus(
-                    service="microphone", state="off",
-                    detail="another page has the microphone - close it to use this one").model_dump(),
-                    to={ws}))
-            return
+            return                                  # another device's room noise; its press takes over
         if self.on_audio is not None:
             try:
                 self.on_audio(data)
@@ -393,6 +397,7 @@ class Hub:
             return
         if action == "start":
             self._holder = ws
+            self.take_mic(ws)                       # the device you press is the one she hears
         elif action in ("stop", "cancel") and self._holder is ws:
             self._holder = None
         self._relay(action)

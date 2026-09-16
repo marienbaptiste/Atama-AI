@@ -843,8 +843,8 @@ chunk-invariance, which found a carry bug on the first run), `src/capture_workle
 AudioWorklet (bundled by Vite as its own ES chunk) and `src/capture_web.ts` the thin
 `getUserMedia` adapter, untested by design. Audio goes out as binary frames (`Link.sendBytes`,
 dropped when the socket is closed or eight seconds behind); the page reports `mic_status`, and
-re-reports it on every reconnect. Server side: `Hub.audio` (first page to send holds the
-microphone; a second tab is told once; the holder leaving frees it), `VoiceLoop.feed_pcm16`
+re-reports it on every reconnect. Server side: `Hub.audio` (the page pressed last has the
+microphone — `take_mic` on `control: start`; before any press, the first to send; the holder leaving frees it), `VoiceLoop.feed_pcm16`
 (reframes any byte length; a stray byte or a frame that raises never ends the socket), and the
 Sound tab's picker is the page's own. The terminal lesson keeps the sounddevice path. 97 Vitest
 tests; the backend suite green. What is not proven is the live part: see the pending checks.

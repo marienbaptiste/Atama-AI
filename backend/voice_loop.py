@@ -359,6 +359,11 @@ class VoiceLoop:
         self.mic_state = state
         self.capture_error = detail if state in ("missing", "lost", "denied") else ""
 
+    def mic_switched(self) -> None:
+        """Another page's microphone feeds the lesson from now on: the half frame held from the
+        old one is dropped, so its tail is never glued to the new one's head."""
+        self._pending = np.zeros(0, dtype=np.float32)
+
     def mic_gone(self) -> None:
         """The page that was sending audio left: drop the partial frame and say so. Its hold, if
         any, is cancelled by the hub on the page's behalf (`Hub.leave`)."""

@@ -23,7 +23,7 @@ interface Item {
   key?: string; label?: string; help?: string; kind?: Kind; raw?: boolean;
   /** A setting of the page's own, not the server's: the microphone (ADR-040), applied at once;
    *  or the phone page's QR card (ADR-041), drawn from the server's `remote` message. */
-  local?: "mic" | "qr";
+  local?: "mic" | "qr" | "aec";
   action?: string; button?: string; meter?: boolean;
   min?: number; max?: number; step?: number; lo?: string; hi?: string; fmt?: (v: number) => string;
   options?: Option[];
@@ -91,6 +91,9 @@ const TABS: Tab[] = [
       //: through the browser's sound output. The terminal lesson's devices are under Advanced.
       { local: "mic", label: "Microphone", kind: "mic", meter: true,
         help: "Applies at once. Unplug it any time — she switches to the default, and back when it returns. She speaks through your browser's sound output." },
+      //: Phone only (mobile mode): the desktop keeps echo cancellation on and is not touched.
+      { local: "aec", label: "Echo cancellation on this phone",
+        help: "Keeps her voice from the loudspeaker out of your microphone. On headphones you can turn it off — on the loudspeaker it can swallow the start of what you say after her." },
     ] },
     { title: "Talking", items: [
       { key: "TURN_MODE", label: "How you talk", kind: "segmented", options: [["ptt", "Hold SPACE"], ["vad", "Hands-free"]],
@@ -152,6 +155,11 @@ export interface SettingsDeps {
   mics(): Option[];
   mic(): string;
   setMic(id: string): void;
+  /** Mobile mode: the phone-only items show. */
+  phone(): boolean;
+  /** Echo cancellation for this phone's microphone (capture_web.ts), applied at once. */
+  aec(): boolean;
+  setAec(on: boolean): void;
 }
 
 let deps: SettingsDeps;
@@ -279,7 +287,7 @@ function sectionsFor(tab: Tab): Section[] {
   return tab.sections.map(sec => ({
     title: sec.title,
     items: sec.secrets ? fields.filter(signIn).map(f => ({ key: f.key, label: f.label || human(f.key), help: f.description }))
-      : sec.items.filter(it => it.action || it.local || (it.key && FIELD[it.key])),
+      : sec.items.filter(it => it.action || (it.local === "aec" ? deps.phone() : it.local) || (it.key && FIELD[it.key])),
   })).filter(sec => sec.items.length);
 }
 
@@ -390,9 +398,16 @@ function qrItem(it: Item): string {
   return `<div class="field" data-local="qr"><div class="fname">${esc(it.label)}</div>${body}</div>`;
 }
 
+function aecItem(it: Item): string {
+  return `<div class="field" data-local="aec"><div class="ftop"><div class="flabel"><div class="fname">${esc(it.label)}</div>`
+    + `<div class="fdesc">${esc(it.help || "")}</div></div>`
+    + `<label class="switch"><input type="checkbox" data-local="aec"${deps.aec() ? " checked" : ""}><span></span></label></div></div>`;
+}
+
 function item(it: Item): string {
   if (it.action) return actionItem(it);
   if (it.local === "mic") return micItem(it);
+  if (it.local === "aec") return aecItem(it);
   if (it.local === "qr") return qrItem(it);
   const s = FIELD[it.key!];
   const pin = (SETTINGS!.pinned as Record<string, string>)[s.key], lock = s.locked, off = !!(pin || lock);
@@ -467,6 +482,9 @@ function bindControls(body: HTMLElement): void {
   });
   body.querySelectorAll<HTMLSelectElement>("select[data-local='mic']").forEach(el => {
     el.onchange = () => deps.setMic(el.value);        // the page's own: applied now, nothing to save
+  });
+  body.querySelectorAll<HTMLInputElement>("input[data-local='aec']").forEach(el => {
+    el.onchange = () => deps.setAec(el.checked);
   });
   body.querySelectorAll<HTMLElement>(".raw .fdesc").forEach(el => { el.onclick = () => el.classList.toggle("full"); });
   body.querySelectorAll<HTMLButtonElement>("[data-action]").forEach(b => {

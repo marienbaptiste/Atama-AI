@@ -769,8 +769,8 @@ Message types are defined once in `backend/models.py` and generated into
 `ready`), `settings` (partial update of any key, secrets included), `explain`
 (`{kind, text, context, lang}`), `mic_status` (`{state, detail}` — the page's microphone: `ok`,
 `fallback`, `missing`, `lost`, `denied`, `off`). **Audio is the one binary frame:** PCM16
-little-endian, 16 kHz, mono, any length (ADR-040). The first page to send audio holds the
-microphone until it leaves; another page's audio is ignored and that page is told.
+little-endian, 16 kHz, mono, any length (ADR-040). With the desktop and a phone both open, the device
+whose talk button you press is the one she hears; before any press, the first page to send audio is.
 
 **server to client:** `state` (`listening` | `thinking` | `speaking`, with the turn epoch),
 `stt_partial` (reserved, never emitted), `stt_final`, `speak` (`{audio_b64, visemes[], vtimes[],

@@ -23,6 +23,9 @@ export interface MicSource {
   onFrame(cb: (frame: ArrayBuffer) => void): void;
   onEnded(cb: () => void): void;
   stop(): void;
+  /** Call `cb` once every frame captured so far has been handed to `onFrame` (a marker round trip
+   *  through the audio thread). Optional: a source without it is flushed already. */
+  flush?(cb: () => void): void;
 }
 
 export interface CaptureDeps {
@@ -38,6 +41,7 @@ export interface CaptureDeps {
 }
 
 export const RETRY_MS = 2000;
+export const FLUSH_MS = 600;
 const DENIED = new Set(["NotAllowedError", "SecurityError", "PermissionDeniedError", "NotSupportedError"]);
 const errorName = (e: unknown) => (e as { name?: string } | null)?.name || "";
 
@@ -76,6 +80,20 @@ export class Capture {
       return this.reopenWhenIdle();
     }
     return Promise.resolve();
+  }
+
+  /** Everything captured up to now has reached `send` — then `cb`. On a phone the main thread can
+   *  lag the audio thread by hundreds of milliseconds (the avatar renders there), so a talk key
+   *  released "now" must not be reported before the audio of the last syllable has gone out
+   *  (2026-09-16: utterances from the phone lost their tails). Bounded: a source that never
+   *  answers, or none at all, releases `cb` after FLUSH_MS. */
+  flush(cb: () => void): void {
+    const live = this.live;
+    if (!live?.flush) { cb(); return; }
+    let done = false;
+    const once = () => { if (!done) { done = true; this.d.clearTimeout(timer); cb(); } };
+    const timer = this.d.setTimeout(once, FLUSH_MS);
+    live.flush(once);
   }
 
   /** A talk press is a gesture: a refused permission can be asked for again. */

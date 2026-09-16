@@ -13,6 +13,13 @@ declare function registerProcessor(name: string, ctor: new () => AudioWorkletPro
 class Capture16k extends AudioWorkletProcessor {
   private readonly pcm = new Pcm16k(sampleRate);
 
+  constructor() {
+    super();
+    // A marker from the page comes back through the same port, BEHIND every frame posted before
+    // it: that is how the page orders the talk key's release after the audio it captured.
+    this.port.onmessage = e => this.port.postMessage(e.data);
+  }
+
   process(inputs: Float32Array[][]): boolean {
     const channel = inputs[0]?.[0];
     if (channel) {

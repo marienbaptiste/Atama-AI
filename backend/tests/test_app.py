@@ -696,22 +696,28 @@ def test_your_own_line_carries_the_grammar_you_used(monkeypatch):
 
 
 # ---------------------------------------------------------------- the page's microphone (ADR-040)
-def test_binary_frames_reach_the_loop_from_the_first_page_to_send_only(masked):
-    hub, got = app.Hub(), []
+def test_the_device_you_press_is_the_one_she_hears(masked):
+    """Two pages — the desktop and a phone (ADR-041) — both stream their room; the one whose talk
+    button was pressed last feeds the lesson (user, 2026-09-16: "when I press the button on either
+    device, it should be this mic"). Before any press, the first to send."""
+    hub, got, switches = app.Hub(), [], []
     hub.on_audio = got.append
+    hub.on_mic_switch = lambda: switches.append(True)
+    A, B = b"\x01\x02" * 512, b"\x03\x04" * 512
     with connect(hub) as client:
         with client.websocket_connect("/ws", headers=PAGE) as a, client.websocket_connect("/ws", headers=PAGE) as b:
             a.receive_json(); b.receive_json()
-            a.send_bytes(b"\x01\x02" * 512)
-            b.send_bytes(b"\x03\x04" * 512)               # a second tab: ignored, and told once
-            told = b.receive_json()
-            assert (told["type"], told["service"], told["state"]) == ("service_status", "microphone", "off")
-            b.send_bytes(b"\x03\x04" * 512)
-            b.send_json({"type": "shout"})                 # a round trip: nothing else came for b
-            assert b.receive_json()["type"] == "error"
-            a.send_json({"type": "shout"})
-            assert a.receive_json()["type"] == "error"
-    assert got == [b"\x01\x02" * 512]
+            a.send_bytes(A)                                # first to send: a's microphone
+            b.send_bytes(B)                                # ignored, and nothing is said about it
+            b.send_json({"type": "control", "action": "start"})   # b presses: b's microphone now
+            b.send_bytes(B)
+            a.send_bytes(A)                                # ignored in turn
+            b.send_json({"type": "control", "action": "stop"})
+            a.send_json({"type": "control", "action": "start"})   # and back
+            a.send_bytes(A)
+            a.send_json({"type": "shout"}); assert a.receive_json()["type"] == "error"   # round trips
+            b.send_json({"type": "shout"}); assert b.receive_json()["type"] == "error"
+    assert got == [A, B, A] and len(switches) == 3
 
 
 def test_the_microphone_page_leaving_hands_it_to_the_next_page_that_sends():

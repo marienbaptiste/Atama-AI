@@ -4,7 +4,7 @@
 import "./style.css";
 import { Avatar, type CastEntry } from "./avatar";
 import { Capture, type MicState } from "./capture";
-import { listMics, onDevicesChanged, prepareAudio, resumeAudio, webOpener } from "./capture_web";
+import { echoCancellation, listMics, onDevicesChanged, prepareAudio, resumeAudio, setEchoCancellation, webOpener } from "./capture_web";
 import { Chat } from "./chat";
 import { applyHistory, lastGoal, loadingCaption } from "./history";
 import { pointCardHtml, wordCardHtml } from "./levels";
@@ -392,9 +392,18 @@ async function refreshMics(): Promise<void> {
   settings.refresh();
 }
 
+//: Frames the link could not carry while it was open (a socket that stopped draining), counted
+//: on a phone: there, that is the difference between a bad microphone and a bad Wi-Fi.
+let framesLost = 0;
 const capture = new Capture({
   open: webOpener(),
-  send: frame => link.sendBytes(frame),
+  send: frame => {
+    if (link.sendBytes(frame)) return true;
+    if (link.open && mobile.active && ++framesLost % 50 === 1) {
+      log(`the link could not carry the microphone: ${framesLost} frames lost so far`, "err");
+    }
+    return false;
+  },
   report: (state, detail) => {
     // The chip now, from the page's own knowledge; the log line comes back from the server as
     // `service_status: microphone`, once, for every page.
@@ -413,7 +422,18 @@ try { capture.chosen = localStorage.getItem(MIC_KEY) || ""; } catch { /* private
 onDevicesChanged(() => { void refreshMics(); void capture.devicesChanged(); });
 
 const talk = new Talk({
-  send: action => link.send({ type: "control", action }),
+  send: action => {
+    if (action !== "stop" || !mobile.active) return link.send({ type: "control", action });
+    // A phone: the release goes out only behind the audio captured before it (capture.ts flush),
+    // and the Activity log says how far the page was lagging its microphone.
+    const released = performance.now();
+    capture.flush(() => {
+      const lag = performance.now() - released;
+      if (lag > 80) log(`release waited ${lag.toFixed(0)} ms for the microphone to catch up`, "info");
+      link.send({ type: "control", action: "stop" });
+    });
+    return link.open;
+  },
   connected: () => link.open,
   blocked: () => settings.isOpen(),
   mode: () => mode,
@@ -458,6 +478,9 @@ settings.initSettings({
   opened: on => { if (on) talk.press(false); },
   mics: () => micOptions,
   mic: () => capture.chosen,
+  phone: () => mobile.active,
+  aec: () => echoCancellation(),
+  setAec: on => { setEchoCancellation(on); void capture.setDevice(capture.chosen); },   // reopen with it
   setMic: id => {
     try { localStorage.setItem(MIC_KEY, id); } catch { /* private window */ }
     void capture.setDevice(id);
@@ -508,7 +531,7 @@ onFirstTouch(() => {
   link.send({ type: "control", action: "ready" });
   // The capture's AudioContext is created and resumed HERE, inside the gesture: made later, after
   // getUserMedia's await, a phone leaves it suspended and the worklet never runs (ADR-041).
-  prepareAudio();
+  prepareAudio(mobile.active);                        // a phone keeps its own rate (capture_web.ts)
   void capture.start();                               // the same gesture opens the microphone
   void keepScreen(wantScreen());
 });
