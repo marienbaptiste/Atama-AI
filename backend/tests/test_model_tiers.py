@@ -63,4 +63,11 @@ def test_the_shipped_file_parses_and_every_tier_ends_with_its_alias():
     assert {"sonnet", "opus", "haiku"} <= set(tiers)
     for tier, ids in tiers.items():
         assert ids[-1] == tier and len(ids) >= 2
-    assert tiers["sonnet"][0] == "claude-sonnet-5" and tiers["opus"][0] == "claude-opus-5"
+    # The newest id of each line comes first, and the legacy one stays behind it as the fallback.
+    # A release moves these (data, not code): 2026-10-06, Sonnet 5.5 and Opus 5.5 took the front,
+    # Sonnet 5 and Opus 5 became legacy, Haiku 4.5 is still the newest Haiku.
+    assert tiers["sonnet"][:2] == ["claude-sonnet-5-5", "claude-sonnet-5"]
+    assert tiers["opus"][:2] == ["claude-opus-5-5", "claude-opus-5"]
+    assert tiers["haiku"][0] == "claude-haiku-4-5-20251001"
+    for ids in tiers.values():
+        assert len(set(ids)) == len(ids) and ids[0] != ids[-1]   # no duplicates, the alias is last

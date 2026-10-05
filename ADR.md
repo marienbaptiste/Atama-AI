@@ -50,6 +50,9 @@ reasoning behind it. Build sequencing is in [ROADMAP.md](ROADMAP.md).
 | 037 | A turn is stopped by the CLI's interrupt request, never by a signal | Accepted (2026-09-12); amends ADR-016 |
 | 038 | Today's targets rotate like an SRS, with zero model calls | Accepted (2026-09-12) — user request |
 | 039 | The Bunpro MCP server is retired: both SRS sources reach the tutor through the profile only | Accepted (2026-09-14) — user decision |
+| 040 | The page captures the microphone; audio is a binary frame on the socket | Accepted (2026-09-15) — user decision; supersedes the ADR-006 capture amendment, amends ADR-018 |
+| 041 | The phone on the same network, and keeping the computer awake | Accepted (2026-09-16) — user decision; amends ADR-017 and ADR-013 |
+| 042 | A tier finds the newest model by itself; a CLI too old for one says so in red | Accepted (2026-10-06) — user request |
 
 ---
 
@@ -1886,3 +1889,47 @@ account, any use off the LAN.
 **Reversed if:** the self-signed path proves unusable on the phones actually used (the browser
 refusing the microphone even after trust), in which case the next step is a locally trusted CA
 (mkcert-style), not an open listener.
+
+## ADR-042 — A tier finds the newest model by itself, and a CLI too old for one says so in red
+
+**Status:** Accepted (2026-10-06) — user request. Extends the tier resolution of ADR-015's
+"verify, then pin" discipline; amends nothing.
+
+**Context.** `CLAUDE_MODEL=sonnet` resolves through `backend/data/model_tiers.txt`, a file a human
+edits, to the newest id the CLI accepts. On 2026-10-06 the user asked whether the app was on the
+latest Sonnet. It was not: Sonnet 5.5 and Opus 5.5 had shipped, Sonnet 5 and Opus 5 had become
+legacy, and nobody had added the ids, so every lesson for three weeks ran a superseded model
+**silently**. Adding them exposed the second half: `claude-opus-5-5` was refused outright by the
+installed CLI 2.1.159 with "does not support this model; version 2.1.280 or newer is required",
+and the resolver's answer to a refusal was to quietly drop to Opus 5.
+
+Asking for the lineup is not available here: the Models API needs an API key, which ADR-001
+forbids, and the CLI cannot list models (`claude --help`, 2.1.289). The only authority is whether
+the CLI accepts an id, which costs one tiny turn — measured 2026-10-06: an id that does not exist
+is refused in 1.8–2.9 s.
+
+**Decision.**
+
+1. **Guess one generation forward, and let the CLI judge.** `forward_candidates()` reads the naming
+   scheme (`claude-<line>-<major>[-<minor>]`, dateless since the 4.6 generation) and returns the
+   next major then the next minor; `Resolver.discover()` probes them and remembers the first that
+   answers, used from the next lesson. It guesses *within* the scheme and never invents a family
+   name: nothing would have guessed "Fable", so the data file stays the answer for a rename.
+2. **Off the launch path, once a week.** Discovery runs during the lesson, beside the memory
+   catch-up (ADR-031 Amendment 3's half of the same principle), and its result is cached for a
+   week like a resolution. A launch never waits on a guess, and a week of silence costs nothing.
+3. **A refusal is read, not swallowed.** `Probe` carries the CLI's message; `needs_newer_cli`
+   separates "your CLI is too old" (with the version it asks for) from "no such model". The first
+   is printed **in red with the exact command**, kept in the cache, and reported by `make doctor`
+   as a FAIL — because the quiet fallback is what cost the user Opus 5.5 without telling them.
+4. **The file keeps its floor.** `model_tiers.txt` still lists the newest known ids, so a fresh
+   clone is correct before any probe runs, and a discovered id is an addition in front of it.
+
+**Consequences.** A release is picked up within a week with no edit, and a human adding the line is
+still the faster path (and the one that survives a rename). Costs: two refused probes a week per
+tier in the background, and a guessed id is used on the CLI's word alone, with no docs behind it —
+acceptable, because the alternative is what happened here. `make doctor`'s CLI row can now FAIL
+where it only warned.
+
+**Reversed if:** the CLI ever learns to list models, or the naming scheme changes shape — then
+`forward_candidates()` is wrong rather than merely unlucky, and the guessing comes out.

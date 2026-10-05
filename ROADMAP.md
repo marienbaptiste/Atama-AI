@@ -1578,6 +1578,12 @@ M3b–M3f, M4c and M4d all remain not met).
 10. **The gauges fill in before the page is clicked** — the context and five-hour chips after her
    opening is written (not played), and the GPU chip at launch rather than 30 s after the voice
    loop starts.
+12. **A newer model is picked up by itself** (ADR-042) — verified live 2026-10-06 that the weekly
+   look runs during the lesson and says nothing when there is nothing (cache `looked`, no
+   `discovered`), and that the tutor ran on `claude-sonnet-5-5` the moment the id existed. **Not yet
+   seen:** a real release appearing through `discover()` rather than through a file edit, and the
+   red "CLI too old" line at launch (its message came from a live refusal on CLI 2.1.159 before the
+   update; the path itself is covered by `test_model_discovery.py` only).
 11. **A stop press survives a dropped socket** (`ws.ts` `requestStop`, 2026-09-14) — a press that met a
    reconnecting link used to send nothing and still show "Session ended" while the tutor and the
    containers ran on (seen live: the app was still up, py-spy showed the mic thread reading). The

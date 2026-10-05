@@ -221,6 +221,13 @@ def test_shutdown_takes_everything_down_first_and_writes_the_memory_last(monkeyp
             order.append("catch-up closed")           # its claude process is closed before anything else
             raise
 
+    async def looking():
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            order.append("model check closed")
+            raise
+
     async def containers(hub):
         order.append("containers")
 
@@ -230,6 +237,8 @@ def test_shutdown_takes_everything_down_first_and_writes_the_memory_last(monkeyp
     async def go():
         lesson = orchestrator.Lesson.__new__(orchestrator.Lesson)
         lesson.catchup, lesson.summary = asyncio.create_task(catchup()), None
+        # The weekly look for a newer model (2026-10-06) is background work too: it goes down here.
+        lesson.newer_models = asyncio.create_task(looking())
         await asyncio.sleep(0)
         lesson.explainer, lesson.voice, lesson.brain, lesson.server_task, lesson.hub = Explainer(), None, None, None, object()
         await lesson.close()
@@ -237,7 +246,7 @@ def test_shutdown_takes_everything_down_first_and_writes_the_memory_last(monkeyp
     monkeypatch.setattr(orchestrator, "stop_containers", containers)
     monkeypatch.setattr(orchestrator.Lesson, "remember_this_lesson", remember)
     asyncio.run(go())
-    assert order == ["catch-up closed", "explainer", "containers", "memory"]
+    assert order == ["catch-up closed", "model check closed", "explainer", "containers", "memory"]
 
 
 def test_a_stop_that_keeps_the_containers_says_so(capsys):

@@ -21,7 +21,7 @@ from typing import Any, Awaitable, Callable
 
 from backend import annotate as annotate_api
 from backend import brain as brain_api
-from backend import config, page_control, prompt, terminal
+from backend import config, constants, page_control, prompt, terminal
 from backend import explain as explain_api
 from backend import memory as memory_api
 from backend import remote as remote_api
@@ -38,7 +38,7 @@ from backend.keep_awake import KeepAwake
 from backend.speaker import SpeechQueue
 from backend.srs import profile as profile_api
 from backend.status import registry
-from backend.terminal import BOLD, DIM, RESET
+from backend.terminal import BOLD, DIM, RED, RESET
 from backend.tools import mcp_config
 from backend.tools.latency_run import percentile
 from backend.tts_voicevox import VoicevoxClient, VoicevoxError
@@ -103,6 +103,7 @@ class Lesson:
         self.rendered = None
         self.summary: asyncio.Task | None = None
         self.catchup: asyncio.Task | None = None
+        self.newer_models: asyncio.Task | None = None
         self.ledger = usage_api.Ledger(cfg.path("CACHE_DIR") / "usage")
         self.last_sync = 0.0
         self._tiers = None
@@ -381,6 +382,7 @@ class Lesson:
         # `sonnet` alias ran claude-sonnet-4-6 while claude-sonnet-5 works (2026-09-10, model_tiers.py).
         self._tiers = tiers = model_tiers.Resolver.from_config(cfg)
         tutor_model = await asyncio.to_thread(tiers.resolve, str(cfg.CLAUDE_MODEL))
+        self.warn_if_cli_is_old(tiers, tutor_model)
         self.brain = brain = brain_api.create(
             cfg, registry=registry, model=tutor_model,
             mcp_config=mcp_json,
@@ -396,6 +398,38 @@ class Lesson:
             print(f"\n{BOLD}cannot start the brain:{RESET} {exc}\n", file=sys.stderr)
             return 2
         return 0
+
+    @staticmethod
+    def warn_if_cli_is_old(tiers, using: str = "") -> None:
+        """In red, with the fix (user, 2026-10-06): a CLI too old for the newest model costs a whole
+        generation, and the old behaviour was to fall back without a word."""
+        if (too_old := getattr(tiers, "cli_too_old", None)) is None:
+            return
+        model, required = too_old
+        print(f"{RED}the claude CLI on PATH is too old for {model}: it needs {required} or newer, "
+              f"so it refused the model instead of guessing.{RESET}", flush=True)
+        print(f"{RED}  run `{constants.CLAUDE_CLI_UPDATE_COMMAND}`, then start the lesson again"
+              f"{' - until then she runs on ' + using if using else ''}.{RESET}", flush=True)
+
+    async def discover_models(self) -> None:
+        """Look for a model newer than any this repo lists, once a week, off the launch path.
+
+        Guessing forward costs a couple of refused probes (backend/model_tiers.py), so it runs while
+        the student is already in the lesson and only reports when it finds something.
+        """
+        tiers = self._tiers
+        if tiers is None:
+            return
+        for spec in dict.fromkeys(s for s in (str(self.cfg.CLAUDE_MODEL), str(self.cfg.MEMORY_SUMMARY_MODEL)) if s):
+            try:
+                found = await asyncio.to_thread(tiers.discover, spec)
+            except Exception:  # noqa: BLE001 - a guess that fails costs nothing and says nothing
+                continue
+            if found:
+                terminal.note("model", f"{found} answers and is newer than anything "
+                                       f"backend/data/model_tiers.txt lists - using it from the next lesson "
+                                       f"(add it to that file to pin it)", bold=True)
+        self.warn_if_cli_is_old(tiers)
 
     async def _model_for(self, fresh: config.Config) -> str:
         return await asyncio.to_thread(self._tiers.resolve, str(fresh.CLAUDE_MODEL))
@@ -428,6 +462,9 @@ class Lesson:
         if self.mem is not None and self.mem.pending_logs():
             self.catchup = asyncio.create_task(summarise(self.cfg, self.mem, quiet=True))
             self.catchup.add_done_callback(_caught_up)
+        # Is there a model newer than this repo knows about? Weekly, here, where nobody waits.
+        self.newer_models = asyncio.create_task(self.discover_models())
+        self.newer_models.add_done_callback(lambda t: None if t.cancelled() else t.exception())
 
     async def switch_persona(self, name: str):
         """Live tutor change (settings panel): a fresh session with the new persona, speaking in
@@ -514,7 +551,7 @@ class Lesson:
     async def close(self) -> None:
         """Everything down, in the order that never leaves a process behind. Safe to call after
         a partial launch: what was never opened is skipped."""
-        for task in (self.catchup, self.summary):
+        for task in (self.catchup, self.summary, self.newer_models):
             if task is not None and not task.done():
                 task.cancel()          # a lesson left pending is summarised next launch
                 # Awaited, so its claude process is closed before anything else goes down.

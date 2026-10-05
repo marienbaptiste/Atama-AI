@@ -150,10 +150,29 @@ def check_claude_cli(*, which=shutil.which, run: Runner = run_cmd) -> Result:
         return Result(FAIL, "claude CLI", f"`claude --version` failed (rc={rc}): {(err or out).strip()[:120]}")
     version = (out.strip().split() or [""])[0]
     pinned = constants.CLAUDE_CLI_VERSION_VERIFIED
+    if required := _cli_too_old_for():
+        model, needs = required
+        return Result(FAIL, "claude CLI", f"{version} on PATH is too old for {model}: it needs {needs} or "
+                                          f"newer. Run `{constants.CLAUDE_CLI_UPDATE_COMMAND}` "
+                                          f"(without it she runs a model generation behind).")
     if version != pinned:
         return Result(WARN, "claude CLI", f"{version} on PATH; the flags were verified against {pinned} (ADR-015). "
                                          "Re-verify `claude --help` and update backend/constants.py.")
     return Result(PASS, "claude CLI", f"{version} (the verified version)")
+
+
+def _cli_too_old_for(cfg=None) -> tuple[str, str] | None:
+    """What the last model probe recorded, when it was refused for needing a newer CLI (2026-10-06).
+    Read from the tier cache rather than re-probed: the doctor says what the app already learned."""
+    try:
+        cfg = cfg or config.load()
+        raw = json.loads((cfg.path("CACHE_DIR") / "model_tiers.json").read_text(encoding="utf-8"))
+        row = raw.get("cli_too_old") if isinstance(raw, dict) else None
+        if isinstance(row, dict) and row.get("model") and row.get("required"):
+            return str(row["model"]), str(row["required"])
+    except (OSError, ValueError, config.ConfigError):
+        pass
+    return None
 
 
 def check_api_key_absent(*, environ: Mapping[str, str] | None = None) -> Result:

@@ -12,6 +12,9 @@ from typing import Callable
 from backend.tools.latency_run import percentile
 
 DIM, BOLD, RESET = "\033[2m", "\033[1m", "\033[0m"
+#: For the few things the student must act on, not merely know (user, 2026-10-06: an out of
+#: date claude CLI, which silently costs a model generation).
+RED = "\033[1;31m"
 CR = "\r"
 
 

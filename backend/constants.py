@@ -6,7 +6,30 @@ Nothing in here is a guess. Each block names what was checked, how, and when.
 # --- Claude Code CLI ---------------------------------------------------------
 # Verified 2026-09-09 against `claude --help`, Claude Code 2.1.159, plus one live
 # stream-json run (see ROADMAP.md "V0 findings log").
-CLAUDE_CLI_VERSION_VERIFIED = "2.1.159"
+# RE-VERIFIED 2026-10-06 on Claude Code 2.1.289 (`claude update` from 2.1.159, because Opus 5.5
+# refuses anything older than 2.1.280 - see CLAUDE_CLI_MIN_FOR_MODEL below). Everything this app
+# passes still works, confirmed by one live claude_probe run and one real lesson turn:
+#   * `--tools ""` still yields ONLY the MCP tool in init.tools, though the help now spells the
+#     option `--tools <tools...>` (variadic) rather than `<tools>`; the empty string still means
+#     "no built-in tools".
+#   * `--system-prompt-file` / `--append-system-prompt-file` still exist. The main help now shows
+#     them as `--system-prompt[-file]` instead of listing the file forms separately.
+#   * `--max-turns` is GONE from the help text but is still accepted (claude_probe passes it).
+#   * new flags, none of which this app uses: --print, --resume (now also an option), --bg, --cloud,
+#     --desktop, --environment, --teleport, --restricted, --safe-mode, --autocompact,
+#     --permission-prompts, --permission-prompt-tool, --system-prompt-snapshot,
+#     --forward-subagent-text, --ax-screen-reader. `--mcp-debug` was removed.
+#   * new stream events: `system/thinking_tokens`, and `init.mcp_servers[]` entries carry
+#     `"source": "dynamic"`. Unknown event types are logged and skipped (spec §4), so neither
+#     needed code: the probe and a real turn both ran clean.
+CLAUDE_CLI_VERSION_VERIFIED = "2.1.289"
+# The CLI refuses a model it is too old for, with its own required version in the message
+# (verified 2026-10-06: `claude-opus-5-5` on 2.1.159 -> "API Error: 400 Claude Code 2.1.159 does
+# not support this model; version 2.1.280 or newer is required. Run 'claude update' ..."). That
+# sentence is how backend/model_tiers.py tells "too old CLI" from "no such model", so the launch
+# can say which it is instead of silently falling back a generation.
+CLAUDE_CLI_TOO_OLD_FOR_MODEL = "does not support this model"
+CLAUDE_CLI_UPDATE_COMMAND = "claude update"
 
 # Base argv for the persistent tutor subprocess (spec §4). Model/fallback/session id/
 # prompt/mcp config are appended by backend/brain/claude_cli.py at spawn.

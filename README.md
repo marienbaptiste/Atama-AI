@@ -999,10 +999,25 @@ thread back up with today's review items, since your SRS profile is refreshed at
 new, or a first lesson, and she finds one news item that is not a recent topic.
 
 **Always the newest model.** Choosing Sonnet, Opus or Haiku uses the newest version of that tier
-your account can use: today claude-sonnet-5, claude-opus-5 and claude-haiku-4-5. Claude Code's own
-short names lag behind (`sonnet` still meant Sonnet 4.6), so the app keeps its own list in
+your account can use: today claude-sonnet-5-5, claude-opus-5-5 and claude-haiku-4-5. Claude Code's
+own short names lag behind (`sonnet` once meant Sonnet 4.6), so the app keeps its own list in
 `backend/data/model_tiers.txt`, newest first, and checks once a week which one answers. A new
-release is one line in that file. Delete `.cache/model_tiers.json` to check again straight away.
+release is one line in that file, and you do not have to add it: once a week, while you are already
+in a lesson, the app also tries the next generation up (`claude-sonnet-5-5` to `claude-sonnet-6`)
+and uses it from the next lesson if it answers, saying so on the console. Delete
+`.cache/model_tiers.json` to check again straight away.
+
+**If your `claude` CLI is too old for the newest model, the console says so in red** and gives you
+the command, because a CLI from two months ago silently costs you a model generation:
+
+```
+the claude CLI on PATH is too old for claude-opus-5-5: it needs 2.1.280 or newer,
+  run `claude update`, then start the lesson again - until then she runs on claude-opus-5.
+```
+
+`make doctor` reports the same thing as a FAIL. After updating, expect one WARN from the doctor
+until the pinned "verified against" version in `backend/constants.py` is re-checked and re-dated;
+that pin is deliberate (ADR-015), since CLI flags occasionally change.
 
 **Changing tutor is live.** Pick one in Settings → Voice. The voice and the character switch at
 once, in a fresh conversation, and the new tutor introduces themselves. The avatar model stays the
